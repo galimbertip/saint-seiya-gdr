@@ -19,8 +19,13 @@ massimo una finestra di reazione per lato, niente contro-risposte a
 catena.
 
 Il Cosmo attuale fa da "punti vita" per entrambi. A fine scontro si
-ricarica al massimo (placeholder, nessun recupero graduale ancora) e
-passa un giorno di gioco, come allenamento e riposo.
+ricarica al massimo (placeholder, nessun recupero graduale ancora).
+Il tempo passa in minuti, non più a giorni interi: ogni mezzo-round
+(la tua dichiarazione, o la reazione dell'avversario dichiarata) costa
+ARENA_ROUND_MINUTES - così un combattimento breve costa poco tempo di
+gioco, uno lungo costa di più, e puoi incatenare altre azioni (un
+allenamento, un altro scontro) nello stesso giorno se te lo puoi
+permettere.
 """
 import sqlite3
 from typing import Callable, Optional
@@ -38,7 +43,7 @@ from core.arena_manager import (
     SEVENTH_SENSE_MULTIPLIER, CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER,
     SESTO_SENSO_LEVEL, SETTIMO_SENSO_LEVEL, OTTAVO_SENSO_LEVEL,
 )
-from core.fm_manager import RosterManager
+from core.fm_manager import RosterManager, ARENA_ROUND_MINUTES
 from database.db_manager import get_armor, get_techniques_for_armor
 from core.app_logger import get_logger
 
@@ -322,6 +327,12 @@ class ArenaScreen(QWidget):
             self._append_log_line(msg)
 
         self._update_opponent_bar()
+        aging_msg = RosterManager.spend_time(self.knight, ARENA_ROUND_MINUTES)
+        if aging_msg:
+            self._append_log_line(aging_msg)
+        if self.on_change:
+            self.on_change()
+
         if self._check_fight_over():
             return
 
@@ -333,6 +344,11 @@ class ArenaScreen(QWidget):
         self._player_charges()
         self._append_log_line(f"{self.knight['raw_name']} carica il Cosmo, pronto a colpire più forte.")
         self._update_my_bar()
+        aging_msg = RosterManager.spend_time(self.knight, ARENA_ROUND_MINUTES)
+        if aging_msg:
+            self._append_log_line(aging_msg)
+        if self.on_change:
+            self.on_change()
         self._start_opponent_declaration()
 
     # --- Metà 2 del round: dichiara l'avversario, tu reagisci --------------
@@ -348,6 +364,11 @@ class ArenaScreen(QWidget):
             self._opponent_charges()
             self._append_log_line(f"{o['name']} carica il proprio Cosmo per il prossimo colpo.")
             self._update_opponent_bar()
+            aging_msg = RosterManager.spend_time(self.knight, ARENA_ROUND_MINUTES)
+            if aging_msg:
+                self._append_log_line(aging_msg)
+            if self.on_change:
+                self.on_change()
             self._rebuild_action_buttons()
             return
 
@@ -387,6 +408,12 @@ class ArenaScreen(QWidget):
         self._check_eighth_sense()
         self._check_seventh_sense(after_damage_to_player=True)
         self._update_my_bar()
+
+        aging_msg = RosterManager.spend_time(self.knight, ARENA_ROUND_MINUTES)
+        if aging_msg:
+            self._append_log_line(aging_msg)
+        if self.on_change:
+            self.on_change()
 
         if self._check_fight_over():
             return
@@ -462,9 +489,8 @@ class ArenaScreen(QWidget):
         else:
             self._append_log_line(f"💀 Sei stato sconfitto da {self.opponent['name']}...")
 
-        aging_msg = RosterManager.advance_day(self.knight)
-        if aging_msg:
-            self._append_log_line(aging_msg)
+        # Il tempo è già stato speso round per round durante lo scontro
+        # (vedi ARENA_ROUND_MINUTES) - niente costo fisso extra qui.
 
         # Placeholder: recupero completo del Cosmo a fine scontro, in
         # attesa di un sistema di recupero graduale fuori combattimento.
@@ -486,9 +512,8 @@ class ArenaScreen(QWidget):
             return
         self._append_log_line(f"Ti ritiri dallo scontro con {self.opponent['name']}.")
 
-        aging_msg = RosterManager.advance_day(self.knight)
-        if aging_msg:
-            self._append_log_line(aging_msg)
+        # Idem: il tempo dei round già combattuti è già stato speso,
+        # niente costo fisso aggiuntivo per la ritirata in sé.
 
         self.knight["cosmo_cur"] = self.knight["cosmo_max"]
         save_knight(self.conn, self.knight)
