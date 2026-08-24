@@ -21,6 +21,7 @@ import qtawesome as qta
 from PySide6.QtCore import Signal, QSize
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QStackedWidget, QFrame, QLabel,
+    QProgressBar,
 )
 
 from ui.theme import COLORS
@@ -44,22 +45,44 @@ class GameScreen(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # --- Barra calendario, sempre visibile sopra a tutte le pagine ---
-        calendar_bar = QFrame()
-        calendar_bar.setObjectName("card")
-        calendar_layout = QHBoxLayout(calendar_bar)
-        calendar_layout.setContentsMargins(18, 8, 18, 8)
+        # --- Barra di stato, sempre visibile sopra a tutte le pagine:
+        # calendario + Cosmo + Stamina, per decidere a colpo d'occhio se
+        # concatenare un'altra azione (es. allenamento poi Arena nello
+        # stesso giorno) senza dover entrare in ogni schermata per saperlo.
+        status_bar = QFrame()
+        status_bar.setObjectName("card")
+        status_layout = QHBoxLayout(status_bar)
+        status_layout.setContentsMargins(18, 8, 18, 8)
+        status_layout.setSpacing(20)
 
         calendar_icon = QLabel()
         calendar_icon.setPixmap(qta.icon("fa5s.calendar-alt", color=COLORS["cosmo_blue"]).pixmap(QSize(16, 16)))
-        calendar_layout.addWidget(calendar_icon)
+        status_layout.addWidget(calendar_icon)
 
         self.calendar_label = QLabel("—")
         self.calendar_label.setStyleSheet(f"color: {COLORS['cosmo_blue']}; font-weight: 600;")
-        calendar_layout.addWidget(self.calendar_label)
-        calendar_layout.addStretch()
+        status_layout.addWidget(self.calendar_label)
 
-        outer.addWidget(calendar_bar)
+        status_layout.addStretch()
+
+        cosmo_icon = QLabel()
+        cosmo_icon.setPixmap(qta.icon("fa5s.dot-circle", color=COLORS["cosmo_blue"]).pixmap(QSize(14, 14)))
+        status_layout.addWidget(cosmo_icon)
+        self.cosmo_bar = QProgressBar()
+        self.cosmo_bar.setFixedWidth(140)
+        self.cosmo_bar.setMaximumHeight(16)
+        status_layout.addWidget(self.cosmo_bar)
+
+        stamina_icon = QLabel()
+        stamina_icon.setPixmap(qta.icon("fa5s.bolt", color=COLORS["gold"]).pixmap(QSize(14, 14)))
+        status_layout.addWidget(stamina_icon)
+        self.stamina_bar = QProgressBar()
+        self.stamina_bar.setRange(0, 100)
+        self.stamina_bar.setFixedWidth(140)
+        self.stamina_bar.setMaximumHeight(16)
+        status_layout.addWidget(self.stamina_bar)
+
+        outer.addWidget(status_bar)
 
         root = QHBoxLayout()
         root.setContentsMargins(0, 0, 0, 0)
@@ -79,8 +102,8 @@ class GameScreen(QWidget):
         self.content = QStackedWidget()
 
         self.sheet_screen = CharacterSheetScreen(self.conn, self.knight_id)
-        self.arena_screen = ArenaScreen(self.conn, self.knight_id, on_change=self._refresh_calendar)
-        self.training_screen = TrainingScreen(self.conn, self.knight_id, on_change=self._refresh_calendar)
+        self.arena_screen = ArenaScreen(self.conn, self.knight_id, on_change=self._refresh_status_bar)
+        self.training_screen = TrainingScreen(self.conn, self.knight_id, on_change=self._refresh_status_bar)
 
         icon_color = COLORS["text_secondary"]
         icon_color_active = COLORS["gold"]
@@ -126,15 +149,22 @@ class GameScreen(QWidget):
         self._icon_color = icon_color
         self._icon_color_active = icon_color_active
 
-        self._refresh_calendar()
+        self._refresh_status_bar()
         self._select_page(0)
 
-    def _refresh_calendar(self) -> None:
+    def _refresh_status_bar(self) -> None:
         knight = get_knight(self.conn, self.knight_id)
         if knight is None:
             return
-        calendar = get_calendar_display(knight["game_day"])
+        calendar = get_calendar_display(knight["game_minutes"])
         self.calendar_label.setText(calendar["label"])
+
+        self.cosmo_bar.setRange(0, max(knight["cosmo_max"], 1))
+        self.cosmo_bar.setValue(max(knight["cosmo_cur"], 0))
+        self.cosmo_bar.setFormat(f"{knight['cosmo_cur']}/{knight['cosmo_max']}")
+
+        self.stamina_bar.setValue(knight["stamina"])
+        self.stamina_bar.setFormat(f"{knight['stamina']}/100")
 
     def _select_page(self, index: int) -> None:
         self.content.setCurrentIndex(index)
@@ -155,4 +185,4 @@ class GameScreen(QWidget):
         elif index == 2:
             self.training_screen.refresh()
 
-        self._refresh_calendar()
+        self._refresh_status_bar()
