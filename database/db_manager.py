@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS knights (
     stamina INTEGER NOT NULL DEFAULT 100,
     age INTEGER NOT NULL DEFAULT 15,
     game_day INTEGER NOT NULL DEFAULT 1,
+    game_minutes INTEGER NOT NULL DEFAULT 0,
     weekly_schedule TEXT NOT NULL DEFAULT 'Cosmo,Forza,Destrezza,Costituzione,Tecnica,Volontà,Riposo'
 );
 """
@@ -65,14 +66,24 @@ CREATE TABLE IF NOT EXISTS knights (
 def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
     """Aggiunge colonne nuove alle tabelle già esistenti, senza perdere
     i dati già salvati (es. il tuo 'Garin' creato prima che esistesse
-    game_day/weekly_schedule). SQLite non supporta 'ADD COLUMN IF NOT
-    EXISTS', quindi controlliamo noi se la colonna manca prima di
-    aggiungerla."""
+    game_day/weekly_schedule/game_minutes). SQLite non supporta 'ADD
+    COLUMN IF NOT EXISTS', quindi controlliamo noi se la colonna manca
+    prima di aggiungerla."""
     existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(knights)")}
     if "game_day" not in existing_columns:
         conn.execute("ALTER TABLE knights ADD COLUMN game_day INTEGER NOT NULL DEFAULT 1")
         conn.commit()
         log.info("Migrazione: aggiunta colonna game_day a knights (salvataggi esistenti impostati a giorno 1).")
+    if "game_minutes" not in existing_columns:
+        # L'orologio a giorni interi (game_day) diventa un orologio a
+        # minuti (game_minutes) - fonte di verità da ora in poi. Per i
+        # salvataggi esistenti, convertiamo il giorno già raggiunto in
+        # minuti equivalenti (mezzanotte di quel giorno), così non si
+        # perde il progresso già fatto.
+        conn.execute("ALTER TABLE knights ADD COLUMN game_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE knights SET game_minutes = (game_day - 1) * 1440")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna game_minutes a knights, convertita da game_day esistente.")
     if "weekly_schedule" not in existing_columns:
         conn.execute(
             "ALTER TABLE knights ADD COLUMN weekly_schedule TEXT NOT NULL "
