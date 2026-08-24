@@ -1,65 +1,60 @@
 """
 Gestione allenamento e crescita del personaggio, stile Football Manager.
 
-Rispetto alla versione originale di Gemini:
-- knight['stamina'] ora esiste davvero (colonna reale in knights, non
-  più un campo scritto a mano che il DB non aveva).
-- il focus di allenamento copre tutte e 5 le statistiche del personaggio
-  (str, dex, con, tec, vol), non solo Forza Fisica + Cosmo.
-- aggiunta la progressione a XP/livello personaggio (player_level),
-  altro campo che nello schema vecchio non esisteva.
-- ogni azione (allenamento o riposo) fa passare un giorno intero di
-  gioco (knight['game_day']), invece di essere istantanea. L'età
-  cresce di conseguenza nel tempo reale di gioco.
-- NOVITÀ: allenarsi da esausto non è più bloccato in automatico - puoi
-  forzarlo, ma rischi un INFORTUNIO (perdi un punto statistica invece
-  di guadagnarlo). Decide il giocatore quanto rischiare, il programma
-  settimanale/mensile permette di correggere la rotta in anticipo se
-  vede il cavaliere stanco.
-- NOVITÀ: nuovi tipi di allenamento a tema Saint Seiya (Cascata del
-  Sacrificio, Sparring con i Compagni), aggiunti ACCANTO a quelli
-  esistenti - i nomi vecchi (Forza, Cosmo, ecc.) restano invariati
-  apposta, per non rompere i programmi settimanali già salvati.
+CAMBIO PRINCIPALE DI QUESTO GIRO: l'orologio non conta più in GIORNI
+INTERI (game_day, dove ogni azione = 1 giorno fisso) ma in MINUTI
+(game_minutes, fonte di verità unica). Ogni azione ha una durata reale
+diversa - un Riposo (dormire) dura più di una sessione di allenamento,
+un round in Arena dura minuti, non un giorno intero. Questo è quello
+che permette la cosa che il giocatore ha chiesto in chat: allenarsi al
+Cosmo la mattina e sfidare qualcuno in Arena lo stesso giorno, invece
+di essere bloccati a "un'azione = un giorno" ovunque.
+
+game_day resta nel database per compatibilità/cronologia ma non è più
+la fonte di verità: si legge/scrive solo game_minutes da qui in avanti.
+
+Rispetto alle versioni precedenti:
+- knight['stamina'] esiste davvero (colonna reale in knights).
+- il focus di allenamento copre tutte e 5 le statistiche del personaggio.
+- progressione a XP/livello personaggio (player_level).
+- allenarsi da esausto non è bloccato in automatico: si può forzare, ma
+  si rischia un INFORTUNIO (perde un punto invece di guadagnarlo).
+- tipi di allenamento a tema Saint Seiya (Cascata del Sacrificio,
+  Sparring con i Compagni) accanto a quelli originali, mai rinominati
+  (compatibilità con i programmi settimanali già salvati).
 
 NOTA come per dnd_engine.py: le SOGLIE numeriche (costo stamina, xp per
 salire di livello, quanti punti guadagni, probabilità di infortunio,
-giorni per anno) sono PLACEHOLDER funzionanti, non valori definitivi -
-li tariamo insieme quando affrontiamo il bilanciamento vero e proprio.
-La struttura (quali campi cambiano, come si aggiornano) è quella buona.
+durata in minuti di ogni azione) sono PLACEHOLDER funzionanti, non
+valori definitivi - li tariamo insieme quando affrontiamo il
+bilanciamento vero e proprio. La struttura è quella buona.
 """
 import random
 
 # --- Tipi di allenamento --------------------------------------------------
-# I primi 6 + Riposo sono quelli originali (NON rinominare: sono già
-# salvati nei programmi settimanali esistenti). Gli ultimi 2 sono nuovi.
 TRAINING_FOCUS_OPTIONS = [
     "Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
     "Cascata del Sacrificio", "Sparring con i Compagni",
     "Riposo",
 ]
 
-# Mappa focus -> colonna knights da incrementare (i focus speciali -
-# Cosmo, Sparring, Riposo - sono gestiti a parte, non stanno qui)
 _STAT_COLUMN_BY_FOCUS = {
     "Forza": "str",
     "Destrezza": "dex",
     "Costituzione": "con",
     "Tecnica": "tec",
     "Volontà": "vol",
-    "Cascata del Sacrificio": "con",  # variante più dura della Costituzione
+    "Cascata del Sacrificio": "con",
 }
 
 _STAT_LABELS = {"str": "Forza", "dex": "Destrezza", "con": "Costituzione", "tec": "Tecnica", "vol": "Volontà"}
 
-# Range costo stamina per focus (default 10-20, alcuni costano di più)
 _STAMINA_COST_RANGES = {
     "Cascata del Sacrificio": (15, 25),
     "Sparring con i Compagni": (12, 22),
 }
 _DEFAULT_STAMINA_COST_RANGE = (10, 20)
 
-# Probabilità di infortunio se ti alleni da esausto (default 30%, lo
-# sparring è più rischioso perché è un combattimento vero)
 _INJURY_CHANCE_OVERRIDES = {
     "Sparring con i Compagni": 0.5,
     "Cascata del Sacrificio": 0.4,
@@ -74,6 +69,9 @@ WEEKDAY_NAMES = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "S
 DEFAULT_WEEKLY_SCHEDULE = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà", "Riposo"]
 DEFAULT_WEEKLY_SCHEDULE_STR = ",".join(DEFAULT_WEEKLY_SCHEDULE)
 
+# --- Calendario (a minuti) -------------------------------------------------
+MINUTES_PER_HOUR = 60
+MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR
 DAYS_PER_MONTH = 30  # placeholder, calendario semplificato
 MONTHS_PER_YEAR = 12
 DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS_PER_YEAR  # 360
@@ -83,12 +81,26 @@ MONTH_NAMES = [
     "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
 ]
 
+# --- Durata in minuti di ogni azione ---------------------------------------
+# PLACEHOLDER: quanto dura "nella finzione" ogni cosa. Un Riposo è un
+# sonno vero (8 ore), un allenamento normale mezza giornata, i due tipi
+# più duri (Cascata/Sparring) un po' di più. Un round in Arena dura
+# minuti, non ore - è uno scambio di colpi, non una sessione.
+TRAINING_MINUTES_BY_FOCUS = {
+    "Riposo": 8 * MINUTES_PER_HOUR,
+    "Cascata del Sacrificio": 6 * MINUTES_PER_HOUR,
+    "Sparring con i Compagni": 6 * MINUTES_PER_HOUR,
+}
+DEFAULT_TRAINING_MINUTES = 4 * MINUTES_PER_HOUR
+
+ARENA_ROUND_MINUTES = 15  # un mezzo-turno di combattimento (dichiari + reagisce l'altro)
+
 
 def parse_weekly_schedule(schedule_str: str) -> list[str]:
     """Da stringa CSV (come salvata nel DB) a lista di 7 focus. Tollerante:
     se la stringa è vuota, sporca, o più corta di 7 giorni, completa con
-    Riposo invece di sollevare un errore - i salvataggi vecchi (prima che
-    esistesse questa colonna) non devono rompersi."""
+    Riposo invece di sollevare un errore - i salvataggi vecchi non
+    devono rompersi."""
     days = schedule_str.split(",") if schedule_str else []
     days = [d.strip() for d in days]
     days = [d if d in TRAINING_FOCUS_OPTIONS else "Riposo" for d in days]
@@ -102,37 +114,62 @@ def serialize_weekly_schedule(days: list[str]) -> str:
     return ",".join(days[:7])
 
 
-def get_calendar_display(game_day: int) -> dict:
-    """Converte il contatore grezzo game_day (1, 2, 3, ...) in
-    Anno/Mese/Giorno leggibili. Calendario semplificato apposta
-    (12 mesi x 30 giorni = 360 giorni/anno): non è un calendario reale,
-    è solo il ritmo del gioco."""
-    zero_based = game_day - 1
-    year = zero_based // DAYS_PER_YEAR + 1
-    day_in_year = zero_based % DAYS_PER_YEAR
+def get_calendar_display(game_minutes: int) -> dict:
+    """Converte il contatore grezzo game_minutes in Anno/Mese/Giorno/Ora
+    leggibili. Calendario semplificato apposta (12 mesi x 30 giorni x
+    24 ore = 360 giorni/anno): non è un calendario reale, è solo il
+    ritmo del gioco."""
+    total_days, minute_of_day = divmod(game_minutes, MINUTES_PER_DAY)
+    hour, minute = divmod(minute_of_day, MINUTES_PER_HOUR)
+
+    year = total_days // DAYS_PER_YEAR + 1
+    day_in_year = total_days % DAYS_PER_YEAR
     month_index = day_in_year // DAYS_PER_MONTH  # 0-11
     day_of_month = day_in_year % DAYS_PER_MONTH + 1  # 1-30
+
     return {
         "year": year,
         "month_index": month_index,
         "month_name": MONTH_NAMES[month_index],
         "day_of_month": day_of_month,
-        "label": f"Anno {year} — {MONTH_NAMES[month_index]}, giorno {day_of_month}",
+        "hour": hour,
+        "minute": minute,
+        "label": (f"Anno {year} — {MONTH_NAMES[month_index]}, giorno {day_of_month}, "
+                  f"ore {hour:02d}:{minute:02d}"),
     }
 
 
 class RosterManager:
 
     @staticmethod
-    def apply_daily_training(knight: dict, focus: str) -> str:
-        """Allenamento quotidiano: consuma stamina, migliora una statistica
-        (o riposa), assegna un po' di XP, e fa passare un giorno intero di
-        gioco (con eventuale invecchiamento). Muta `knight` in place.
+    def spend_time(knight: dict, minutes: int) -> str:
+        """Fa avanzare l'orologio di gioco di `minutes` minuti - la
+        funzione che TUTTE le azioni del gioco chiamano ora (allenamento,
+        combattimento, in futuro qualsiasi altra cosa), ciascuna con la
+        propria durata, invece del vecchio 'ogni azione = 1 giorno fisso'.
+        Gestisce l'invecchiamento quando si supera un anno. Restituisce
+        un messaggio SOLO se scatta un compleanno, stringa vuota
+        altrimenti. Muta `knight` in place."""
+        previous_year = get_calendar_display(knight["game_minutes"])["year"]
+        knight["game_minutes"] += minutes
+        new_year = get_calendar_display(knight["game_minutes"])["year"]
 
-        Se il personaggio è troppo esausto, l'allenamento NON viene più
-        bloccato in automatico: si forza comunque, ma rischia un
-        infortunio (perde un punto invece di guadagnarlo). Il giorno
-        avanza sempre, in ogni caso - anche in caso di infortunio."""
+        if new_year > previous_year:
+            knight["age"] += (new_year - previous_year)
+            return f"🎂 È passato un altro anno! {knight['raw_name']} ora ha {knight['age']} anni."
+        return ""
+
+    @staticmethod
+    def apply_daily_training(knight: dict, focus: str) -> str:
+        """Una sessione di allenamento: consuma stamina, migliora una
+        statistica (o riposa), assegna un po' di XP, e fa passare il
+        tempo corrispondente a QUEL focus (non più un giorno fisso per
+        tutti - vedi TRAINING_MINUTES_BY_FOCUS). Muta `knight` in place.
+
+        Se il personaggio è troppo esausto, la sessione NON viene
+        bloccata in automatico: si forza comunque, ma rischia un
+        INFORTUNIO (perde un punto invece di guadagnarlo). Il tempo
+        passa sempre, in ogni caso - anche in caso di infortunio."""
         if focus not in TRAINING_FOCUS_OPTIONS:
             return f"Focus di allenamento sconosciuto: {focus!r}"
 
@@ -159,9 +196,8 @@ class RosterManager:
                 if xp_msg:
                     msg = f"{msg} {xp_msg}"
 
-        # Qualsiasi azione (anche il riposo, anche un infortunio) fa
-        # passare un giorno intero.
-        aging_msg = RosterManager.advance_day(knight)
+        minutes = TRAINING_MINUTES_BY_FOCUS.get(focus, DEFAULT_TRAINING_MINUTES)
+        aging_msg = RosterManager.spend_time(knight, minutes)
         if aging_msg:
             msg = f"{msg} {aging_msg}"
 
@@ -169,7 +205,6 @@ class RosterManager:
 
     @staticmethod
     def _apply_training_gain(knight: dict, focus: str) -> str:
-        """Applica il guadagno normale di un allenamento riuscito."""
         if focus == "Cosmo":
             gain = random.randint(1, 3)
             knight["cosmo_max"] += gain
@@ -187,8 +222,6 @@ class RosterManager:
 
     @staticmethod
     def _apply_injury(knight: dict, focus: str) -> str:
-        """Applica la penalità in caso di infortunio: perde un punto
-        invece di guadagnarlo, niente XP per questa sessione."""
         if focus == "Cosmo":
             loss = min(knight["cosmo_max"], _INJURY_STAT_LOSS)
             knight["cosmo_max"] -= loss
@@ -197,18 +230,22 @@ class RosterManager:
 
         column = random.choice(["str", "dex", "con"]) if focus == "Sparring con i Compagni" \
             else _STAT_COLUMN_BY_FOCUS[focus]
-        loss = max(0, min(knight[column] - 1, _INJURY_STAT_LOSS))  # non scende mai sotto 1
+        loss = max(0, min(knight[column] - 1, _INJURY_STAT_LOSS))
         knight[column] -= loss
         return (f"⚠️ {knight['raw_name']} si è allenato troppo stanco e si è infortunato! "
                 f"{_STAT_LABELS[column]} -{loss}.")
 
     @staticmethod
     def advance_week(knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
-        """Applica un programma settimanale intero (7 giorni) in un colpo
-        solo, riusando apply_daily_training per ciascun giorno. `schedule`
-        è una lista di 7 focus, uno per giorno (Lunedì...Domenica).
-        Restituisce una lista di tuple (nome_giorno, focus, messaggio)
-        per costruire il log in UI."""
+        """Applica 7 sessioni di allenamento di fila (una per 'giorno'
+        della griglia settimanale). ATTENZIONE (cambiato in questo giro):
+        con l'orologio a minuti, 7 sessioni NON corrispondono più
+        necessariamente a 7 giorni di calendario - dipende dalla durata
+        di ciascun focus scelto (7 Riposo = 56 ore reali = poco più di 2
+        giorni; 7 Cascata del Sacrificio = 42 ore = meno di 2 giorni).
+        La griglia resta comoda per pianificare 7 sessioni in sequenza,
+        ma il nome 'Settimana' è ormai più una convenzione che una
+        promessa esatta di 7 giorni di calendario."""
         results = []
         for day_name, focus in zip(WEEKDAY_NAMES, schedule):
             msg = RosterManager.apply_daily_training(knight, focus)
@@ -217,36 +254,20 @@ class RosterManager:
 
     @staticmethod
     def advance_month(knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
-        """Applica lo stesso programma settimanale ripetuto per un mese
-        intero (DAYS_PER_MONTH giorni, di norma 30 = 4 settimane + 2
-        giorni). Niente 30 tendine da gestire: si riusa il programma
-        settimanale già impostato. Restituisce una lista di tuple
-        (etichetta_giorno, focus, messaggio)."""
+        """Applica 30 sessioni di allenamento di fila (stesso programma
+        settimanale ripetuto), stessa nota di advance_week sul tempo
+        reale che ne consegue."""
         results = []
-        days_done = 0
+        sessions_done = 0
         week_num = 1
-        while days_done < DAYS_PER_MONTH:
-            days_this_round = min(7, DAYS_PER_MONTH - days_done)
-            for day_name, focus in zip(WEEKDAY_NAMES[:days_this_round], schedule[:days_this_round]):
+        while sessions_done < DAYS_PER_MONTH:
+            sessions_this_round = min(7, DAYS_PER_MONTH - sessions_done)
+            for day_name, focus in zip(WEEKDAY_NAMES[:sessions_this_round], schedule[:sessions_this_round]):
                 msg = RosterManager.apply_daily_training(knight, focus)
                 results.append((f"Sett.{week_num} {day_name}", focus, msg))
-            days_done += days_this_round
+            sessions_done += sessions_this_round
             week_num += 1
         return results
-
-    @staticmethod
-    def advance_day(knight: dict, days: int = 1) -> str:
-        """Fa avanzare il calendario del personaggio. Restituisce un
-        messaggio SOLO se è appena scattato un nuovo anno (compleanno),
-        stringa vuota altrimenti. Muta `knight` in place."""
-        previous_year = get_calendar_display(knight["game_day"])["year"]
-        knight["game_day"] += days
-        new_year = get_calendar_display(knight["game_day"])["year"]
-
-        if new_year > previous_year:
-            knight["age"] += (new_year - previous_year)
-            return f"🎂 È passato un altro anno! {knight['raw_name']} ora ha {knight['age']} anni."
-        return ""
 
     @staticmethod
     def xp_to_next_level(player_level: int) -> int:
@@ -256,9 +277,8 @@ class RosterManager:
     @staticmethod
     def add_xp(knight: dict, amount: int) -> str:
         """Aggiunge XP e gestisce eventuali salite di livello (una alla
-        volta, per non saltare livelli in un colpo solo). Muta `knight`
-        in place. Restituisce un messaggio SOLO se c'è stato un level up
-        (stringa vuota altrimenti)."""
+        volta). Muta `knight` in place. Restituisce un messaggio SOLO se
+        c'è stato un level up (stringa vuota altrimenti)."""
         knight["xp"] += amount
 
         threshold = RosterManager.xp_to_next_level(knight["player_level"])
@@ -267,8 +287,6 @@ class RosterManager:
 
         knight["xp"] -= threshold
         knight["player_level"] += 1
-        # PLACEHOLDER: bonus di livello. Per ora +2 punti totali a scelta
-        # futura, qui semplicemente distribuiti su Cosmo massimo.
-        knight["cosmo_max"] += 5
+        knight["cosmo_max"] += 5  # PLACEHOLDER: bonus di livello
         return (f"🎉 {knight['raw_name']} è salito al livello {knight['player_level']}! "
                 f"(Cosmo massimo +5)")
