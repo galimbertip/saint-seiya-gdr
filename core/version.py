@@ -10,7 +10,7 @@ Il changelog qui sotto è la cronologia delle versioni concordate in chat.
 Si aggiorna insieme al codice, non a posteriori.
 """
 
-APP_VERSION = "PG_V0.9.0"
+APP_VERSION = "PG_V1.0.0"
 
 CHANGELOG = [
     {
@@ -130,5 +130,29 @@ CHANGELOG = [
                 "sei sotto attacco. core/arena_manager.py: choose_opponent_action ora sceglie "
                 "solo Attacca/Carica; nuova opponent_reacts() con probabilità di difesa che "
                 "cresce se l'avversario è messo male (testato: ~24% sano, ~62% in crisi).",
+    },
+    {
+        "version": "PG_V1.0.0",
+        "desc": "OROLOGIO UNIVERSALE A MINUTI, sostituisce il vecchio 'ogni azione = 1 giorno "
+                "intero' - cambio strutturale grosso, richiesto in chat per poter incatenare "
+                "azioni diverse nello stesso giorno di gioco (es. allenamento al Cosmo la "
+                "mattina, poi Arena nel pomeriggio, invece di essere bloccati a un'azione al "
+                "giorno). Nuova colonna knights.game_minutes (fonte di verità, sostituisce "
+                "game_day che resta solo per compatibilità/cronologia), migrazione automatica "
+                "e testata per i salvataggi esistenti (converte il giorno raggiunto in minuti "
+                "equivalenti, a mezzanotte, senza perdere progressi). RosterManager.spend_time() "
+                "sostituisce advance_day(): ogni azione ha una durata propria in minuti "
+                "(TRAINING_MINUTES_BY_FOCUS: Riposo 8h, Cascata/Sparring 6h, altri 4h; Arena: "
+                "ARENA_ROUND_MINUTES=15 min per mezzo-round, non più 1 giorno fisso a fine "
+                "scontro). get_calendar_display ora mostra anche l'ora (formato "
+                "'Anno X — Mese, giorno Y, ore HH:MM'). GameScreen: la barra superiore mostra "
+                "ora anche Cosmo e Stamina sempre visibili in ogni schermata (richiesto in "
+                "chat, necessario per decidere se concatenare azioni senza entrare in ogni "
+                "sezione per saperlo), aggiornata ad ogni round in Arena, non solo a fine "
+                "scontro. NOTA: 'Avanza Settimana/Mese' nell'Allenamento non corrisponde più "
+                "esattamente a 7/30 giorni di calendario (dipende dalla durata dei focus "
+                "scelti) - la griglia settimanale resta comoda per pianificare ma il nome è "
+                "ormai una convenzione, non una promessa esatta; una revisione della UI di "
+                "quella schermata resta un lavoro futuro, segnalato in chat.",
     },
 ]
