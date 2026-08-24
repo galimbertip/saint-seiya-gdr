@@ -179,7 +179,7 @@ class TrainingScreen(QWidget):
         self.xp_bar.setValue(min(k["xp"], xp_needed))
         self.xp_bar.setFormat(f"Livello {k['player_level']} — {k['xp']} / {xp_needed} XP")
 
-        calendar = get_calendar_display(k["game_day"])
+        calendar = get_calendar_display(k["game_minutes"])
         self.day_label.setText(f"{calendar['label']}  ·  Età {k['age']} anni")
 
     def _on_advance_clicked(self, is_month: bool) -> None:
