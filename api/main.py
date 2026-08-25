@@ -18,9 +18,11 @@ sintassi è verificata, ma la prova viva va fatta da Codespaces, dove
 la rete c'è.
 """
 from typing import Literal, Optional
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from database.db_manager import (
@@ -136,6 +138,19 @@ def _get_knight_or_404(conn, knight_id: int) -> dict:
 @app.get("/")
 def api_root():
     return {"status": "ok", "app": "Saint Seiya: Sacro Imperio"}
+
+
+# --------------------------- Frontend web ---------------------------
+# Servita dallo STESSO server dell'API (stessa origine): il JavaScript
+# della pagina chiama /characters, /armors, ecc. come indirizzi
+# relativi, senza bisogno di conoscere l'indirizzo lungo e mutevole
+# generato da Codespaces ad ogni riavvio.
+_FRONTEND_PATH = Path(__file__).resolve().parent.parent / "web" / "index.html"
+
+
+@app.get("/app", response_class=HTMLResponse)
+def serve_frontend():
+    return _FRONTEND_PATH.read_text(encoding="utf-8")
 
 
 # --------------------------- Personaggi ---------------------------
