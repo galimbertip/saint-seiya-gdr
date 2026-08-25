@@ -116,14 +116,19 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
         dmg = apply_charge(dmg, True, battle_state)
         msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
 
-        defense = opponent_reacts(opponent)
-        if defense:
-            reduced = resolve_defense(dmg, defense["power"])
-            opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
-            log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
-        else:
-            opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
+        if dmg == 0:
+            # Schivata vera (il tiro per colpire ha già fallito): niente
+            # da difendere, la reazione dell'avversario non ha senso.
             log.append(msg)
+        else:
+            defense = opponent_reacts(opponent)
+            if defense:
+                reduced = resolve_defense(dmg, defense["power"])
+                opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
+                log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
+            else:
+                opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
+                log.append(msg)
     else:  # carica
         knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
         battle_state["player_charge_multiplier"] = max(
@@ -175,7 +180,11 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
     dmg2 = apply_charge(dmg2, False, battle_state)
     msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
 
-    if defend:
+    if dmg2 == 0:
+        # Schivata vera: niente da difendere, la scelta Difenditi/Incassa
+        # non ha inciso su un colpo che non è mai arrivato.
+        log.append(msg2)
+    elif defend:
         defense_technique = my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
         reduced = resolve_defense(dmg2, defense_technique["power"])
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
