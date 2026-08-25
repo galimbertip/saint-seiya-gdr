@@ -39,6 +39,7 @@ from core.character_factory import get_knight, save_knight
 from core.arena_manager import (
     generate_opponent, resolve_turn, choose_opponent_action,
     resolve_defense, opponent_reacts, find_defensive_technique, get_unlocked_senses,
+    format_damage_message,
     BASE_ATTACK_POWER, DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO,
     SEVENTH_SENSE_MULTIPLIER, CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER,
     SESTO_SENSO_LEVEL, SETTIMO_SENSO_LEVEL, OTTAVO_SENSO_LEVEL,
@@ -316,6 +317,7 @@ class ArenaScreen(QWidget):
             o["name"], o["dex"], o["armor_level"], technique_name, technique_power,
         )
         dmg = self._apply_charge_bonus(dmg, is_player_attacking=True)
+        msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
 
         defense = opponent_reacts(o)
         if defense:
@@ -395,6 +397,7 @@ class ArenaScreen(QWidget):
             t["name"], t["power"],
         )
         dmg2 = self._apply_charge_bonus(dmg2, is_player_attacking=False)
+        msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
 
         if defend:
             defense_technique = self.my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
