@@ -22,6 +22,7 @@ from typing import Optional
 from core.arena_manager import (
     generate_opponent, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
+    format_damage_message,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER,
 )
@@ -113,6 +114,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
             technique_name, technique_power,
         )
         dmg = apply_charge(dmg, True, battle_state)
+        msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
 
         defense = opponent_reacts(opponent)
         if defense:
@@ -171,6 +173,7 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         knight["raw_name"], knight["dex"], armor["level"], t["name"], t["power"],
     )
     dmg2 = apply_charge(dmg2, False, battle_state)
+    msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
 
     if defend:
         defense_technique = my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
