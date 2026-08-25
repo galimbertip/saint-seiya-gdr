@@ -75,6 +75,9 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
                   technique_name: str, technique_power: int) -> tuple[int, str]:
     """Risolve un turno d'attacco riusando DnDEngine (CA, tiro per
     colpire, danno) - qui si orchestra soltanto, nessuna nuova formula.
+    Un 1 naturale è sempre un fallimento critico (segnalato a parte da
+    una schivata normale); un 20 naturale è sempre un successo e
+    raddoppia il danno (colpo critico) - regole richieste in chat.
     Restituisce (danno_inflitto, messaggio_di_log)."""
     defender_ac = DnDEngine.calculate_ac(
         DnDEngine.get_modifier(defender_dex), defender_armor_level, COSMO_ATTUNEMENT_FOR_AC
@@ -82,9 +85,15 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
     hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, defender_ac)
 
     if not hit:
+        if dice_roll == 1:
+            return 0, f"{attacker_name} lancia {technique_name}... FALLIMENTO CRITICO (1 naturale)! Un disastro."
         return 0, f"{attacker_name} lancia {technique_name}, ma {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
 
     _, damage = DnDEngine.resolve_technique_damage(technique_power, attacker_armor_level)
+    if dice_roll == 20:
+        damage *= 2
+        return damage, (f"{attacker_name} colpisce con {technique_name}! COLPO CRITICO (20 naturale)! "
+                         f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
     return damage, (f"{attacker_name} colpisce con {technique_name}! "
                      f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
 
