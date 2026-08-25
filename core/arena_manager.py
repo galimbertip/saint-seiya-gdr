@@ -89,6 +89,24 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
                      f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
 
 
+def format_damage_message(msg: str, actual_damage: int) -> str:
+    """resolve_turn scrive il danno GREZZO dentro il messaggio (' — Danno: N').
+    Se il danno viene poi modificato (bonus di Carica/Settimo Senso,
+    applicato DOPO che il messaggio è già stato costruito), il numero
+    scritto nel testo resta quello vecchio e non corrisponde più a
+    quello davvero applicato - bug trovato in chat: un messaggio poteva
+    dire 'Danno: 6 ... il danno scende a 8' (scende da 6 a un numero
+    più alto, contraddittorio). Questa funzione riallinea il testo al
+    danno vero, DOPO che eventuali moltiplicatori sono stati applicati
+    ma PRIMA di un'eventuale riduzione da difesa (quella si aggiunge
+    come frase separata, non sostituisce questo numero)."""
+    marker = " — Danno: "
+    idx = msg.find(marker)
+    if idx == -1:
+        return msg  # messaggio di schivata: nessun danno da correggere
+    return msg[:idx] + f"{marker}{actual_damage}"
+
+
 def choose_opponent_technique(opponent: dict) -> tuple[str, int]:
     """Sceglie una tecnica a caso tra quelle dell'avversario, o l'Attacco
     Base se non ne ha nessuna. Restituisce (nome, potenza)."""
