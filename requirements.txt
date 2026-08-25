@@ -1,3 +1,5 @@
 PySide6
 qtawesome
 openpyxl
+fastapi
+uvicorn[standard]
