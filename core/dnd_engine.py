@@ -66,11 +66,21 @@ class DnDEngine:
     @staticmethod
     def resolve_attack(attacker_str: int, defender_ac: int) -> tuple[bool, int, int]:
         """Tiro per colpire: d20 + Mod Forza vs CA difensore.
-        Restituisce (colpito, tiro_dado, totale)."""
+        1 naturale sul dado = fallimento SEMPRE, a prescindere dal totale
+        (sfiga colossale). 20 naturale = successo SEMPRE, a prescindere
+        dal totale (successo della madonna) - regola classica D&D,
+        richiesta in chat.
+        Restituisce (colpito, tiro_dado_grezzo, totale)."""
         str_mod = DnDEngine.get_modifier(attacker_str)
         rolls, total = DnDEngine.roll_dice(20, 1, str_mod)
-        hit = total >= defender_ac
-        return hit, rolls[0], total
+        natural = rolls[0]
+        if natural == 1:
+            hit = False
+        elif natural == 20:
+            hit = True
+        else:
+            hit = total >= defender_ac
+        return hit, natural, total
 
     @staticmethod
     def resolve_technique_damage(technique_power: int, armor_level: int) -> tuple[int, int]:
