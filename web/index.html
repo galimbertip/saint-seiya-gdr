@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saint Seiya: Sacro Imperio</title>
+<style>
+  :root {
+    --bg-darkest: #0B0F1A;
+    --bg-panel: #141B2E;
+    --bg-panel-alt: #1B2438;
+    --border: #2A3550;
+    --gold: #D4AF37;
+    --gold-dim: #8A7229;
+    --cosmo-blue: #3FA9F5;
+    --cosmo-blue-dim: #245A7C;
+    --text-primary: #EAE6DA;
+    --text-secondary: #9BA3B7;
+    --danger: #C0392B;
+    --success: #3FA96A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg-darkest);
+    color: var(--text-primary);
+    font-family: "Segoe UI", Arial, sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  h1, h2, h3 { margin: 0 0 12px 0; }
+  h1 { color: var(--gold); font-size: 26px; }
+  h2 { color: var(--cosmo-blue); font-size: 16px; }
+  .hint { color: var(--text-secondary); font-size: 13px; }
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  button {
+    background: var(--gold-dim);
+    color: var(--bg-darkest);
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    margin: 4px 4px 4px 0;
+  }
+  button:hover { background: var(--gold); }
+  button:disabled { background: var(--border); color: var(--text-secondary); cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    color: var(--cosmo-blue);
+    border: 1px solid var(--cosmo-blue-dim);
+  }
+  button.secondary:hover { background: var(--bg-panel-alt); }
+  input, select {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+    width: 100%;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .bar-wrap {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    height: 20px;
+    position: relative;
+    overflow: hidden;
+    margin: 4px 0 10px 0;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--cosmo-blue);
+    transition: width 0.2s;
+  }
+  .bar-fill.stamina { background: var(--gold); }
+  .bar-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-shadow: 0 0 3px #000;
+  }
+  .stats-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat-chip {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    min-width: 80px;
+  }
+  .stat-chip .value { font-size: 20px; font-weight: 700; }
+  .stat-chip .label { font-size: 11px; color: var(--text-secondary); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--gold); }
+  tr.selectable { cursor: pointer; }
+  tr.selectable:hover { background: var(--bg-panel-alt); }
+  tr.selected { background: var(--cosmo-blue-dim); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    padding: 10px 16px;
+    margin: 0;
+  }
+  .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); font-weight: 700; }
+  .log-line { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .log-box { max-height: 300px; overflow-y: auto; }
+  .status-bar {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    margin-bottom: 16px;
+  }
+  .status-bar .calendar { color: var(--cosmo-blue); font-weight: 600; white-space: nowrap; }
+  .status-bar .mini-bar { width: 160px; }
+  .status-bar .mini-bar .bar-wrap { height: 14px; margin: 0; }
+  .status-bar .mini-bar .bar-label { font-size: 10px; }
+  .hidden { display: none !important; }
+  #error-banner {
+    background: var(--danger);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="error-banner" class="hidden"></div>
+<div id="app"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, attrs = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "onClick") node.addEventListener("click", v);
+    else if (k === "class") node.className = v;
+    else node.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    node.append(c instanceof Node ? c : document.createTextNode(c));
+  }
+  return node;
+};
+
+// --- Stato globale della pagina (nessun framework, solo un oggetto e un render()) ---
+const state = {
+  screen: "start",          // start | creation | game
+  characters: [],
+  characterId: null,
+  character: null,          // payload completo dell'ultima GET /characters/{id}
+  gameTab: "sheet",         // sheet | training | arena
+  armors: [],
+  weeklySchedule: [],
+  battle: null,             // battle_state, o null fuori combattimento
+  log: [],
+};
+
+// --- Chiamate API: stesso indirizzo della pagina, nessun URL da configurare ---
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Errore HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+function showError(msg) {
+  const banner = $("#error-banner");
+  banner.textContent = msg;
+  banner.classList.remove("hidden");
+  setTimeout(() => banner.classList.add("hidden"), 6000);
+}
+
+// --- Schermata iniziale ---
+async function loadStartScreen() {
+  state.screen = "start";
+  try {
+    state.characters = await api("/characters");
+  } catch (e) {
+    showError(e.message);
+    state.characters = [];
+  }
+  render();
+}
+
+async function selectCharacter(id) {
+  state.characterId = id;
+  await refreshCharacter();
+  state.screen = "game";
+  state.gameTab = "sheet";
+  render();
+}
+
+async function deleteCharacter(id, name) {
+  if (!confirm(`Eliminare definitivamente "${name}"? Non si può annullare.`)) return;
+  try {
+    await api(`/characters/${id}`, { method: "DELETE" });
+    await loadStartScreen();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// --- Creazione personaggio ---
+async function loadCreationScreen() {
+  state.screen = "creation";
+  try {
+    state.armors = await api("/armors?player_level=1");
+  } catch (e) {
+    showError(e.message);
+    state.armors = [];
+  }
+  render();
+}
+
+async function createCharacter(rawName, armorName) {
+  try {
+    const character = await api("/characters", {
+      method: "POST",
+      body: JSON.stringify({ raw_name: rawName, armor_name: armorName, player_level: 1 }),
+    });
+    state.characterId = character.id;
+    state.character = character;
+    state.weeklySchedule = [...character.weekly_schedule_list];
+    state.screen = "game";
+    state.gameTab = "sheet";
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// --- Dati del personaggio corrente ---
+async function refreshCharacter() {
+  state.character = await api(`/characters/${state.characterId}`);
+  state.weeklySchedule = [...state.character.weekly_schedule_list];
+}
+
+// --- Allenamento ---
+async function doTrain(mode) {
+  try {
+    const result = await api(`/characters/${state.characterId}/train`, {
+      method: "POST",
+      body: JSON.stringify({ mode, schedule: state.weeklySchedule }),
+    });
+    state.character = result.character;
+    state.weeklySchedule = [...state.character.weekly_schedule_list];
+    state.log = result.log.map((l) => `${l.day} (${l.focus}): ${l.message}`);
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// --- Arena ---
+async function searchOpponent() {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/opponent`, { method: "POST" });
+    state.battle = result.battle_state;
+    state.log = [`Un rivale si fa avanti: ${state.battle.opponent.name} (${state.battle.opponent.divinity} / ${state.battle.opponent.faction}, livello armatura ${state.battle.opponent.armor_level}).`];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function declareAttack(techniqueName, techniquePower) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/declare`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "attacca",
+        technique_name: techniqueName,
+        technique_power: techniquePower,
+        battle_state: state.battle,
+      }),
+    });
+    applyArenaResult(result);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function declareCharge() {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/declare`, {
+      method: "POST",
+      body: JSON.stringify({ action: "carica", battle_state: state.battle }),
+    });
+    applyArenaResult(result);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function reactToAttack(defend) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/react`, {
+      method: "POST",
+      body: JSON.stringify({ defend, battle_state: state.battle }),
+    });
+    applyArenaResult(result);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function retreat() {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
+    state.character = result.character;
+    state.battle = null;
+    state.log = [...state.log, "Ti ritiri dallo scontro."];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function applyArenaResult(result) {
+  state.character = result.character;
+  state.log = [...state.log, ...result.log];
+  state.battle = result.fight_over ? null : result.battle_state;
+  if (result.fight_over) {
+    state.log.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
+  }
+  render();
+}
+
+// --- Rendering ---
+function render() {
+  const app = $("#app");
+  app.innerHTML = "";
+  if (state.screen === "start") app.append(renderStartScreen());
+  else if (state.screen === "creation") app.append(renderCreationScreen());
+  else if (state.screen === "game") app.append(renderGameScreen());
+}
+
+function renderStartScreen() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "SAINT SEIYA"), el("p", { class: "hint" }, "Sacro Imperio"));
+
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, "Partite salvate"));
+
+  if (state.characters.length === 0) {
+    card.append(el("p", { class: "hint" }, "Nessuna partita salvata."));
+  } else {
+    const table = el("table");
+    table.append(el("tr", {}, el("th", {}, "Nome"), el("th", {}, "Livello"), el("th", {}, "Armatura"), el("th", {}, "")));
+    for (const c of state.characters) {
+      const delBtn = el("button", { class: "secondary", onClick: (e) => { e.stopPropagation(); deleteCharacter(c.id, c.formal_name); } }, "Elimina");
+      const row = el("tr", { class: "selectable", onClick: () => selectCharacter(c.id) },
+        el("td", {}, c.formal_name),
+        el("td", {}, String(c.player_level)),
+        el("td", {}, c.armor_name),
+        el("td", {}, delBtn),
+      );
+      table.append(row);
+    }
+    card.append(table);
+  }
+  wrap.append(card);
+
+  wrap.append(el("button", { onClick: loadCreationScreen }, "+ Nuova Partita"));
+  return wrap;
+}
+
+function renderCreationScreen() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Crea il tuo Cavaliere"));
+
+  const nameCard = el("div", { class: "card" });
+  const nameInput = el("input", { placeholder: "Nome del personaggio (es. Seiya)" });
+  nameCard.append(el("h2", {}, "Nome"), nameInput);
+  wrap.append(nameCard);
+
+  const armorCard = el("div", { class: "card" });
+  armorCard.append(el("h2", {}, `Scegli l'armatura (${state.armors.length} disponibili al livello 1)`));
+  const table = el("table");
+  table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Divinità"), el("th", {}, "Fazione"), el("th", {}, "Livello")));
+  let selectedArmor = null;
+  for (const a of state.armors) {
+    const row = el("tr", { class: "selectable" },
+      el("td", {}, a.name), el("td", {}, a.divinity), el("td", {}, a.faction), el("td", {}, String(a.level)));
+    row.addEventListener("click", () => {
+      table.querySelectorAll("tr.selected").forEach((r) => r.classList.remove("selected"));
+      row.classList.add("selected");
+      selectedArmor = a.name;
+    });
+    table.append(row);
+  }
+  armorCard.append(table);
+  wrap.append(armorCard);
+
+  const createBtn = el("button", {
+    onClick: () => {
+      const name = nameInput.value.trim();
+      if (!name) return showError("Inserisci un nome per il personaggio.");
+      if (!selectedArmor) return showError("Seleziona un'armatura dalla tabella.");
+      createCharacter(name, selectedArmor);
+    },
+  }, "Crea e Seleziona");
+  wrap.append(createBtn);
+  wrap.append(el("button", { class: "secondary", onClick: loadStartScreen }, "Annulla"));
+  return wrap;
+}
+
+function renderGameScreen() {
+  const wrap = el("div");
+  const k = state.character;
+
+  // --- Barra di stato, sempre visibile ---
+  const statusBar = el("div", { class: "status-bar" });
+  statusBar.append(el("span", { class: "calendar" }, "📅 " + k.calendar.label));
+  statusBar.append(renderMiniBar("Cosmo", k.cosmo_cur, k.cosmo_max, "cosmo"));
+  statusBar.append(renderMiniBar("Stamina", k.stamina, 100, "stamina"));
+  wrap.append(statusBar);
+
+  // --- Tabs ---
+  const tabs = el("div", { class: "tabs" });
+  const tabDefs = [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"]];
+  for (const [key, label] of tabDefs) {
+    tabs.append(el("button", {
+      class: "tab-btn" + (state.gameTab === key ? " active" : ""),
+      onClick: () => { state.gameTab = key; render(); },
+    }, label));
+  }
+  wrap.append(tabs);
+
+  if (state.gameTab === "sheet") wrap.append(renderSheetTab());
+  else if (state.gameTab === "training") wrap.append(renderTrainingTab());
+  else if (state.gameTab === "arena") wrap.append(renderArenaTab());
+
+  wrap.append(el("button", { class: "secondary", onClick: () => { state.battle = null; loadStartScreen(); } }, "◄ Torna al Santuario"));
+  return wrap;
+}
+
+function renderMiniBar(label, value, max, kind) {
+  const wrap = el("div", { class: "mini-bar" });
+  const barWrap = el("div", { class: "bar-wrap" });
+  const pct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
+  const fill = el("div", { class: "bar-fill" + (kind === "stamina" ? " stamina" : ""), style: `width:${pct}%` });
+  barWrap.append(fill, el("div", { class: "bar-label" }, `${label}: ${value}/${max}`));
+  wrap.append(barWrap);
+  return wrap;
+}
+
+function renderSheetTab() {
+  const k = state.character;
+  const wrap = el("div");
+  wrap.append(el("h1", {}, k.formal_name));
+  wrap.append(el("p", { class: "hint" }, `${k.armor.divinity} · ${k.armor.faction} · Livello armatura ${k.armor.level}`));
+
+  const statsCard = el("div", { class: "card" });
+  statsCard.append(el("h2", {}, "Statistiche"));
+  const grid = el("div", { class: "stats-grid" });
+  for (const [label, val] of [["FORZA", k.str], ["DESTREZZA", k.dex], ["COSTITUZIONE", k.con], ["TECNICA", k.tec], ["VOLONTÀ", k.vol]]) {
+    grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
+  }
+  statsCard.append(grid);
+  wrap.append(statsCard);
+
+  const progCard = el("div", { class: "card" });
+  progCard.append(el("h2", {}, "Progressione"));
+  progCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp} · Età ${k.age} anni`));
+  const senses = k.senses;
+  const mark = (b) => (b ? "✓" : "✗");
+  progCard.append(el("p", { class: "hint" },
+    `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
+  wrap.append(progCard);
+
+  const techCard = el("div", { class: "card" });
+  techCard.append(el("h2", {}, "Tecniche dell'armatura"));
+  for (const t of k.techniques) {
+    techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+  }
+  wrap.append(techCard);
+
+  return wrap;
+}
+
+function renderTrainingTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Centro Allenamento"));
+
+  const focusOptions = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
+                         "Cascata del Sacrificio", "Sparring con i Compagni", "Riposo"];
+  const dayNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
+  const scheduleCard = el("div", { class: "card" });
+  scheduleCard.append(el("h2", {}, "Programma settimanale"));
+  const row = el("div", { class: "row" });
+  state.weeklySchedule.forEach((focus, i) => {
+    const select = el("select", {});
+    for (const opt of focusOptions) {
+      const optionEl = el("option", { value: opt }, opt);
+      if (opt === focus) optionEl.setAttribute("selected", "selected");
+      select.append(optionEl);
+    }
+    select.addEventListener("change", (e) => { state.weeklySchedule[i] = e.target.value; });
+    const col = el("div", {}, el("div", { class: "hint" }, dayNames[i]), select);
+    row.append(col);
+  });
+  scheduleCard.append(row);
+
+  const btnRow = el("div", { class: "row" });
+  btnRow.append(el("button", { onClick: () => doTrain("settimana") }, "▶ Avanza Settimana"));
+  btnRow.append(el("button", { class: "secondary", onClick: () => doTrain("mese") }, "▶▶ Avanza Mese"));
+  scheduleCard.append(btnRow);
+  wrap.append(scheduleCard);
+
+  const logCard = el("div", { class: "card" });
+  logCard.append(el("h2", {}, "Ultimo avanzamento"));
+  const logBox = el("div", { class: "log-box" });
+  if (state.log.length === 0) logBox.append(el("p", { class: "hint" }, "I risultati appariranno qui."));
+  for (const line of state.log) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  logCard.append(logBox);
+  wrap.append(logCard);
+
+  return wrap;
+}
+
+function renderArenaTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Arena del Santuario"));
+
+  const fightersCard = el("div", { class: "card" });
+  fightersCard.append(el("h2", {}, "Combattenti"));
+  fightersCard.append(el("div", { class: "hint" }, "Tu"));
+  fightersCard.append(renderFullBar(state.character.cosmo_cur, state.character.cosmo_max));
+  if (state.battle) {
+    const o = state.battle.opponent;
+    fightersCard.append(el("div", { class: "hint" }, `${o.name} (${o.divinity} / ${o.faction})`));
+    fightersCard.append(renderFullBar(o.cosmo_cur, o.cosmo_max));
+  } else {
+    fightersCard.append(el("div", { class: "hint" }, "Nessun avversario"));
+  }
+  wrap.append(fightersCard);
+
+  const actionsCard = el("div", { class: "card" });
+  actionsCard.append(el("h2", {}, "Le tue azioni"));
+
+  if (!state.battle) {
+    actionsCard.append(el("button", { onClick: searchOpponent }, "🗡 Cerca un Avversario"));
+  } else if (state.battle.pending_opponent_technique) {
+    const t = state.battle.pending_opponent_technique;
+    actionsCard.append(el("h2", {}, `⚔ ${state.battle.opponent.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
+    actionsCard.append(el("button", { onClick: () => reactToAttack(true) }, "🛡 Difenditi"));
+    actionsCard.append(el("button", { class: "secondary", onClick: () => reactToAttack(false) }, "😤 Incassa il colpo"));
+  } else {
+    const senses = state.character.senses;
+    const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
+      state.character.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"))
+    );
+    for (const t of attackOptions) {
+      actionsCard.append(el("button", { onClick: () => declareAttack(t.name, t.power) }, `⚔ ${t.name} (potenza ${t.power})`));
+    }
+    actionsCard.append(el("button", {
+      onClick: declareCharge,
+      class: "secondary",
+      ...(senses.sesto ? {} : { disabled: "disabled" }),
+    }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica il Cosmo (richiede Sesto Senso)"));
+    actionsCard.append(el("button", { class: "secondary", onClick: retreat }, "Ritirati"));
+  }
+  wrap.append(actionsCard);
+
+  const logCard = el("div", { class: "card" });
+  logCard.append(el("h2", {}, "Cronaca dello scontro"));
+  const logBox = el("div", { class: "log-box" });
+  if (state.log.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
+  for (const line of state.log) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  logCard.append(logBox);
+  wrap.append(logCard);
+
+  return wrap;
+}
+
+function renderFullBar(value, max) {
+  const barWrap = el("div", { class: "bar-wrap" });
+  const pct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
+  barWrap.append(el("div", { class: "bar-fill", style: `width:${pct}%` }));
+  barWrap.append(el("div", { class: "bar-label" }, `Cosmo: ${value} / ${max}`));
+  return barWrap;
+}
+
+// --- Avvio ---
+loadStartScreen();
+</script>
+</body>
+</html>
