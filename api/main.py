@@ -225,15 +225,16 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
 # --------------------------- Arena ---------------------------
 
 @app.post("/characters/{knight_id}/arena/opponent")
-def api_arena_new_opponent(knight_id: int, conn=Depends(get_db)):
-    """Genera un nuovo avversario. Il battle_state restituito va
-    conservato dal chiamante (es. nello stato della pagina web) e
-    rimandato indietro ad ogni chiamata successiva - il server non lo
-    ricorda tra una richiesta e l'altra."""
+def api_arena_new_opponent(knight_id: int, difficulty: str = "medio", conn=Depends(get_db)):
+    """Genera un nuovo avversario. difficulty: 'facile' | 'medio' |
+    'difficile' - sposta il livello dell'avversario cercato rispetto al
+    tuo. Il battle_state restituito va conservato dal chiamante (es.
+    nello stato della pagina web) e rimandato indietro ad ogni chiamata
+    successiva - il server non lo ricorda tra una richiesta e l'altra."""
     knight = _get_knight_or_404(conn, knight_id)
     armor = get_armor(knight["armor_name"], conn)
 
-    battle_state = start_battle(conn, knight, armor)
+    battle_state = start_battle(conn, knight, armor, difficulty=difficulty)
     return {"battle_state": battle_state}
 
 
