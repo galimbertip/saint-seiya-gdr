@@ -23,6 +23,7 @@ from core.arena_manager import (
     generate_opponent, generate_opponent_candidates, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
+    status_resisted,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
 )
@@ -167,8 +168,8 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
 
         if action == "attacca":
             dmg, msg = resolve_turn(
-                knight["raw_name"], knight["str"], armor["level"],
-                opponent["name"], opponent["dex"], opponent["armor_level"],
+                knight["raw_name"], knight["str"], knight["tec"], armor["level"],
+                opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
                 technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
             )
             dmg = apply_charge(dmg, True, battle_state)
@@ -190,8 +191,11 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
 
                 status = maybe_apply_status(technique_type, technique_power)
                 if status:
-                    battle_state.setdefault("opponent_statuses", []).append(status)
-                    log.append(status_applied_message(opponent["name"], technique_name, status))
+                    if status_resisted(opponent["vol"]):
+                        log.append(f"💪 {opponent['name']} resiste all'effetto con la sua Volontà!")
+                    else:
+                        battle_state.setdefault("opponent_statuses", []).append(status)
+                        log.append(status_applied_message(opponent["name"], technique_name, status))
         else:  # carica
             knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
             battle_state["player_charge_multiplier"] = max(
@@ -263,8 +267,8 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
             return log, True, winner
 
     dmg2, msg2 = resolve_turn(
-        opponent["name"], opponent["str"], opponent["armor_level"],
-        knight["raw_name"], knight["dex"], armor["level"], t["name"], t["power"],
+        opponent["name"], opponent["str"], opponent["tec"], opponent["armor_level"],
+        knight["raw_name"], knight["dex"], knight["con"], armor["level"], t["name"], t["power"],
         roll_mode=roll_mode, cause_phrase=cause_phrase,
     )
     dmg2 = apply_charge(dmg2, False, battle_state)
@@ -286,8 +290,11 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
     if dmg2 > 0:
         status = maybe_apply_status(t.get("tech_type", ""), t["power"])
         if status:
-            battle_state.setdefault("player_statuses", []).append(status)
-            log.append(status_applied_message(knight["raw_name"], t["name"], status))
+            if status_resisted(knight["vol"]):
+                log.append(f"💪 {knight['raw_name']} resiste all'effetto con la sua Volontà!")
+            else:
+                battle_state.setdefault("player_statuses", []).append(status)
+                log.append(status_applied_message(knight["raw_name"], t["name"], status))
 
     check_eighth_sense(knight, battle_state, log)
     check_seventh_sense(knight, battle_state, log)
