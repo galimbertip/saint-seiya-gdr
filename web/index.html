@@ -355,6 +355,24 @@ async function challengeOpponent(opponent) {
   }
 }
 
+// Fase 1 della mappa 2D: lo spostamento è ancora solo visivo, non
+// blocca né abilita nessuna azione di combattimento - vedi
+// api/arena_session.py per i dettagli.
+async function movePlayerTo(x, y) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/move`, {
+      method: "POST",
+      body: JSON.stringify({ x, y, battle_state: state.battle }),
+    });
+    state.character = result.character;
+    state.battle = result.battle_state;
+    state.arenaLog = [...state.arenaLog, ...result.log];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 async function declareAttack(techniqueName, techniquePower, techniqueType) {
   try {
     const result = await api(`/characters/${state.characterId}/arena/declare`, {
@@ -582,6 +600,7 @@ function renderSheetTab() {
   for (const [label, val] of [["FORZA", k.str], ["DESTREZZA", k.dex], ["COSTITUZIONE", k.con], ["TECNICA", k.tec], ["VOLONTÀ", k.vol]]) {
     grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
   }
+  grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(k.movement_points)), el("div", { class: "label" }, "MOVIMENTO")));
   statsCard.append(grid);
   wrap.append(statsCard);
 
@@ -687,6 +706,17 @@ function renderArenaTab() {
   }
   wrap.append(fightersCard);
 
+  if (state.battle) {
+    const mapCard = el("div", { class: "card" });
+    mapCard.append(el("h2", {}, "Arena"));
+    mapCard.append(renderArenaMap());
+    const movementHint = state.battle.pending_opponent_technique
+      ? "Rispondi all'attacco prima di poterti muovere ancora."
+      : `Punti Movimento: ${state.character.movement_points} — clicca sulla mappa per spostarti.`;
+    mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
+    wrap.append(mapCard);
+  }
+
   const actionsCard = el("div", { class: "card" });
   actionsCard.append(el("h2", {}, "Le tue azioni"));
 
@@ -750,6 +780,74 @@ function renderFullBar(value, max, scaleMax) {
   barWrap.append(el("div", { class: "bar-label" }, `Cosmo: ${value} / ${max}`));
   outer.append(barWrap);
   return outer;
+}
+
+// Mappa 2D dell'Arena, Fase 1: griglia 10x10 come "righello", movimento
+// libero/continuo (non a caselle - deciso in chat, stile Football
+// Manager). Un canvas quadrato, i due combattenti come pallini
+// colorati. Cliccare/toccare sposta il giocatore verso quel punto,
+// entro i Punti Movimento disponibili - se troppo lontano, ci si ferma
+// al massimo raggiungibile invece di rifiutare il click. La distanza
+// non blocca ancora nulla nel combattimento (Fase 1: solo visiva).
+function renderArenaMap() {
+  const SIZE = 340;
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = `${SIZE}px`;
+  canvas.style.display = "block";
+  canvas.style.margin = "0 auto";
+  canvas.style.background = "#0B0F1A";
+  canvas.style.border = "1px solid var(--border)";
+  canvas.style.borderRadius = "8px";
+
+  const ctx = canvas.getContext("2d");
+  const scale = SIZE / 10; // la griglia va da 0 a 10 in entrambi gli assi
+
+  // Sfondo a griglia leggera, solo come riferimento visivo.
+  ctx.strokeStyle = "#1B2438";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * scale, 0);
+    ctx.lineTo(i * scale, SIZE);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * scale);
+    ctx.lineTo(SIZE, i * scale);
+    ctx.stroke();
+  }
+
+  const battle = state.battle;
+  const canMove = battle && !battle.pending_opponent_technique;
+
+  if (battle) {
+    const drawFighter = (pos, color, label) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(pos.x * scale, pos.y * scale, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#EAE6DA";
+      ctx.font = "11px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(label, pos.x * scale, pos.y * scale - 16);
+    };
+    drawFighter(battle.opponent_position, "#C0392B", battle.opponent.name.split(" ").slice(-1)[0]);
+    drawFighter(battle.player_position, "#3FA9F5", "Tu");
+  }
+
+  canvas.style.cursor = canMove ? "crosshair" : "default";
+  if (canMove) {
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const gridX = ((e.clientX - rect.left) / rect.width) * 10;
+      const gridY = ((e.clientY - rect.top) / rect.height) * 10;
+      movePlayerTo(gridX, gridY);
+    });
+  }
+
+  return canvas;
 }
 
 // --- Avvio ---
