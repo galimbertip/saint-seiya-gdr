@@ -365,6 +365,13 @@ function render() {
   if (state.screen === "start") app.append(renderStartScreen());
   else if (state.screen === "creation") app.append(renderCreationScreen());
   else if (state.screen === "game") app.append(renderGameScreen());
+
+  // Ogni render ricostruisce la pagina da zero, quindi la cronaca
+  // perdeva sempre lo scorrimento e tornava a mostrare i messaggi più
+  // vecchi (segnalato in chat) - la riportiamo in fondo, dove sta
+  // l'ultimo messaggio appena aggiunto.
+  const logBox = document.querySelector(".log-box");
+  if (logBox) logBox.scrollTop = logBox.scrollHeight;
 }
 
 function renderStartScreen() {
