@@ -98,6 +98,7 @@ class ArenaDeclareRequest(BaseModel):
     action: Literal["attacca", "carica"]
     technique_name: Optional[str] = None
     technique_power: Optional[int] = None
+    technique_type: Optional[str] = None
     battle_state: dict
 
 
@@ -248,7 +249,8 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
         raise HTTPException(status_code=400, detail="Serve una tecnica (nome e potenza) per attaccare")
 
     log, fight_over, winner = resolve_declare(
-        knight, armor, req.action, req.technique_name, req.technique_power, req.battle_state
+        knight, armor, req.action, req.technique_name, req.technique_power, req.battle_state,
+        technique_type=req.technique_type,
     )
 
     if fight_over:
