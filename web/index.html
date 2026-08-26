@@ -296,7 +296,7 @@ async function searchOpponent(difficulty) {
   }
 }
 
-async function declareAttack(techniqueName, techniquePower) {
+async function declareAttack(techniqueName, techniquePower, techniqueType) {
   try {
     const result = await api(`/characters/${state.characterId}/arena/declare`, {
       method: "POST",
@@ -304,6 +304,7 @@ async function declareAttack(techniqueName, techniquePower) {
         action: "attacca",
         technique_name: techniqueName,
         technique_power: techniquePower,
+        technique_type: techniqueType || null,
         battle_state: state.battle,
       }),
     });
@@ -631,7 +632,7 @@ function renderArenaTab() {
       state.character.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"))
     );
     for (const t of attackOptions) {
-      actionsCard.append(el("button", { onClick: () => declareAttack(t.name, t.power) }, `⚔ ${t.name} (potenza ${t.power})`));
+      actionsCard.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type) }, `⚔ ${t.name} (potenza ${t.power})`));
     }
     actionsCard.append(el("button", {
       onClick: declareCharge,
