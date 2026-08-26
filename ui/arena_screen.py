@@ -290,7 +290,7 @@ class ArenaScreen(QWidget):
         if self.knight is None or self.armor is None:
             return
 
-        self.opponent = generate_opponent(self.conn, self.armor["level"], exclude_armor_name=self.armor["name"])
+        self.opponent = generate_opponent(self.conn, self.armor["level"], exclude_armor_names={self.armor["name"]})
         self._player_charge_multiplier = 1.0
         self._opponent_charge_multiplier = 1.0
         self._seventh_sense_used = False
