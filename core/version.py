@@ -10,7 +10,7 @@ Il changelog qui sotto è la cronologia delle versioni concordate in chat.
 Si aggiorna insieme al codice, non a posteriori.
 """
 
-APP_VERSION = "PG_V2.1.0"
+APP_VERSION = "PG_V2.2.0"
 
 CHANGELOG = [
     {
@@ -207,5 +207,26 @@ CHANGELOG = [
                 "combattenti (chi ha più Cosmo massimo ha la barra fisicamente più lunga, non "
                 "più solo la percentuale) - segnalato in chat: con Cosmo massimo diverso ma "
                 "percentuali vicine, le barre sembravano identiche.",
+    },
+    {
+        "version": "PG_V2.2.0",
+        "desc": "BILANCIAMENTO DEL DANNO, il pezzo mai affrontato sul serio da quando esiste "
+                "l'Arena. Diagnosi in chat: la Classe Armatura del difensore cresceva con DUE "
+                "ingredienti (Destrezza + livello armatura), il tiro per colpire con UNO solo "
+                "(Forza) - nessuna simmetria. Ora resolve_attack aggiunge il livello armatura "
+                "ANCHE all'attaccante, stessa scala della CA. Formula del danno alzata da "
+                "potenza/10 a potenza/6 (un colpo medio passa da ~6 a ~10 danni). Misurato "
+                "prima/dopo: colpire un pari livello 35%→56%, colpire uno più forte 15%→35%, "
+                "lunghezza tipica di uno scontro 30-60+ round→10-24 round, vittorie contro "
+                "Facile/Difficile 95%/25% (mai misurato prima). Rimossa DnDEngine.use_technique, "
+                "codice morto da tempo (l'orchestrazione vera vive in arena_manager.resolve_turn).\n"
+                "STATISTICHE: Costituzione, Tecnica e Volontà non contavano letteralmente nulla "
+                "in combattimento (solo Forza e Destrezza venivano usate) - segnalato in chat. "
+                "Ora: Costituzione del difensore riduce il danno subito; Tecnica dell'attaccante "
+                "aumenta il danno inflitto; Volontà dà un tiro salvezza per resistere del tutto "
+                "a Veleno/Paralisi (nuovo DnDEngine.resolve_saving_throw, generico, riusabile per "
+                "future resistenze). Gli avversari generati in Arena ora hanno anche Costituzione/"
+                "Tecnica/Volontà (prima solo Forza/Destrezza), scalate come le altre col livello "
+                "armatura.",
     },
 ]
