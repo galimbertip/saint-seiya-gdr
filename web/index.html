@@ -621,11 +621,18 @@ function renderArenaTab() {
   const fightersCard = el("div", { class: "card" });
   fightersCard.append(el("h2", {}, "Combattenti"));
   fightersCard.append(el("div", { class: "hint" }, "Tu"));
-  fightersCard.append(renderFullBar(state.character.cosmo_cur, state.character.cosmo_max));
+  // Scala condivisa: chi ha più Cosmo massimo ha la barra fisicamente
+  // più "grossa", non solo la percentuale - deciso in chat, prima le
+  // due barre avevano sempre la stessa lunghezza anche con Cosmo
+  // massimo molto diverso tra i due combattenti.
+  const sharedMaxCosmo = state.battle
+    ? Math.max(state.character.cosmo_max, state.battle.opponent.cosmo_max)
+    : state.character.cosmo_max;
+  fightersCard.append(renderFullBar(state.character.cosmo_cur, state.character.cosmo_max, sharedMaxCosmo));
   if (state.battle) {
     const o = state.battle.opponent;
     fightersCard.append(el("div", { class: "hint" }, `${o.name} (${o.divinity} / ${o.faction})`));
-    fightersCard.append(renderFullBar(o.cosmo_cur, o.cosmo_max));
+    fightersCard.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
   } else {
     fightersCard.append(el("div", { class: "hint" }, "Nessun avversario"));
   }
@@ -672,12 +679,20 @@ function renderArenaTab() {
   return wrap;
 }
 
-function renderFullBar(value, max) {
+function renderFullBar(value, max, scaleMax) {
+  // scaleMax (opzionale): il Cosmo massimo più alto tra i due
+  // combattenti - la CORNICE esterna si restringe in proporzione,
+  // così chi ha meno Cosmo massimo ha una barra fisicamente più
+  // corta, non solo una percentuale diversa dentro una barra identica.
+  const containerPct = scaleMax ? Math.max(15, Math.min(100, (max / scaleMax) * 100)) : 100;
+  const fillPct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
+
+  const outer = el("div", { style: `width:${containerPct}%;` });
   const barWrap = el("div", { class: "bar-wrap" });
-  const pct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
-  barWrap.append(el("div", { class: "bar-fill", style: `width:${pct}%` }));
+  barWrap.append(el("div", { class: "bar-fill", style: `width:${fillPct}%` }));
   barWrap.append(el("div", { class: "bar-label" }, `Cosmo: ${value} / ${max}`));
-  return barWrap;
+  outer.append(barWrap);
+  return outer;
 }
 
 // --- Avvio ---
