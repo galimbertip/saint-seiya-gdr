@@ -46,7 +46,14 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
 
 def apply_charge(damage: int, is_player: bool, battle_state: dict) -> int:
     """Se chi attacca aveva un bonus di carica attivo (Carica normale o
-    Settimo Senso), lo applica e lo consuma."""
+    Settimo Senso), lo applica e lo consuma - MA SOLO se l'attacco è
+    andato a segno. Prima, un colpo mancato consumava comunque la
+    carica senza che servisse a nulla (bug segnalato in chat: 15 di
+    Cosmo spesi per una carica sprecata su una schivata) - ora la
+    carica resta valida finché non centra davvero un colpo."""
+    if damage == 0:
+        return damage  # schivata: la carica NON si consuma, resta per il prossimo tentativo
+
     key = "player_charge_multiplier" if is_player else "opponent_charge_multiplier"
     if battle_state[key] > 1.0:
         multiplier = battle_state[key]
