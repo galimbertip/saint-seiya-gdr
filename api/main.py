@@ -39,7 +39,7 @@ from core.fm_manager import (
 )
 from core.arena_manager import find_defensive_technique, get_unlocked_senses
 from core.version import APP_VERSION
-from api.arena_session import start_battle, resolve_declare, resolve_react, finalize_fight
+from api.arena_session import start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight
 
 app = FastAPI(title="Saint Seiya: Sacro Imperio API", version=APP_VERSION)
 
@@ -93,6 +93,10 @@ class CreateCharacterRequest(BaseModel):
 class TrainRequest(BaseModel):
     mode: Literal["settimana", "mese"]
     schedule: list[str]  # fino a 7 focus, uno per giorno della griglia
+
+
+class ArenaStartBattleRequest(BaseModel):
+    opponent: dict  # uno dei candidati restituiti da GET /arena/candidates
 
 
 class ArenaDeclareRequest(BaseModel):
@@ -226,17 +230,30 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
 
 # --------------------------- Arena ---------------------------
 
+@app.post("/characters/{knight_id}/arena/candidates")
+def api_arena_candidates(knight_id: int, difficulty: str = "medio", conn=Depends(get_db)):
+    """La 'sala d'attesa': genera 5 avversari candidati tra cui
+    scegliere (richiesto in chat), invece di uno solo imposto a caso.
+    Non crea ancora nessuno stato di battaglia - è solo la lista da
+    mostrare; la battaglia vera parte con POST /arena/opponent passando
+    il candidato scelto."""
+    knight = _get_knight_or_404(conn, knight_id)
+    armor = get_armor(knight["armor_name"], conn)
+    candidates = list_opponent_candidates(conn, armor, difficulty=difficulty)
+    return {"candidates": candidates}
+
+
 @app.post("/characters/{knight_id}/arena/opponent")
-def api_arena_new_opponent(knight_id: int, difficulty: str = "medio", conn=Depends(get_db)):
-    """Genera un nuovo avversario. difficulty: 'facile' | 'medio' |
-    'difficile' - sposta il livello dell'avversario cercato rispetto al
-    tuo. Il battle_state restituito va conservato dal chiamante (es.
-    nello stato della pagina web) e rimandato indietro ad ogni chiamata
-    successiva - il server non lo ricorda tra una richiesta e l'altra."""
+def api_arena_new_opponent(knight_id: int, req: ArenaStartBattleRequest, conn=Depends(get_db)):
+    """Avvia la battaglia con l'avversario scelto dalla sala d'attesa
+    (uno dei candidati di POST /arena/candidates). Il battle_state
+    restituito va conservato dal chiamante (es. nello stato della
+    pagina web) e rimandato indietro ad ogni chiamata successiva - il
+    server non lo ricorda tra una richiesta e l'altra."""
     knight = _get_knight_or_404(conn, knight_id)
     armor = get_armor(knight["armor_name"], conn)
 
-    battle_state = start_battle(conn, knight, armor, difficulty=difficulty)
+    battle_state = start_battle(conn, knight, armor, opponent=req.opponent)
     return {"battle_state": battle_state}
 
 
