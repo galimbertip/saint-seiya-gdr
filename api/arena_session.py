@@ -22,7 +22,7 @@ from typing import Optional
 from core.arena_manager import (
     generate_opponent, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
-    format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses,
+    format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
 )
@@ -114,76 +114,99 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     attacca, l'avversario reagisce d'istinto (automatico); poi
     l'avversario dichiara la SUA mossa - se attacca, il round si ferma
     qui (pending_opponent_technique impostato) e aspetta resolve_react.
+    Se il giocatore o l'avversario sono paralizzati (Pietrificazione/
+    Intrappolamento), quel lato salta la propria azione per un round -
+    il tempo passa comunque, il round prosegue normalmente.
     Muta `knight` e `battle_state` in place.
     Restituisce (log, fight_over, winner)."""
     opponent = battle_state["opponent"]
     log: list[str] = []
 
-    # Stati attivi (Veleno) sul giocatore: si applicano a inizio del suo turno.
-    log.extend(tick_statuses(knight["raw_name"], knight, battle_state.setdefault("player_statuses", [])))
+    # Stati attivi (Veleno/Paralisi) sul giocatore: si applicano a inizio del suo turno.
+    status_msgs, player_blocked = tick_statuses(
+        knight["raw_name"], knight, battle_state.setdefault("player_statuses", [])
+    )
+    log.extend(status_msgs)
     fight_over, winner = check_fight_over(knight, opponent)
     if fight_over:
         return log, True, winner
 
-    # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
-    roll_mode = "normale"
-    cause_phrase = None
-    event = maybe_trigger_event(knight, opponent)
-    if event:
-        log.append(event["message"])
-        roll_mode = event["roll_mode"]
-        cause_phrase = event.get("cause_phrase")
+    if player_blocked:
+        log.append(f"{knight['raw_name']} non riesce ad agire questo turno!")
+        aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
+        if aging_msg:
+            log.append(aging_msg)
+        fight_over, winner = check_fight_over(knight, opponent)
+        if fight_over:
+            return log, True, winner
+    else:
+        # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
+        roll_mode = "normale"
+        cause_phrase = None
+        event = maybe_trigger_event(knight, opponent)
+        if event:
+            log.append(event["message"])
+            roll_mode = event["roll_mode"]
+            cause_phrase = event.get("cause_phrase")
+            fight_over, winner = check_fight_over(knight, opponent)
+            if fight_over:
+                return log, True, winner
+
+        if action == "attacca":
+            dmg, msg = resolve_turn(
+                knight["raw_name"], knight["str"], armor["level"],
+                opponent["name"], opponent["dex"], opponent["armor_level"],
+                technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
+            )
+            dmg = apply_charge(dmg, True, battle_state)
+            msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
+
+            if dmg == 0:
+                # Schivata vera (il tiro per colpire ha già fallito): niente
+                # da difendere, la reazione dell'avversario non ha senso.
+                log.append(msg)
+            else:
+                defense = opponent_reacts(opponent)
+                if defense:
+                    reduced = resolve_defense(dmg, defense["power"])
+                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
+                    log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
+                else:
+                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
+                    log.append(msg)
+
+                status = maybe_apply_status(technique_type, technique_power)
+                if status:
+                    battle_state.setdefault("opponent_statuses", []).append(status)
+                    log.append(status_applied_message(opponent["name"], technique_name, status))
+        else:  # carica
+            knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
+            battle_state["player_charge_multiplier"] = max(
+                battle_state["player_charge_multiplier"], CHARGE_DAMAGE_MULTIPLIER
+            )
+            log.append(f"{knight['raw_name']} carica il Cosmo, pronto a colpire più forte.")
+
+        aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
+        if aging_msg:
+            log.append(aging_msg)
+
         fight_over, winner = check_fight_over(knight, opponent)
         if fight_over:
             return log, True, winner
 
-    if action == "attacca":
-        dmg, msg = resolve_turn(
-            knight["raw_name"], knight["str"], armor["level"],
-            opponent["name"], opponent["dex"], opponent["armor_level"],
-            technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
-        )
-        dmg = apply_charge(dmg, True, battle_state)
-        msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
-
-        if dmg == 0:
-            # Schivata vera (il tiro per colpire ha già fallito): niente
-            # da difendere, la reazione dell'avversario non ha senso.
-            log.append(msg)
-        else:
-            defense = opponent_reacts(opponent)
-            if defense:
-                reduced = resolve_defense(dmg, defense["power"])
-                opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
-                log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
-            else:
-                opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
-                log.append(msg)
-
-            status = maybe_apply_status(technique_type, technique_power)
-            if status:
-                battle_state.setdefault("opponent_statuses", []).append(status)
-                log.append(f"⚠️ {opponent['name']} è avvelenato da {technique_name}!")
-    else:  # carica
-        knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
-        battle_state["player_charge_multiplier"] = max(
-            battle_state["player_charge_multiplier"], CHARGE_DAMAGE_MULTIPLIER
-        )
-        log.append(f"{knight['raw_name']} carica il Cosmo, pronto a colpire più forte.")
-
-    aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
-    if aging_msg:
-        log.append(aging_msg)
-
+    # Stati attivi (Veleno/Paralisi) sull'avversario: si applicano a inizio del SUO turno.
+    opp_status_msgs, opponent_blocked = tick_statuses(
+        opponent["name"], opponent, battle_state.setdefault("opponent_statuses", [])
+    )
+    log.extend(opp_status_msgs)
     fight_over, winner = check_fight_over(knight, opponent)
     if fight_over:
         return log, True, winner
 
-    # Stati attivi (Veleno) sull'avversario: si applicano a inizio del SUO turno.
-    log.extend(tick_statuses(opponent["name"], opponent, battle_state.setdefault("opponent_statuses", [])))
-    fight_over, winner = check_fight_over(knight, opponent)
-    if fight_over:
-        return log, True, winner
+    if opponent_blocked:
+        log.append(f"{opponent['name']} non riesce ad agire questo turno!")
+        battle_state["pending_opponent_technique"] = None
+        return log, False, None
 
     opp_action, detail = choose_opponent_action(opponent)
     if opp_action == "carica":
@@ -251,7 +274,7 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         status = maybe_apply_status(t.get("tech_type", ""), t["power"])
         if status:
             battle_state.setdefault("player_statuses", []).append(status)
-            log.append(f"⚠️ {knight['raw_name']} è avvelenato da {t['name']}!")
+            log.append(status_applied_message(knight["raw_name"], t["name"], status))
 
     check_eighth_sense(knight, battle_state, log)
     check_seventh_sense(knight, battle_state, log)
