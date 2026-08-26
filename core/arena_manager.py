@@ -135,13 +135,15 @@ def format_damage_message(msg: str, actual_damage: int) -> str:
     return msg[:idx] + f"{marker}{actual_damage}"
 
 
-def choose_opponent_technique(opponent: dict) -> tuple[str, int]:
+def choose_opponent_technique(opponent: dict) -> tuple[str, int, str]:
     """Sceglie una tecnica a caso tra quelle dell'avversario, o l'Attacco
-    Base se non ne ha nessuna. Restituisce (nome, potenza)."""
+    Base se non ne ha nessuna. Restituisce (nome, potenza, tech_type) -
+    il tech_type serve a maybe_apply_status per riconoscere le tecniche
+    che lasciano un effetto (Veleno, per ora)."""
     if opponent["techniques"]:
         t = random.choice(opponent["techniques"])
-        return t["name"], t["power"]
-    return "Attacco Base", BASE_ATTACK_POWER
+        return t["name"], t["power"], t.get("tech_type", "")
+    return "Attacco Base", BASE_ATTACK_POWER, ""
 
 
 # --- Sensi del Cosmo ------------------------------------------------------
@@ -203,8 +205,8 @@ def choose_opponent_action(opponent: dict) -> tuple[str, dict | None]:
     action = random.choices(["attacca", "carica"], weights=[0.8, 0.2])[0]
 
     if action == "attacca":
-        name, power = choose_opponent_technique(opponent)
-        return "attacca", {"name": name, "power": power}
+        name, power, tech_type = choose_opponent_technique(opponent)
+        return "attacca", {"name": name, "power": power, "tech_type": tech_type}
     return "carica", None
 
 
@@ -276,3 +278,57 @@ def maybe_trigger_event(knight: dict, opponent: dict) -> dict | None:
         "message": f"🎲 IMPREVISTO: {event['name']}!",
         "roll_mode": event["effect"],  # 'vantaggio' o 'svantaggio' per il prossimo tiro
     }
+
+
+# --- Imprevisti Fase 2 (V1: solo Veleno) -----------------------------------
+# Il catalogo ha diversi tipi di tecnica oltre a quelle offensive pure
+# (Veleno, Intrappolamento, Pietrificazione, Autocura - isolati la
+# prima volta quando abbiamo controllato le tecniche difensive). Qui
+# facciamo funzionare DAVVERO il Veleno: non è più solo un nome nel
+# catalogo, lascia un effetto che dura ROUNDS_LEFT round.
+#
+# Pietrificazione/Intrappolamento (che bloccherebbero un turno intero)
+# restano FUORI da questa prima fase apposta: toccano il flusso dei
+# turni (chi dichiara, chi reagisce) in un modo che merita più
+# attenzione - li affrontiamo a parte quando il Veleno è collaudato.
+STATUS_RULES = {"veleno": {"kind": "veleno", "duration": 3}}
+
+
+def maybe_apply_status(tech_type: str, technique_power: int) -> dict | None:
+    """Se la tecnica appena andata a segno è di un tipo che conosciamo
+    (per ora solo Veleno), restituisce lo stato da aggiungere al
+    bersaglio. None per una tecnica 'normale' o per l'Attacco Base
+    (che non ha nessun tech_type)."""
+    tech_type_lower = (tech_type or "").lower()
+    for keyword, rule in STATUS_RULES.items():
+        if keyword in tech_type_lower:
+            return {
+                "kind": rule["kind"],
+                "rounds_left": rule["duration"],
+                "damage_per_round": max(1, technique_power // 20),
+            }
+    return None
+
+
+def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> list[str]:
+    """Applica il danno degli stati ATTIVI su `fighter` a inizio del suo
+    turno, poi fa scadere di un round chi è arrivato a zero. Muta
+    `statuses` in place (rimuove quelli scaduti quando la lista viene
+    ricostruita dal chiamante). Restituisce i messaggi di log."""
+    messages = []
+    still_active = []
+
+    for status in statuses:
+        if status["kind"] == "veleno":
+            dmg = status["damage_per_round"]
+            fighter["cosmo_cur"] = max(0, fighter["cosmo_cur"] - dmg)
+            messages.append(f"☠️ {fighter_name} soffre per il Veleno! -{dmg} Cosmo.")
+
+        status["rounds_left"] -= 1
+        if status["rounds_left"] > 0:
+            still_active.append(status)
+        else:
+            messages.append(f"L'effetto Veleno su {fighter_name} è svanito.")
+
+    statuses[:] = still_active
+    return messages
