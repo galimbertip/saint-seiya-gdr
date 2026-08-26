@@ -179,7 +179,8 @@ const state = {
   armors: [],
   weeklySchedule: [],
   battle: null,             // battle_state, o null fuori combattimento
-  log: [],
+  trainingLog: [],
+  arenaLog: [],
 };
 
 // --- Chiamate API: stesso indirizzo della pagina, nessun URL da configurare ---
@@ -276,7 +277,7 @@ async function doTrain(mode) {
     });
     state.character = result.character;
     state.weeklySchedule = [...state.character.weekly_schedule_list];
-    state.log = result.log.map((l) => `${l.day} (${l.focus}): ${l.message}`);
+    state.trainingLog = result.log.map((l) => `${l.day} (${l.focus}): ${l.message}`);
     render();
   } catch (e) {
     showError(e.message);
@@ -288,7 +289,7 @@ async function searchOpponent(difficulty) {
   try {
     const result = await api(`/characters/${state.characterId}/arena/opponent?difficulty=${difficulty}`, { method: "POST" });
     state.battle = result.battle_state;
-    state.log = [`Un rivale si fa avanti: ${state.battle.opponent.name} (${state.battle.opponent.divinity} / ${state.battle.opponent.faction}, livello armatura ${state.battle.opponent.armor_level}).`];
+    state.arenaLog = [`Un rivale si fa avanti: ${state.battle.opponent.name} (${state.battle.opponent.divinity} / ${state.battle.opponent.faction}, livello armatura ${state.battle.opponent.armor_level}).`];
     render();
   } catch (e) {
     showError(e.message);
@@ -341,19 +342,36 @@ async function retreat() {
     const result = await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
     state.character = result.character;
     state.battle = null;
-    state.log = [...state.log, "Ti ritiri dallo scontro."];
+    state.arenaLog = [...state.arenaLog, "Ti ritiri dallo scontro."];
     render();
   } catch (e) {
     showError(e.message);
   }
 }
 
+// Chiamata dal pulsante "Torna al Santuario": se si esce mentre un
+// combattimento è ancora aperto, ci si ritira PRIMA di lasciare la
+// schermata di gioco - altrimenti il Cosmo restava bloccato basso per
+// sempre (bug segnalato in chat: l'unica cosa che lo ricarica è finire
+// uno scontro per davvero, vincendo, perdendo o ritirandosi).
+async function goToSanctuary() {
+  if (state.battle) {
+    try {
+      await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+  state.battle = null;
+  await loadStartScreen();
+}
+
 function applyArenaResult(result) {
   state.character = result.character;
-  state.log = [...state.log, ...result.log];
+  state.arenaLog = [...state.arenaLog, ...result.log];
   state.battle = result.fight_over ? null : result.battle_state;
   if (result.fight_over) {
-    state.log.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
+    state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
   }
   render();
 }
@@ -470,7 +488,7 @@ function renderGameScreen() {
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
 
-  wrap.append(el("button", { class: "secondary", onClick: () => { state.battle = null; loadStartScreen(); } }, "◄ Torna al Santuario"));
+  wrap.append(el("button", { class: "secondary", onClick: goToSanctuary }, "◄ Torna al Santuario"));
   return wrap;
 }
 
@@ -525,6 +543,24 @@ function renderTrainingTab() {
   const focusOptions = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
                          "Cascata del Sacrificio", "Sparring con i Compagni", "Riposo"];
   const dayNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+  const focusLegend = {
+    "Cosmo": "aumenta il Cosmo massimo",
+    "Forza": "aumenta Forza",
+    "Destrezza": "aumenta Destrezza",
+    "Costituzione": "aumenta Costituzione",
+    "Tecnica": "aumenta Tecnica",
+    "Volontà": "aumenta Volontà",
+    "Cascata del Sacrificio": "aumenta Costituzione (allenamento duro: costa più Stamina)",
+    "Sparring con i Compagni": "aumenta Forza, Destrezza o Costituzione a caso (rischio infortunio più alto)",
+    "Riposo": "recupera Stamina, nessuna crescita",
+  };
+
+  const legendCard = el("div", { class: "card" });
+  legendCard.append(el("h2", {}, "Cosa allena ogni voce"));
+  for (const [focus, desc] of Object.entries(focusLegend)) {
+    legendCard.append(el("p", { class: "hint" }, `${focus}: ${desc}`));
+  }
+  wrap.append(legendCard);
 
   const scheduleCard = el("div", { class: "card" });
   scheduleCard.append(el("h2", {}, "Programma settimanale"));
@@ -551,8 +587,8 @@ function renderTrainingTab() {
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Ultimo avanzamento"));
   const logBox = el("div", { class: "log-box" });
-  if (state.log.length === 0) logBox.append(el("p", { class: "hint" }, "I risultati appariranno qui."));
-  for (const line of state.log) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  if (state.trainingLog.length === 0) logBox.append(el("p", { class: "hint" }, "I risultati appariranno qui."));
+  for (const line of state.trainingLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
   logCard.append(logBox);
   wrap.append(logCard);
 
@@ -609,8 +645,8 @@ function renderArenaTab() {
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Cronaca dello scontro"));
   const logBox = el("div", { class: "log-box" });
-  if (state.log.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
-  for (const line of state.log) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  if (state.arenaLog.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
+  for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
   logCard.append(logBox);
   wrap.append(logCard);
 
