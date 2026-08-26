@@ -21,8 +21,18 @@ import sqlite3
 from core.dnd_engine import DnDEngine
 from database.db_manager import get_techniques_for_armor
 
-OPPONENT_LEVEL_TOLERANCE = 20  # cerca avversari con livello armatura entro +-20 dal tuo
+OPPONENT_LEVEL_TOLERANCE = 20  # cerca avversari con livello armatura entro +-20 dal punto scelto
 BASE_ATTACK_POWER = 20  # "Attacco Base": nessuna tecnica richiesta, ma debole
+
+# --- Livelli di sfida --------------------------------------------------
+# Spostano il CENTRO della ricerca dell'avversario rispetto al tuo
+# livello armatura, invece di cercare sempre "un avversario pari a te".
+DIFFICULTY_LEVEL_OFFSET = {
+    "facile": -20,
+    "medio": 0,
+    "difficile": 20,
+}
+DEFAULT_DIFFICULTY = "medio"
 
 # PLACEHOLDER: bonus di "sintonia cosmica" alla Classe Armatura.
 # calculate_ac si aspettava un valore piccolo (0-100 circa), ma qui il
@@ -37,14 +47,20 @@ COSMO_ATTUNEMENT_FOR_AC = 0
 
 
 def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
-                       exclude_armor_name: str | None = None) -> dict:
-    """Genera un avversario dal catalogo armature, di livello comparabile
-    al tuo. Se non trova nessuna armatura nella tolleranza (es. livelli
-    estremi), allarga la ricerca a tutto il catalogo piuttosto che
-    fallire."""
+                       exclude_armor_name: str | None = None,
+                       difficulty: str = DEFAULT_DIFFICULTY) -> dict:
+    """Genera un avversario dal catalogo armature. Il livello cercato è
+    il tuo livello SPOSTATO in base alla difficoltà scelta (facile:
+    più debole di te; difficile: più forte di te) - non più sempre
+    "un avversario pari a te". Se non trova nessuna armatura nella
+    tolleranza (es. livelli estremi), allarga la ricerca a tutto il
+    catalogo piuttosto che fallire."""
+    offset = DIFFICULTY_LEVEL_OFFSET.get(difficulty, 0)
+    target_level = player_armor_level + offset
+
     rows = conn.execute(
         "SELECT * FROM armors WHERE ABS(level - ?) <= ?",
-        (player_armor_level, OPPONENT_LEVEL_TOLERANCE),
+        (target_level, OPPONENT_LEVEL_TOLERANCE),
     ).fetchall()
 
     candidates = [r for r in rows if r["name"] != exclude_armor_name]
@@ -72,9 +88,12 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
 
 def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: int,
                   defender_name: str, defender_dex: int, defender_armor_level: int,
-                  technique_name: str, technique_power: int) -> tuple[int, str]:
+                  technique_name: str, technique_power: int,
+                  roll_mode: str = "normale") -> tuple[int, str]:
     """Risolve un turno d'attacco riusando DnDEngine (CA, tiro per
     colpire, danno) - qui si orchestra soltanto, nessuna nuova formula.
+    roll_mode: 'normale' | 'vantaggio' | 'svantaggio' - concesso da un
+    Imprevisto (vedi maybe_trigger_event) o da altre condizioni future.
     Un 1 naturale è sempre un fallimento critico (segnalato a parte da
     una schivata normale); un 20 naturale è sempre un successo e
     raddoppia il danno (colpo critico) - regole richieste in chat.
@@ -82,7 +101,7 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
     defender_ac = DnDEngine.calculate_ac(
         DnDEngine.get_modifier(defender_dex), defender_armor_level, COSMO_ATTUNEMENT_FOR_AC
     )
-    hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, defender_ac)
+    hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, defender_ac, mode=roll_mode)
 
     if not hit:
         if dice_roll == 1:
@@ -204,3 +223,56 @@ def opponent_reacts(opponent: dict) -> dict | None:
     if defensive:
         return dict(defensive)
     return {"name": "Parata", "power": DEFAULT_DEFENSE_POWER, "tech_type": "Difensivo"}
+
+
+# --- Imprevisti (Fase 1: eventi "usa e getta", un solo round) --------------
+# Richiesti in chat: una nevicata improvvisa, un sasso lanciato dalle
+# tribune, ecc. Fase 1 apposta - niente stati che durano nel tempo
+# (quello è la Fase 2, servirebbe tracciare qualcosa round dopo round)
+# e niente terzo combattente (Fase 3, tocca la struttura dei turni).
+# Ogni evento o fa un piccolo danno diretto immediato, o concede
+# vantaggio/svantaggio al tiro di QUESTO round soltanto - non lascia
+# nessuno stato dietro di sé.
+EVENT_CHANCE = 0.15  # placeholder: 15% di probabilità ad ogni mezzo-round
+EVENT_FLAT_DAMAGE_RANGE = (1, 4)
+
+RANDOM_EVENTS = [
+    {"name": "Una spettatrice dalle tribune lancia un sasso a sorpresa", "effect": "danno_casuale"},
+    {"name": "Una nevicata improvvisa rende il terreno scivoloso", "effect": "svantaggio"},
+    {"name": "Un raggio di sole abbaglia l'Arena", "effect": "svantaggio"},
+    {"name": "Una folata di vento gelido disturba la concentrazione", "effect": "svantaggio"},
+    {"name": "Il pubblico esplode in un boato che carica d'entusiasmo", "effect": "vantaggio"},
+    {"name": "Il terreno cede leggermente sotto i piedi", "effect": "danno_casuale"},
+]
+
+
+def maybe_trigger_event(knight: dict, opponent: dict) -> dict | None:
+    """Con probabilità EVENT_CHANCE, pesca un Imprevisto e lo applica
+    subito. Un evento 'danno_casuale' modifica knight/opponent in place
+    e non tocca il tiro; un evento 'vantaggio'/'svantaggio' non tocca
+    subito nessun Cosmo, ma dice al chiamante come tirare IL PROSSIMO
+    attacco di questo round (vedi 'roll_mode' in resolve_turn).
+    Restituisce {'message': str, 'roll_mode': str} o None se non scatta
+    nulla questo round."""
+    if random.random() > EVENT_CHANCE:
+        return None
+
+    event = random.choice(RANDOM_EVENTS)
+
+    if event["effect"] == "danno_casuale":
+        dmg = random.randint(*EVENT_FLAT_DAMAGE_RANGE)
+        if random.random() < 0.5:
+            knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - dmg)
+            colpito = knight["raw_name"]
+        else:
+            opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
+            colpito = opponent["name"]
+        return {
+            "message": f"🎲 IMPREVISTO: {event['name']}! {colpito} subisce {dmg} di danno diretto.",
+            "roll_mode": "normale",
+        }
+
+    return {
+        "message": f"🎲 IMPREVISTO: {event['name']}!",
+        "roll_mode": event["effect"],  # 'vantaggio' o 'svantaggio' per il prossimo tiro
+    }
