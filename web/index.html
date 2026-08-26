@@ -187,6 +187,7 @@ function stripTechnicalDetails(line) {
 // --- Stato globale della pagina (nessun framework, solo un oggetto e un render()) ---
 const state = {
   screen: "start",          // start | creation | game
+  appVersion: null,         // recuperata all'avvio da GET / (fonte di verità: core/version.py)
   characters: [],
   characterId: null,
   character: null,          // payload completo dell'ultima GET /characters/{id}
@@ -412,7 +413,7 @@ function render() {
 
 function renderStartScreen() {
   const wrap = el("div");
-  wrap.append(el("h1", {}, "SAINT SEIYA"), el("p", { class: "hint" }, "Sacro Imperio"));
+  wrap.append(el("h1", {}, "SAINT SEIYA"), el("p", { class: "hint" }, "Sacro Imperio" + (state.appVersion ? ` · ${state.appVersion}` : "")));
 
   const card = el("div", { class: "card" });
   card.append(el("h2", {}, "Partite salvate"));
@@ -662,24 +663,10 @@ function renderArenaTab() {
 
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Cronaca dello scontro"));
-
-  if (state.arenaLog.length === 0) {
-    logCard.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
-  } else {
-    const narrativeText = state.arenaLog.map(stripTechnicalDetails).filter(Boolean).join(" ");
-    const narrativeBox = el("div", { class: "log-box" });
-    narrativeBox.append(el("p", { style: "line-height:1.8; margin:0;" }, narrativeText));
-    logCard.append(narrativeBox);
-  }
-
-  const detailsBox = el("details", { style: "margin-top:12px;" },
-    el("summary", { style: "cursor:pointer;color:var(--cosmo-blue);font-size:13px;" }, "Dettagli tecnici (tiri, CA, numeri)")
-  );
-  const techBox = el("div", { class: "log-box" });
-  for (const line of state.arenaLog) techBox.append(el("div", { class: "log-line" }, "• " + line));
-  detailsBox.append(techBox);
-  logCard.append(detailsBox);
-
+  const logBox = el("div", { class: "log-box" });
+  if (state.arenaLog.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
+  for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  logCard.append(logBox);
   wrap.append(logCard);
 
   return wrap;
@@ -694,6 +681,19 @@ function renderFullBar(value, max) {
 }
 
 // --- Avvio ---
+async function loadAppVersion() {
+  try {
+    const info = await api("/");
+    state.appVersion = info.version || null;
+    if (state.appVersion) document.title = `Saint Seiya: Sacro Imperio — ${state.appVersion}`;
+    render();  // se la schermata iniziale è già disegnata, la ridisegna con la versione visibile
+  } catch (e) {
+    // Non blocchiamo l'avvio dell'app se questa chiamata fallisce - la
+    // versione è un'informazione utile, non essenziale per giocare.
+  }
+}
+
+loadAppVersion();
 loadStartScreen();
 </script>
 </body>
