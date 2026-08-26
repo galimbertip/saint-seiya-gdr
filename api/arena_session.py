@@ -127,10 +127,12 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
 
     # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
     roll_mode = "normale"
+    cause_phrase = None
     event = maybe_trigger_event(knight, opponent)
     if event:
         log.append(event["message"])
         roll_mode = event["roll_mode"]
+        cause_phrase = event.get("cause_phrase")
         fight_over, winner = check_fight_over(knight, opponent)
         if fight_over:
             return log, True, winner
@@ -139,7 +141,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
         dmg, msg = resolve_turn(
             knight["raw_name"], knight["str"], armor["level"],
             opponent["name"], opponent["dex"], opponent["armor_level"],
-            technique_name, technique_power, roll_mode=roll_mode,
+            technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
         )
         dmg = apply_charge(dmg, True, battle_state)
         msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
@@ -214,17 +216,20 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
 
     # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
     roll_mode = "normale"
+    cause_phrase = None
     event = maybe_trigger_event(knight, opponent)
     if event:
         log.append(event["message"])
         roll_mode = event["roll_mode"]
+        cause_phrase = event.get("cause_phrase")
         fight_over, winner = check_fight_over(knight, opponent)
         if fight_over:
             return log, True, winner
 
     dmg2, msg2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["armor_level"],
-        knight["raw_name"], knight["dex"], armor["level"], t["name"], t["power"], roll_mode=roll_mode,
+        knight["raw_name"], knight["dex"], armor["level"], t["name"], t["power"],
+        roll_mode=roll_mode, cause_phrase=cause_phrase,
     )
     dmg2 = apply_charge(dmg2, False, battle_state)
     msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
