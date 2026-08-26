@@ -133,7 +133,12 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
         if dice_roll == 1:
             flavor = random.choice(CRITICAL_FUMBLE_FLAVORS)
             return 0, f"{attacker_name} lancia {technique_name}{prefix_note}... {flavor}! (1 naturale)"
-        return 0, f"{attacker_name} lancia {technique_name}{prefix_note}, ma {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
+        # "ma" implica un contrasto (aveva un aiuto ma ha fallito comunque -
+        # ha senso con il Vantaggio); con lo Svantaggio la schivata non è
+        # una sorpresa, è la conseguenza diretta della causa - "e" invece
+        # di "ma" (corretto in chat).
+        connector = "e" if roll_mode == "svantaggio" else "ma"
+        return 0, f"{attacker_name} lancia {technique_name}{prefix_note}, {connector} {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
 
     _, damage = DnDEngine.resolve_technique_damage(technique_power, attacker_armor_level)
     if dice_roll == 20:
@@ -314,42 +319,61 @@ def maybe_trigger_event(knight: dict, opponent: dict) -> dict | None:
     }
 
 
-# --- Imprevisti Fase 2 (V1: solo Veleno) -----------------------------------
+# --- Imprevisti Fase 2 -----------------------------------------------------
 # Il catalogo ha diversi tipi di tecnica oltre a quelle offensive pure
 # (Veleno, Intrappolamento, Pietrificazione, Autocura - isolati la
-# prima volta quando abbiamo controllato le tecniche difensive). Qui
-# facciamo funzionare DAVVERO il Veleno: non è più solo un nome nel
-# catalogo, lascia un effetto che dura ROUNDS_LEFT round.
+# prima volta quando abbiamo controllato le tecniche difensive).
 #
-# Pietrificazione/Intrappolamento (che bloccherebbero un turno intero)
-# restano FUORI da questa prima fase apposta: toccano il flusso dei
-# turni (chi dichiara, chi reagisce) in un modo che merita più
-# attenzione - li affrontiamo a parte quando il Veleno è collaudato.
-STATUS_RULES = {"veleno": {"kind": "veleno", "duration": 3}}
+# V1 (collaudata prima): Veleno, danno che dura ROUNDS_LEFT round.
+# V2 (qui): Pietrificazione/Intrappolamento come Paralisi - bloccano un
+# turno intero. Rimandata apposta la prima volta perché tocca il
+# flusso dei turni (chi dichiara, chi reagisce), non solo un numero
+# che scende - va tenuta separata dalla risoluzione dell'azione scelta
+# dal giocatore, non sommata dentro.
+STATUS_RULES = {
+    "veleno": {"kind": "veleno", "duration": 3},
+    "pietrificazione": {"kind": "paralisi", "duration": 1},
+    "intrappolamento": {"kind": "paralisi", "duration": 1},
+}
 
 
 def maybe_apply_status(tech_type: str, technique_power: int) -> dict | None:
     """Se la tecnica appena andata a segno è di un tipo che conosciamo
-    (per ora solo Veleno), restituisce lo stato da aggiungere al
-    bersaglio. None per una tecnica 'normale' o per l'Attacco Base
-    (che non ha nessun tech_type)."""
+    (Veleno, Pietrificazione, Intrappolamento), restituisce lo stato da
+    aggiungere al bersaglio. None per una tecnica 'normale' o per
+    l'Attacco Base (che non ha nessun tech_type)."""
     tech_type_lower = (tech_type or "").lower()
     for keyword, rule in STATUS_RULES.items():
         if keyword in tech_type_lower:
-            return {
-                "kind": rule["kind"],
-                "rounds_left": rule["duration"],
-                "damage_per_round": max(1, technique_power // 20),
-            }
+            if rule["kind"] == "veleno":
+                return {
+                    "kind": "veleno",
+                    "rounds_left": rule["duration"],
+                    "damage_per_round": max(1, technique_power // 20),
+                }
+            return {"kind": "paralisi", "rounds_left": rule["duration"]}
     return None
 
 
-def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> list[str]:
-    """Applica il danno degli stati ATTIVI su `fighter` a inizio del suo
-    turno, poi fa scadere di un round chi è arrivato a zero. Muta
-    `statuses` in place (rimuove quelli scaduti quando la lista viene
-    ricostruita dal chiamante). Restituisce i messaggi di log."""
+def status_applied_message(target_name: str, technique_name: str, status: dict) -> str:
+    """Il messaggio da mostrare quando un colpo lascia un effetto sul
+    bersaglio - diverso a seconda del tipo di stato inflitto."""
+    if status["kind"] == "veleno":
+        return f"⚠️ {target_name} è avvelenato da {technique_name}!"
+    return f"🥶 {target_name} è pietrificato da {technique_name}!"
+
+
+def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> tuple[list[str], bool]:
+    """Applica gli effetti degli stati ATTIVI su `fighter` a inizio del
+    suo turno (danno da Veleno, blocco da Paralisi), poi fa scadere di
+    un round chi è arrivato a zero. Muta `statuses` in place (rimuove
+    quelli scaduti quando la lista viene ricostruita dal chiamante).
+    Restituisce (messaggi, bloccato) - bloccato=True se questo turno il
+    personaggio è paralizzato e non può agire: il chiamante deve
+    saltare la sua azione (vedi resolve_declare), non risolverla
+    normalmente."""
     messages = []
+    blocked = False
     still_active = []
 
     for status in statuses:
@@ -357,12 +381,16 @@ def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> lis
             dmg = status["damage_per_round"]
             fighter["cosmo_cur"] = max(0, fighter["cosmo_cur"] - dmg)
             messages.append(f"☠️ {fighter_name} soffre per il Veleno! -{dmg} Cosmo.")
+        elif status["kind"] == "paralisi":
+            blocked = True
+            messages.append(f"🥶 {fighter_name} è paralizzato e non riesce a muoversi!")
 
         status["rounds_left"] -= 1
         if status["rounds_left"] > 0:
             still_active.append(status)
         else:
-            messages.append(f"L'effetto Veleno su {fighter_name} è svanito.")
+            kind_label = "Veleno" if status["kind"] == "veleno" else "Paralisi"
+            messages.append(f"L'effetto {kind_label} su {fighter_name} è svanito.")
 
     statuses[:] = still_active
-    return messages
+    return messages, blocked
