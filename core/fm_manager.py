@@ -97,6 +97,18 @@ DEFAULT_TRAINING_MINUTES = 4 * MINUTES_PER_HOUR
 
 ARENA_ROUND_MINUTES = 15  # un mezzo-turno di combattimento (dichiari + reagisce l'altro)
 
+# --- Recupero del Cosmo fuori dal combattimento -----------------------
+# Fedele al canone (discusso in chat): un Cavaliere che non sta
+# combattendo si riprende col tempo, a prescindere da cosa fa
+# (allenarsi o riposare) - l'importante è non essere in battaglia.
+# Qui il recupero è proporzionale alle ORE che passano quel giorno, non
+# legato a un singolo tipo di allenamento: un giorno di riposo (8 ore)
+# recupera più della metà rispetto a mezza giornata di allenamento
+# duro (6 ore) o normale (4 ore), semplicemente perché è passato più
+# tempo. In Arena invece il Cosmo NON si rigenera mai da solo - lì sei
+# in combattimento, per definizione.
+COSMO_REGEN_PER_HOUR = 2  # PLACEHOLDER: da tarare insieme
+
 
 def parse_weekly_schedule(schedule_str: str) -> list[str]:
     """Da stringa CSV (come salvata nel DB) a lista di 7 focus. Tollerante:
@@ -199,6 +211,18 @@ class RosterManager:
                     msg = f"{msg} {xp_msg}"
 
         minutes = TRAINING_MINUTES_BY_FOCUS.get(focus, DEFAULT_TRAINING_MINUTES)
+
+        # Recupero passivo del Cosmo: proporzionale alle ore di questa
+        # attività, sempre (non solo con Riposo) - il tempo cura, non
+        # importa cosa stai facendo, basta non essere in Arena.
+        cosmo_recovered = min(
+            knight["cosmo_max"] - knight["cosmo_cur"],
+            round(minutes / 60 * COSMO_REGEN_PER_HOUR),
+        )
+        if cosmo_recovered > 0:
+            knight["cosmo_cur"] += cosmo_recovered
+            msg = f"{msg} (+{cosmo_recovered} Cosmo recuperato)"
+
         aging_msg = RosterManager.spend_time(knight, minutes)
         if aging_msg:
             msg = f"{msg} {aging_msg}"
