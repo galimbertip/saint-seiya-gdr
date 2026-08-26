@@ -10,7 +10,7 @@ Il changelog qui sotto è la cronologia delle versioni concordate in chat.
 Si aggiorna insieme al codice, non a posteriori.
 """
 
-APP_VERSION = "PG_V1.0.0"
+APP_VERSION = "PG_V2.0.0"
 
 CHANGELOG = [
     {
@@ -154,5 +154,42 @@ CHANGELOG = [
                 "scelti) - la griglia settimanale resta comoda per pianificare ma il nome è "
                 "ormai una convenzione, non una promessa esatta; una revisione della UI di "
                 "quella schermata resta un lavoro futuro, segnalato in chat.",
+    },
+    {
+        "version": "PG_V2.0.0",
+        "desc": "WEBAPP: nuova architettura in affiancamento al desktop, richiesta fin dal "
+                "primo giorno (voleva poterci giocare ovunque, testare anche dal PC di lavoro "
+                "senza poter installare nulla). Nuovo backend FastAPI (api/main.py, "
+                "api/arena_session.py) che riusa di peso la logica già in core/ - stesso motore, "
+                "nuova porta d'accesso via HTTP invece che pulsanti Qt. Nuovo frontend "
+                "(web/index.html, pagina singola HTML/JS senza framework) servito dallo stesso "
+                "backend su /app, stesso indirizzo per evitare problemi di CORS/URL mutevoli su "
+                "Codespaces. Sviluppato e testato passo passo da GitHub Codespaces (browser "
+                "puro, zero installazioni), compreso un giro di debug reale su sessioni scadute "
+                "e tunnel morti.\n"
+                "ARENA: Livelli di sfida (facile/medio/difficile, sposta il livello "
+                "dell'avversario cercato). Vantaggio/Svantaggio nel motore dadi (due dadi, "
+                "tieni il migliore/peggiore). Imprevisti Fase 1 (eventi 'usa e getta' con "
+                "probabilità ~15% a mezzo-round: danno diretto o vantaggio/svantaggio sul tiro, "
+                "con causa narrativa intrecciata nella frase, non più un'etichetta a parte). "
+                "Imprevisti Fase 2 - V1 (Veleno vero: danno per 3 round poi svanisce, dal "
+                "catalogo tecniche già isolato tempo fa; Pietrificazione/Intrappolamento "
+                "rimandati apposta, toccherebbero il flusso dei turni). Fallimenti/colpi "
+                "critici narrati con frasi variabili invece di un'etichetta fissa.\n"
+                "BUG VERI trovati e corretti in sessione (elenco perché non banali): il "
+                "messaggio del danno restava quello grezzo anche quando Carica/critico lo "
+                "moltiplicavano dopo (poteva sembrare che difendersi AUMENTASSE il danno); una "
+                "schivata vera mostrava comunque 'ti difendi con Parata' appiccicato sopra; "
+                "Carica consumata anche su un colpo mancato, sprecata senza motivo; uscire "
+                "dall'Arena a metà scontro (senza Ritirati) lasciava il Cosmo bloccato basso per "
+                "sempre, mai più recuperabile; Allenamento e Arena condividevano per errore la "
+                "stessa variabile di log, mostrando la cronaca sbagliata nella scheda sbagliata; "
+                "connessione DB condivisa tra richieste, rischio di rottura intermittente con "
+                "più thread (mai capitato, trovato a revisione).\n"
+                "Il Cosmo ora si rigenera passivamente col tempo fuori dall'Arena (fedele al "
+                "canone: un cavaliere che non combatte si riprende), proporzionale alle ore "
+                "passate qualunque sia l'attività - mai durante un combattimento. Level up "
+                "annuncia i nuovi Sensi sbloccati nello stesso messaggio, invece di scoprirli "
+                "per caso provando i pulsanti.",
     },
 ]
