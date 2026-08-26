@@ -169,6 +169,19 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 
+// Toglie i numeri "da regolamento" (tiro vs CA, dado naturale) da una
+// riga di cronaca, lasciando la narrazione pulita - deciso in chat:
+// i numeri restano disponibili nel pannello "Dettagli tecnici" a
+// parte, invece di stare sempre in mezzo al racconto. Il danno
+// inflitto (— Danno: N) resta nella narrazione: è un'informazione che
+// interessa a chi gioca, non solo un dettaglio da tavolo di regole.
+function stripTechnicalDetails(line) {
+  return line
+    .replace(/\s*\(\d+\s*vs\s*CA\s*\d+\)/g, "")
+    .replace(/\s*\(\d+\s*naturale\)/g, "")
+    .trim();
+}
+
 // --- Stato globale della pagina (nessun framework, solo un oggetto e un render()) ---
 const state = {
   screen: "start",          // start | creation | game
@@ -388,9 +401,11 @@ function render() {
   // Ogni render ricostruisce la pagina da zero, quindi la cronaca
   // perdeva sempre lo scorrimento e tornava a mostrare i messaggi più
   // vecchi (segnalato in chat) - la riportiamo in fondo, dove sta
-  // l'ultimo messaggio appena aggiunto.
-  const logBox = document.querySelector(".log-box");
-  if (logBox) logBox.scrollTop = logBox.scrollHeight;
+  // l'ultimo messaggio appena aggiunto. Ora possono essercene due
+  // insieme (narrazione + dettagli tecnici), quindi li scorriamo tutti.
+  document.querySelectorAll(".log-box").forEach((box) => {
+    box.scrollTop = box.scrollHeight;
+  });
 }
 
 function renderStartScreen() {
@@ -647,8 +662,17 @@ function renderArenaTab() {
   logCard.append(el("h2", {}, "Cronaca dello scontro"));
   const logBox = el("div", { class: "log-box" });
   if (state.arenaLog.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
-  for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + stripTechnicalDetails(line)));
   logCard.append(logBox);
+
+  const detailsBox = el("details", { style: "margin-top:12px;" },
+    el("summary", { style: "cursor:pointer;color:var(--cosmo-blue);font-size:13px;" }, "Dettagli tecnici (tiri, CA, numeri)")
+  );
+  const techBox = el("div", { class: "log-box" });
+  for (const line of state.arenaLog) techBox.append(el("div", { class: "log-line" }, "• " + line));
+  detailsBox.append(techBox);
+  logCard.append(detailsBox);
+
   wrap.append(logCard);
 
   return wrap;
