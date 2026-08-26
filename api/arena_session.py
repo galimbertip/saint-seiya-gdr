@@ -22,7 +22,7 @@ from typing import Optional
 from core.arena_manager import (
     generate_opponent, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
-    format_damage_message, maybe_trigger_event,
+    format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
 )
@@ -41,6 +41,8 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "seventh_sense_used": False,
         "eighth_sense_used": False,
         "pending_opponent_technique": None,
+        "player_statuses": [],
+        "opponent_statuses": [],
     }
 
 
@@ -106,7 +108,8 @@ def check_fight_over(knight: dict, opponent: dict) -> tuple[bool, Optional[str]]
 
 
 def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Optional[str],
-                     technique_power: Optional[int], battle_state: dict) -> tuple[list[str], bool, Optional[str]]:
+                     technique_power: Optional[int], battle_state: dict,
+                     technique_type: Optional[str] = None) -> tuple[list[str], bool, Optional[str]]:
     """Metà 1 del round: il giocatore dichiara (Attacca o Carica). Se
     attacca, l'avversario reagisce d'istinto (automatico); poi
     l'avversario dichiara la SUA mossa - se attacca, il round si ferma
@@ -115,6 +118,12 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     Restituisce (log, fight_over, winner)."""
     opponent = battle_state["opponent"]
     log: list[str] = []
+
+    # Stati attivi (Veleno) sul giocatore: si applicano a inizio del suo turno.
+    log.extend(tick_statuses(knight["raw_name"], knight, battle_state.setdefault("player_statuses", [])))
+    fight_over, winner = check_fight_over(knight, opponent)
+    if fight_over:
+        return log, True, winner
 
     # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
     roll_mode = "normale"
@@ -148,6 +157,11 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
             else:
                 opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
                 log.append(msg)
+
+            status = maybe_apply_status(technique_type, technique_power)
+            if status:
+                battle_state.setdefault("opponent_statuses", []).append(status)
+                log.append(f"⚠️ {opponent['name']} è avvelenato da {technique_name}!")
     else:  # carica
         knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
         battle_state["player_charge_multiplier"] = max(
@@ -159,6 +173,12 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     if aging_msg:
         log.append(aging_msg)
 
+    fight_over, winner = check_fight_over(knight, opponent)
+    if fight_over:
+        return log, True, winner
+
+    # Stati attivi (Veleno) sull'avversario: si applicano a inizio del SUO turno.
+    log.extend(tick_statuses(opponent["name"], opponent, battle_state.setdefault("opponent_statuses", [])))
     fight_over, winner = check_fight_over(knight, opponent)
     if fight_over:
         return log, True, winner
@@ -221,6 +241,12 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
     else:
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - dmg2)
         log.append(msg2)
+
+    if dmg2 > 0:
+        status = maybe_apply_status(t.get("tech_type", ""), t["power"])
+        if status:
+            battle_state.setdefault("player_statuses", []).append(status)
+            log.append(f"⚠️ {knight['raw_name']} è avvelenato da {t['name']}!")
 
     check_eighth_sense(knight, battle_state, log)
     check_seventh_sense(knight, battle_state, log)
