@@ -22,16 +22,18 @@ from typing import Optional
 from core.arena_manager import (
     generate_opponent, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
-    format_damage_message,
+    format_damage_message, maybe_trigger_event,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
-    CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER,
+    CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
 )
 from core.fm_manager import RosterManager, ARENA_ROUND_MINUTES
 
 
-def start_battle(conn, knight: dict, armor: dict) -> dict:
-    """Genera un nuovo avversario e lo stato di battaglia iniziale."""
-    opponent = generate_opponent(conn, armor["level"], exclude_armor_name=armor["name"])
+def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFFICULTY) -> dict:
+    """Genera un nuovo avversario e lo stato di battaglia iniziale.
+    difficulty: 'facile' | 'medio' | 'difficile' - sposta il livello
+    dell'avversario cercato rispetto al tuo (vedi arena_manager)."""
+    opponent = generate_opponent(conn, armor["level"], exclude_armor_name=armor["name"], difficulty=difficulty)
     return {
         "opponent": opponent,
         "player_charge_multiplier": 1.0,
@@ -107,11 +109,21 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     opponent = battle_state["opponent"]
     log: list[str] = []
 
+    # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
+    roll_mode = "normale"
+    event = maybe_trigger_event(knight, opponent)
+    if event:
+        log.append(event["message"])
+        roll_mode = event["roll_mode"]
+        fight_over, winner = check_fight_over(knight, opponent)
+        if fight_over:
+            return log, True, winner
+
     if action == "attacca":
         dmg, msg = resolve_turn(
             knight["raw_name"], knight["str"], armor["level"],
             opponent["name"], opponent["dex"], opponent["armor_level"],
-            technique_name, technique_power,
+            technique_name, technique_power, roll_mode=roll_mode,
         )
         dmg = apply_charge(dmg, True, battle_state)
         msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
@@ -173,9 +185,19 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
     t = battle_state["pending_opponent_technique"]
     log: list[str] = []
 
+    # Imprevisto: una possibilità indipendente ad ogni mezzo-round.
+    roll_mode = "normale"
+    event = maybe_trigger_event(knight, opponent)
+    if event:
+        log.append(event["message"])
+        roll_mode = event["roll_mode"]
+        fight_over, winner = check_fight_over(knight, opponent)
+        if fight_over:
+            return log, True, winner
+
     dmg2, msg2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["armor_level"],
-        knight["raw_name"], knight["dex"], armor["level"], t["name"], t["power"],
+        knight["raw_name"], knight["dex"], armor["level"], t["name"], t["power"], roll_mode=roll_mode,
     )
     dmg2 = apply_charge(dmg2, False, battle_state)
     msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
