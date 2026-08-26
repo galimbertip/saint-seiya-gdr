@@ -169,16 +169,18 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 
-// Toglie i numeri "da regolamento" (tiro vs CA, dado naturale) da una
-// riga di cronaca, lasciando la narrazione pulita - deciso in chat:
-// i numeri restano disponibili nel pannello "Dettagli tecnici" a
-// parte, invece di stare sempre in mezzo al racconto. Il danno
-// inflitto (— Danno: N) resta nella narrazione: è un'informazione che
-// interessa a chi gioca, non solo un dettaglio da tavolo di regole.
+// Toglie i numeri "da regolamento" (tiro vs CA, dado naturale) E le
+// icone usate come segnaposto visivo negli elenchi, lasciando una
+// frase pulita da poter leggere come prosa - deciso in chat: la prima
+// versione toglieva solo i numeri ma restava comunque un elenco
+// puntato, non un vero racconto (segnalato in chat, corretto qui). Il
+// danno inflitto (— Danno: N) resta: interessa a chi gioca, non è un
+// dettaglio da tavolo di regole.
 function stripTechnicalDetails(line) {
   return line
     .replace(/\s*\(\d+\s*vs\s*CA\s*\d+\)/g, "")
     .replace(/\s*\(\d+\s*naturale\)/g, "")
+    .replace(/^[⚔🎲⚠️☠️🏆💀✨⚡🎉🌟]+\s*/u, "")
     .trim();
 }
 
@@ -660,10 +662,15 @@ function renderArenaTab() {
 
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Cronaca dello scontro"));
-  const logBox = el("div", { class: "log-box" });
-  if (state.arenaLog.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
-  for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + stripTechnicalDetails(line)));
-  logCard.append(logBox);
+
+  if (state.arenaLog.length === 0) {
+    logCard.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
+  } else {
+    const narrativeText = state.arenaLog.map(stripTechnicalDetails).filter(Boolean).join(" ");
+    const narrativeBox = el("div", { class: "log-box" });
+    narrativeBox.append(el("p", { style: "line-height:1.8; margin:0;" }, narrativeText));
+    logCard.append(narrativeBox);
+  }
 
   const detailsBox = el("details", { style: "margin-top:12px;" },
     el("summary", { style: "cursor:pointer;color:var(--cosmo-blue);font-size:13px;" }, "Dettagli tecnici (tiri, CA, numeri)")
