@@ -313,8 +313,8 @@ class ArenaScreen(QWidget):
 
         o = self.opponent
         dmg, msg = resolve_turn(
-            self.knight["raw_name"], self.knight["str"], self.armor["level"],
-            o["name"], o["dex"], o["armor_level"], technique_name, technique_power,
+            self.knight["raw_name"], self.knight["str"], self.knight["tec"], self.armor["level"],
+            o["name"], o["dex"], o["con"], o["armor_level"], technique_name, technique_power,
         )
         dmg = self._apply_charge_bonus(dmg, is_player_attacking=True)
         msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
@@ -396,8 +396,8 @@ class ArenaScreen(QWidget):
         self._pending_opponent_technique = None
 
         dmg2, msg2 = resolve_turn(
-            o["name"], o["str"], o["armor_level"],
-            self.knight["raw_name"], self.knight["dex"], self.armor["level"],
+            o["name"], o["str"], o["tec"], o["armor_level"],
+            self.knight["raw_name"], self.knight["dex"], self.knight["con"], self.armor["level"],
             t["name"], t["power"],
         )
         dmg2 = self._apply_charge_bonus(dmg2, is_player_attacking=False)
