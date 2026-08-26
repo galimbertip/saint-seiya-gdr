@@ -64,16 +64,32 @@ class DnDEngine:
             return 20  # armature altissime: dado d20, eventuale bonus a parte
 
     @staticmethod
-    def resolve_attack(attacker_str: int, defender_ac: int) -> tuple[bool, int, int]:
+    def resolve_attack(attacker_str: int, defender_ac: int, mode: str = "normale") -> tuple[bool, int, int]:
         """Tiro per colpire: d20 + Mod Forza vs CA difensore.
-        1 naturale sul dado = fallimento SEMPRE, a prescindere dal totale
-        (sfiga colossale). 20 naturale = successo SEMPRE, a prescindere
-        dal totale (successo della madonna) - regola classica D&D,
-        richiesta in chat.
-        Restituisce (colpito, tiro_dado_grezzo, totale)."""
+
+        mode: 'normale' (un dado), 'vantaggio' (due dadi, tieni il
+        migliore) o 'svantaggio' (due dadi, tieni il peggiore) - regola
+        classica D&D, richiesta in chat per dare più profondità tattica
+        (un imprevisto, una posizione scomoda, ecc. possono concedere
+        l'uno o l'altro).
+
+        1 naturale sul dado TENUTO = fallimento SEMPRE, a prescindere dal
+        totale (sfiga colossale). 20 naturale = successo SEMPRE (successo
+        della madonna) - regola classica D&D, richiesta in chat.
+        Restituisce (colpito, tiro_dado_grezzo_tenuto, totale)."""
         str_mod = DnDEngine.get_modifier(attacker_str)
-        rolls, total = DnDEngine.roll_dice(20, 1, str_mod)
-        natural = rolls[0]
+
+        if mode == "vantaggio":
+            rolls, _ = DnDEngine.roll_dice(20, 2)
+            natural = max(rolls)
+        elif mode == "svantaggio":
+            rolls, _ = DnDEngine.roll_dice(20, 2)
+            natural = min(rolls)
+        else:
+            rolls, _ = DnDEngine.roll_dice(20, 1)
+            natural = rolls[0]
+
+        total = natural + str_mod
         if natural == 1:
             hit = False
         elif natural == 20:
