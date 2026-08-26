@@ -441,6 +441,11 @@ class ArenaScreen(QWidget):
         self._opponent_charge_multiplier = max(self._opponent_charge_multiplier, CHARGE_DAMAGE_MULTIPLIER)
 
     def _apply_charge_bonus(self, damage: int, is_player_attacking: bool) -> int:
+        """MA SOLO se l'attacco è andato a segno - un colpo mancato non
+        deve consumare la carica senza che serva a nulla (bug corretto
+        in chat, stesso principio della versione web)."""
+        if damage == 0:
+            return damage
         if is_player_attacking and self._player_charge_multiplier > 1.0:
             multiplier = self._player_charge_multiplier
             self._player_charge_multiplier = 1.0
