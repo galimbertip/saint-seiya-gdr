@@ -23,7 +23,8 @@ from core.arena_manager import (
     generate_opponent, generate_opponent_candidates, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
-    status_resisted,
+    status_resisted, calculate_movement_points, try_move, wander_opponent,
+    PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
 )
@@ -57,7 +58,46 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "pending_opponent_technique": None,
         "player_statuses": [],
         "opponent_statuses": [],
+        "player_position": dict(PLAYER_START_POSITION),
+        "opponent_position": dict(OPPONENT_START_POSITION),
     }
+
+
+def move_player(knight: dict, battle_state: dict, target_x: float, target_y: float) -> list[str]:
+    """Sposta il giocatore verso (target_x, target_y), entro i suoi
+    Punti Movimento - se il bersaglio è troppo lontano, si ferma al
+    massimo raggiungibile invece di rifiutare lo spostamento. Oltre la
+    soglia gratuita (FREE_MOVEMENT_RANGE) il tempo passa. Fase 1: la
+    posizione è ancora solo visiva, non blocca né abilita nessuna
+    azione di combattimento. Muove anche l'avversario di un piccolo
+    passo a caso (richiesto in chat: 'sembrare vivo', nessun effetto
+    tattico). Muta `knight` e `battle_state` in place.
+    Restituisce i messaggi di log."""
+    log: list[str] = []
+    movement_points = calculate_movement_points(knight["player_level"], knight["age"])
+
+    moved_fully, new_pos, distance_moved, minutes_cost = try_move(
+        battle_state["player_position"], target_x, target_y, movement_points
+    )
+    battle_state["player_position"] = new_pos
+
+    if moved_fully:
+        log.append(f"{knight['raw_name']} si sposta di {distance_moved:.1f} unità.")
+    else:
+        log.append(
+            f"{knight['raw_name']} tenta di raggiungere il punto indicato, ma i suoi Punti "
+            f"Movimento ({movement_points}) bastano solo per {distance_moved:.1f} unità."
+        )
+
+    if minutes_cost > 0:
+        aging_msg = RosterManager.spend_time(knight, minutes_cost)
+        log.append(f"Lo spostamento più lungo costa {minutes_cost} minuti.")
+        if aging_msg:
+            log.append(aging_msg)
+
+    battle_state["opponent_position"] = wander_opponent(battle_state["opponent_position"])
+
+    return log
 
 
 def apply_charge(damage: int, is_player: bool, battle_state: dict) -> int:
@@ -135,6 +175,14 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     Restituisce (log, fight_over, winner)."""
     opponent = battle_state["opponent"]
     log: list[str] = []
+
+    # L'avversario si muove un po' a caso ad ogni round (Fase 1: solo
+    # per "sembrare vivo" sulla mappa, nessun effetto tattico - vedi
+    # arena_manager.wander_opponent). Nessun messaggio di log per
+    # questo, sarebbe troppo rumoroso ad ogni singolo round.
+    battle_state["opponent_position"] = wander_opponent(
+        battle_state.setdefault("opponent_position", dict(OPPONENT_START_POSITION))
+    )
 
     # Stati attivi (Veleno/Paralisi) sul giocatore: si applicano a inizio del suo turno.
     status_msgs, player_blocked = tick_statuses(
