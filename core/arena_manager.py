@@ -259,6 +259,91 @@ def find_defensive_technique(techniques: list[dict]) -> dict | None:
     return None
 
 
+# --- Mappa 2D dell'Arena (Fase 1: griglia e posizione, solo visiva) --------
+# Richiesta in chat, sequenziata a fasi come gli Imprevisti. Fase 1:
+# fondamenta di stato e visive - una griglia 10x10 usata come "righello"
+# per misurare le distanze (il movimento a schermo è libero/continuo,
+# non a caselle - deciso in chat, stile Football Manager più che
+# scacchiera D&D), i due combattenti hanno una posizione, ci si può
+# muovere PRIMA di dichiarare un'azione. La distanza NON blocca ancora
+# nulla (si può sempre attaccare, indipendentemente da dove si è) -
+# quello è lavoro della Fase 2, quando la mappa toccherà per davvero le
+# scelte tattiche e non solo l'occhio.
+GRID_SIZE = 10
+FREE_MOVEMENT_RANGE = 2.0  # muoversi fino a qui è gratis (in unità di griglia)
+MOVEMENT_MINUTES_PER_UNIT = 5  # oltre la soglia gratuita, quanto tempo costa ogni unità in più
+
+PLAYER_START_POSITION = {"x": 1.5, "y": 5.0}
+OPPONENT_START_POSITION = {"x": 8.5, "y": 5.0}
+
+
+def calculate_movement_points(player_level: int, age: int) -> int:
+    """Quante unità di griglia un personaggio può percorrere in un solo
+    spostamento. PLACEHOLDER (come le altre formule non ancora
+    bilanciate): base 3, +1 ogni 5 livelli personaggio, -1 ogni 10 anni
+    oltre i 25 (un cavaliere più anziano è un filo meno agile) -
+    richiesto in chat: età e livello personaggio, non il Cosmo.
+    Tenuto tra 2 e 9 perché la griglia è 10x10: oltre 9 non avrebbe
+    senso (attraverseresti tutta l'arena in un colpo solo)."""
+    age_penalty = max(0, (age - 25) // 10)
+    points = 3 + player_level // 5 - age_penalty
+    return max(2, min(9, points))
+
+
+def distance_between(pos_a: dict, pos_b: dict) -> float:
+    """Distanza in linea retta tra due posizioni sulla griglia."""
+    return ((pos_a["x"] - pos_b["x"]) ** 2 + (pos_a["y"] - pos_b["y"]) ** 2) ** 0.5
+
+
+def clamp_to_grid(x: float, y: float) -> dict:
+    """Tiene una posizione dentro i bordi della griglia (0-GRID_SIZE)."""
+    return {"x": max(0.0, min(GRID_SIZE, x)), "y": max(0.0, min(GRID_SIZE, y))}
+
+
+def try_move(current_pos: dict, target_x: float, target_y: float,
+             movement_points: int) -> tuple[bool, dict, float, int]:
+    """Verifica e risolve uno spostamento verso (target_x, target_y).
+    Se la distanza richiesta supera i Punti Movimento disponibili, il
+    personaggio si ferma al massimo raggiungibile in quella direzione
+    invece di fallire lo spostamento (più comodo da giocare: cliccare
+    'un po' troppo lontano' ti porta comunque il più vicino possibile
+    a dove volevi, non ti nega il movimento).
+    Restituisce (mosso_per_intero, nuova_posizione, distanza_percorsa,
+    minuti_di_costo - 0 se dentro la soglia gratuita)."""
+    target = clamp_to_grid(target_x, target_y)
+    requested_distance = distance_between(current_pos, target)
+
+    if requested_distance <= movement_points:
+        new_pos = target
+        moved_fully = True
+        distance_moved = requested_distance
+    else:
+        # Ci si ferma lungo la stessa direzione, al massimo raggiungibile.
+        ratio = movement_points / requested_distance if requested_distance > 0 else 0
+        new_pos = clamp_to_grid(
+            current_pos["x"] + (target["x"] - current_pos["x"]) * ratio,
+            current_pos["y"] + (target["y"] - current_pos["y"]) * ratio,
+        )
+        moved_fully = False
+        distance_moved = movement_points
+
+    extra_distance = max(0.0, distance_moved - FREE_MOVEMENT_RANGE)
+    minutes_cost = round(extra_distance * MOVEMENT_MINUTES_PER_UNIT)
+    return moved_fully, new_pos, distance_moved, minutes_cost
+
+
+def wander_opponent(current_pos: dict) -> dict:
+    """Sposta l'avversario di un piccolo passo a caso - Fase 1: solo per
+    'sembrare vivo' sullo schermo, nessun effetto tattico (richiesto in
+    chat). Un piccolo raggio fisso, non i suoi Punti Movimento veri -
+    non sta scegliendo strategicamente dove andare, sta solo
+    dimenandosi un po'."""
+    wander_radius = 1.2
+    dx = random.uniform(-wander_radius, wander_radius)
+    dy = random.uniform(-wander_radius, wander_radius)
+    return clamp_to_grid(current_pos["x"] + dx, current_pos["y"] + dy)
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
