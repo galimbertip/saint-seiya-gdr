@@ -20,7 +20,7 @@ restituire come risposta HTTP).
 from typing import Optional
 
 from core.arena_manager import (
-    generate_opponent, resolve_turn, choose_opponent_action, opponent_reacts,
+    generate_opponent, generate_opponent_candidates, resolve_turn, choose_opponent_action, opponent_reacts,
     resolve_defense, find_defensive_technique, get_unlocked_senses,
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
@@ -29,11 +29,24 @@ from core.arena_manager import (
 from core.fm_manager import RosterManager, ARENA_ROUND_MINUTES
 
 
-def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFFICULTY) -> dict:
-    """Genera un nuovo avversario e lo stato di battaglia iniziale.
+def list_opponent_candidates(conn, armor: dict, difficulty: str = DEFAULT_DIFFICULTY, count: int = 5) -> list[dict]:
+    """La 'sala d'attesa': genera `count` avversari tra cui scegliere,
+    invece di uno solo imposto a caso (richiesto in chat)."""
+    return generate_opponent_candidates(conn, armor["level"], exclude_armor_name=armor["name"],
+                                         difficulty=difficulty, count=count)
+
+
+def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFFICULTY,
+                  opponent: dict | None = None) -> dict:
+    """Costruisce lo stato di battaglia iniziale. Se `opponent` è già
+    stato scelto (dalla sala d'attesa), lo usa direttamente; altrimenti
+    ne genera uno nuovo a caso (comportamento di prima, tenuto per
+    compatibilità/test).
     difficulty: 'facile' | 'medio' | 'difficile' - sposta il livello
-    dell'avversario cercato rispetto al tuo (vedi arena_manager)."""
-    opponent = generate_opponent(conn, armor["level"], exclude_armor_name=armor["name"], difficulty=difficulty)
+    dell'avversario cercato rispetto al tuo (vedi arena_manager),
+    usato solo se `opponent` non è già dato."""
+    if opponent is None:
+        opponent = generate_opponent(conn, armor["level"], exclude_armor_names={armor["name"]}, difficulty=difficulty)
     return {
         "opponent": opponent,
         "player_charge_multiplier": 1.0,
