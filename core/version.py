@@ -10,7 +10,7 @@ Il changelog qui sotto è la cronologia delle versioni concordate in chat.
 Si aggiorna insieme al codice, non a posteriori.
 """
 
-APP_VERSION = "PG_V2.0.0"
+APP_VERSION = "PG_V2.1.0"
 
 CHANGELOG = [
     {
@@ -191,5 +191,21 @@ CHANGELOG = [
                 "passate qualunque sia l'attività - mai durante un combattimento. Level up "
                 "annuncia i nuovi Sensi sbloccati nello stesso messaggio, invece di scoprirli "
                 "per caso provando i pulsanti.",
+    },
+    {
+        "version": "PG_V2.1.0",
+        "desc": "IMPREVISTI FASE 2 completata: Pietrificazione/Intrappolamento come Paralisi vera "
+                "(blocca un turno intero), affiancata al Veleno già collaudato in PG_V2.0.0. "
+                "Rimandata apposta la prima volta perché tocca il flusso dei turni (non solo un "
+                "numero che scende) - qui resolve_declare distingue esplicitamente 'sei "
+                "bloccato, salti l'azione ma il tempo passa comunque' da 'agisci normalmente', "
+                "sia per il giocatore che per l'avversario, testato anche il caso in cui "
+                "Veleno e Paralisi sono attivi insieme sullo stesso combattente. Aggiunta "
+                "status_applied_message() condivisa (Veleno='è avvelenato', Paralisi='è "
+                "pietrificato') invece di messaggi scritti a mano in due punti diversi. "
+                "Barre del Cosmo in Arena ora in scala assoluta condivisa tra i due "
+                "combattenti (chi ha più Cosmo massimo ha la barra fisicamente più lunga, non "
+                "più solo la percentuale) - segnalato in chat: con Cosmo massimo diverso ma "
+                "percentuali vicine, le barre sembravano identiche.",
     },
 ]
