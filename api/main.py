@@ -37,9 +37,11 @@ from core.fm_manager import (
     RosterManager, get_calendar_display, parse_weekly_schedule,
     serialize_weekly_schedule, TRAINING_FOCUS_OPTIONS,
 )
-from core.arena_manager import find_defensive_technique, get_unlocked_senses
+from core.arena_manager import find_defensive_technique, get_unlocked_senses, calculate_movement_points
 from core.version import APP_VERSION
-from api.arena_session import start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight
+from api.arena_session import (
+    start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
+)
 
 app = FastAPI(title="Saint Seiya: Sacro Imperio API", version=APP_VERSION)
 
@@ -99,6 +101,12 @@ class ArenaStartBattleRequest(BaseModel):
     opponent: dict  # uno dei candidati restituiti da GET /arena/candidates
 
 
+class ArenaMoveRequest(BaseModel):
+    x: float  # coordinata bersaglio sulla griglia (0-10)
+    y: float
+    battle_state: dict
+
+
 class ArenaDeclareRequest(BaseModel):
     action: Literal["attacca", "carica"]
     technique_name: Optional[str] = None
@@ -117,17 +125,20 @@ class ArenaReactRequest(BaseModel):
 def _knight_payload(conn, knight: dict) -> dict:
     """Impacchetta un knight con tutto il contesto che il frontend
     normalmente dovrebbe richiedere separatamente (armatura, tecniche,
-    calendario, sensi) - una sola chiamata invece di quattro."""
+    calendario, sensi, Punti Movimento) - una sola chiamata invece di
+    cinque."""
     armor = get_armor(knight["armor_name"], conn)
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     calendar = get_calendar_display(knight["game_minutes"])
     senses = get_unlocked_senses(knight["player_level"])
+    movement_points = calculate_movement_points(knight["player_level"], knight["age"])
     return {
         **knight,
         "armor": dict(armor) if armor else None,
         "techniques": techniques,
         "calendar": calendar,
         "senses": senses,
+        "movement_points": movement_points,
         "weekly_schedule_list": parse_weekly_schedule(knight["weekly_schedule"]),
     }
 
@@ -255,6 +266,20 @@ def api_arena_new_opponent(knight_id: int, req: ArenaStartBattleRequest, conn=De
 
     battle_state = start_battle(conn, knight, armor, opponent=req.opponent)
     return {"battle_state": battle_state}
+
+
+@app.post("/characters/{knight_id}/arena/move")
+def api_arena_move(knight_id: int, req: ArenaMoveRequest, conn=Depends(get_db)):
+    """Sposta il giocatore verso (x, y) sulla mappa - Fase 1: solo
+    visivo, non blocca né abilita ancora nessuna azione di
+    combattimento (vedi api/arena_session.py). Muove anche
+    l'avversario di un piccolo passo a caso."""
+    knight = _get_knight_or_404(conn, knight_id)
+
+    log = move_player(knight, req.battle_state, req.x, req.y)
+    save_knight(conn, knight)
+
+    return {"log": log, "character": _knight_payload(conn, knight), "battle_state": req.battle_state}
 
 
 @app.post("/characters/{knight_id}/arena/declare")
