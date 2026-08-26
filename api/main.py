@@ -38,9 +38,10 @@ from core.fm_manager import (
     serialize_weekly_schedule, TRAINING_FOCUS_OPTIONS,
 )
 from core.arena_manager import find_defensive_technique, get_unlocked_senses
+from core.version import APP_VERSION
 from api.arena_session import start_battle, resolve_declare, resolve_react, finalize_fight
 
-app = FastAPI(title="Saint Seiya: Sacro Imperio API")
+app = FastAPI(title="Saint Seiya: Sacro Imperio API", version=APP_VERSION)
 
 # Sviluppo: aperto a tutte le origini. Quando ci sarà un frontend vero
 # con un suo indirizzo fisso, restringiamo a quello soltanto.
@@ -138,7 +139,7 @@ def _get_knight_or_404(conn, knight_id: int) -> dict:
 
 @app.get("/")
 def api_root():
-    return {"status": "ok", "app": "Saint Seiya: Sacro Imperio"}
+    return {"status": "ok", "app": "Saint Seiya: Sacro Imperio", "version": APP_VERSION}
 
 
 # --------------------------- Frontend web ---------------------------
