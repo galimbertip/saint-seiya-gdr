@@ -47,14 +47,18 @@ COSMO_ATTUNEMENT_FOR_AC = 0
 
 
 def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
-                       exclude_armor_name: str | None = None,
+                       exclude_armor_names: set[str] | None = None,
                        difficulty: str = DEFAULT_DIFFICULTY) -> dict:
     """Genera un avversario dal catalogo armature. Il livello cercato è
     il tuo livello SPOSTATO in base alla difficoltà scelta (facile:
     più debole di te; difficile: più forte di te) - non più sempre
-    "un avversario pari a te". Se non trova nessuna armatura nella
-    tolleranza (es. livelli estremi), allarga la ricerca a tutto il
-    catalogo piuttosto che fallire."""
+    "un avversario pari a te". exclude_armor_names: un insieme di nomi
+    da escludere (la tua armatura, e/o altri avversari già proposti
+    nella stessa "sala d'attesa" - vedi generate_opponent_candidates).
+    Se non trova nessuna armatura nella tolleranza (es. livelli
+    estremi), allarga la ricerca a tutto il catalogo piuttosto che
+    fallire."""
+    exclude_armor_names = exclude_armor_names or set()
     offset = DIFFICULTY_LEVEL_OFFSET.get(difficulty, 0)
     target_level = player_armor_level + offset
 
@@ -63,10 +67,10 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
         (target_level, OPPONENT_LEVEL_TOLERANCE),
     ).fetchall()
 
-    candidates = [r for r in rows if r["name"] != exclude_armor_name]
+    candidates = [r for r in rows if r["name"] not in exclude_armor_names]
     if not candidates:
         all_rows = conn.execute("SELECT * FROM armors").fetchall()
-        candidates = [r for r in all_rows if r["name"] != exclude_armor_name] or list(all_rows)
+        candidates = [r for r in all_rows if r["name"] not in exclude_armor_names] or list(all_rows)
 
     armor = random.choice(candidates)
     techniques = [dict(t) for t in get_techniques_for_armor(armor["name"], conn)]
@@ -84,6 +88,28 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
         "dex": 10 + armor["level"] // 10,
         "techniques": techniques,
     }
+
+
+def generate_opponent_candidates(conn: sqlite3.Connection, player_armor_level: int,
+                                  exclude_armor_name: str | None = None,
+                                  difficulty: str = DEFAULT_DIFFICULTY,
+                                  count: int = 5) -> list[dict]:
+    """Genera `count` avversari candidati - una "sala d'attesa" tra cui
+    scegliere, invece di un solo avversario imposto a caso (richiesto
+    in chat). Evita di riproporre due volte la stessa armatura tra i
+    candidati, quando il catalogo lo permette."""
+    candidates: list[dict] = []
+    excluded_names: set[str] = {exclude_armor_name} if exclude_armor_name else set()
+
+    attempts = 0
+    max_attempts = count * 5  # margine per quando il catalogo è troppo piccolo per 'count' nomi distinti
+    while len(candidates) < count and attempts < max_attempts:
+        attempts += 1
+        opponent = generate_opponent(conn, player_armor_level, exclude_armor_names=excluded_names, difficulty=difficulty)
+        excluded_names.add(opponent["armor_name"])
+        candidates.append(opponent)
+
+    return candidates
 
 
 CRITICAL_FUMBLE_FLAVORS = [
