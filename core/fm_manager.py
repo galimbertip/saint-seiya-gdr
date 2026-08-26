@@ -31,6 +31,8 @@ bilanciamento vero e proprio. La struttura è quella buona.
 """
 import random
 
+from core.arena_manager import get_unlocked_senses
+
 # --- Tipi di allenamento --------------------------------------------------
 TRAINING_FOCUS_OPTIONS = [
     "Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
@@ -278,15 +280,33 @@ class RosterManager:
     def add_xp(knight: dict, amount: int) -> str:
         """Aggiunge XP e gestisce eventuali salite di livello (una alla
         volta). Muta `knight` in place. Restituisce un messaggio SOLO se
-        c'è stato un level up (stringa vuota altrimenti)."""
+        c'è stato un level up (stringa vuota altrimenti) - e se quel
+        level up sblocca un nuovo Senso, lo annuncia nella stessa riga
+        (richiesto in chat: prima il giocatore lo scopriva solo per
+        caso, provando i pulsanti in Arena)."""
         knight["xp"] += amount
 
         threshold = RosterManager.xp_to_next_level(knight["player_level"])
         if knight["xp"] < threshold:
             return ""
 
+        previous_senses = get_unlocked_senses(knight["player_level"])
         knight["xp"] -= threshold
         knight["player_level"] += 1
         knight["cosmo_max"] += 5  # PLACEHOLDER: bonus di livello
-        return (f"🎉 {knight['raw_name']} è salito al livello {knight['player_level']}! "
-                f"(Cosmo massimo +5)")
+        new_senses = get_unlocked_senses(knight["player_level"])
+
+        msg = (f"🎉 {knight['raw_name']} è salito al livello {knight['player_level']}! "
+               f"(Cosmo massimo +5)")
+
+        sense_labels = {
+            "sesto": "Sesto Senso (sblocca Carica il Cosmo)",
+            "settimo": "Settimo Senso (si risveglia da solo in punto di rottura)",
+            "ottavo": "Ottavo Senso (sopravvivi al colpo che ti finirebbe)",
+            "nono": "Nono Senso",
+        }
+        for key, label in sense_labels.items():
+            if new_senses[key] and not previous_senses[key]:
+                msg += f" 🌟 Hai sbloccato il {label}!"
+
+        return msg
