@@ -284,9 +284,9 @@ async function doTrain(mode) {
 }
 
 // --- Arena ---
-async function searchOpponent() {
+async function searchOpponent(difficulty) {
   try {
-    const result = await api(`/characters/${state.characterId}/arena/opponent`, { method: "POST" });
+    const result = await api(`/characters/${state.characterId}/arena/opponent?difficulty=${difficulty}`, { method: "POST" });
     state.battle = result.battle_state;
     state.log = [`Un rivale si fa avanti: ${state.battle.opponent.name} (${state.battle.opponent.divinity} / ${state.battle.opponent.faction}, livello armatura ${state.battle.opponent.armor_level}).`];
     render();
@@ -573,7 +573,10 @@ function renderArenaTab() {
   actionsCard.append(el("h2", {}, "Le tue azioni"));
 
   if (!state.battle) {
-    actionsCard.append(el("button", { onClick: searchOpponent }, "🗡 Cerca un Avversario"));
+    actionsCard.append(el("p", { class: "hint" }, "Scegli la difficoltà dell'avversario:"));
+    actionsCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("facile") }, "🗡 Facile"));
+    actionsCard.append(el("button", { onClick: () => searchOpponent("medio") }, "🗡 Medio"));
+    actionsCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
   } else if (state.battle.pending_opponent_technique) {
     const t = state.battle.pending_opponent_technique;
     actionsCard.append(el("h2", {}, `⚔ ${state.battle.opponent.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
