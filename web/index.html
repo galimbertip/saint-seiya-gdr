@@ -146,6 +146,34 @@
     border-radius: 8px;
     margin-bottom: 16px;
   }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* --- Schermi stretti (smartphone) --- */
+  @media (max-width: 640px) {
+    body { padding: 12px; }
+    h1 { font-size: 21px; }
+    h2 { font-size: 15px; }
+    .card { padding: 12px 14px; }
+    button { padding: 10px 14px; font-size: 13px; }
+
+    /* La barra di stato: da riga unica (calendario + 2 barre da 240px,
+       non ci stanno in 360px di schermo) a colonna impilata, ogni
+       elemento largo quanto lo schermo - segnalato in chat, prima
+       nessuno l'aveva ancora provata da telefono. */
+    .status-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+    .status-bar .calendar { white-space: normal; text-align: center; }
+    .status-bar .mini-bar { width: 100%; }
+
+    .stat-chip { min-width: 64px; padding: 8px 10px; }
+    .stat-chip .value { font-size: 17px; }
+    .tab-btn { padding: 8px 10px; font-size: 13px; }
+
+    /* Le tabelle (elenco partite, elenco armature) restano leggibili:
+       invece di schiacciarsi o sforare lo schermo, scorrono in
+       orizzontale con un dito - vedi .table-scroll nel markup. */
+    table { font-size: 12px; }
+    th, td { padding: 5px 6px; }
+  }
 </style>
 </head>
 <body>
@@ -450,7 +478,9 @@ function renderStartScreen() {
       );
       table.append(row);
     }
-    card.append(table);
+    const scrollWrap = el("div", { class: "table-scroll" });
+    scrollWrap.append(table);
+    card.append(scrollWrap);
   }
   wrap.append(card);
 
@@ -482,7 +512,9 @@ function renderCreationScreen() {
     });
     table.append(row);
   }
-  armorCard.append(table);
+  const armorScrollWrap = el("div", { class: "table-scroll" });
+  armorScrollWrap.append(table);
+  armorCard.append(armorScrollWrap);
   wrap.append(armorCard);
 
   const createBtn = el("button", {
