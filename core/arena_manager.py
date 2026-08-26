@@ -103,17 +103,27 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
     )
     hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, defender_ac, mode=roll_mode)
 
+    # Etichetta esplicita: quale tiro ha risentito di un Imprevisto,
+    # invece di lasciare il collegamento implicito (segnalato in chat:
+    # si vedeva il messaggio dell'Imprevisto ma non si capiva SU QUALE
+    # tiro avesse agito davvero).
+    mode_note = ""
+    if roll_mode == "vantaggio":
+        mode_note = " [tirato con VANTAGGIO]"
+    elif roll_mode == "svantaggio":
+        mode_note = " [tirato con SVANTAGGIO]"
+
     if not hit:
         if dice_roll == 1:
-            return 0, f"{attacker_name} lancia {technique_name}... FALLIMENTO CRITICO (1 naturale)! Un disastro."
-        return 0, f"{attacker_name} lancia {technique_name}, ma {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
+            return 0, f"{attacker_name} lancia {technique_name}...{mode_note} FALLIMENTO CRITICO (1 naturale)! Un disastro."
+        return 0, f"{attacker_name} lancia {technique_name}, ma {defender_name} schiva!{mode_note} ({attack_total} vs CA {defender_ac})"
 
     _, damage = DnDEngine.resolve_technique_damage(technique_power, attacker_armor_level)
     if dice_roll == 20:
         damage *= 2
-        return damage, (f"{attacker_name} colpisce con {technique_name}! COLPO CRITICO (20 naturale)! "
+        return damage, (f"{attacker_name} colpisce con {technique_name}! COLPO CRITICO (20 naturale)!{mode_note} "
                          f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
-    return damage, (f"{attacker_name} colpisce con {technique_name}! "
+    return damage, (f"{attacker_name} colpisce con {technique_name}!{mode_note} "
                      f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
 
 
