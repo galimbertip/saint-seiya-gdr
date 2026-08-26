@@ -86,44 +86,62 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
     }
 
 
+CRITICAL_FUMBLE_FLAVORS = [
+    "inciampa e perde l'equilibrio, restando scoperto",
+    "il colpo gli si ritorce contro: una fitta improvvisa lo blocca",
+    "scivola e sbatte a terra, mancando il bersaglio di netto",
+    "il Cosmo si ribella per un istante, disorientandolo completamente",
+]
+
+CRITICAL_HIT_FLAVORS = [
+    "trova un varco perfetto nella difesa avversaria",
+    "scarica tutta la potenza del Cosmo in un colpo devastante",
+    "centra in pieno il punto debole dell'avversario",
+]
+
+
 def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: int,
                   defender_name: str, defender_dex: int, defender_armor_level: int,
                   technique_name: str, technique_power: int,
-                  roll_mode: str = "normale") -> tuple[int, str]:
+                  roll_mode: str = "normale", cause_phrase: str | None = None) -> tuple[int, str]:
     """Risolve un turno d'attacco riusando DnDEngine (CA, tiro per
     colpire, danno) - qui si orchestra soltanto, nessuna nuova formula.
     roll_mode: 'normale' | 'vantaggio' | 'svantaggio' - concesso da un
     Imprevisto (vedi maybe_trigger_event) o da altre condizioni future.
-    Un 1 naturale è sempre un fallimento critico (segnalato a parte da
-    una schivata normale); un 20 naturale è sempre un successo e
-    raddoppia il danno (colpo critico) - regole richieste in chat.
+    cause_phrase: la spiegazione NARRATIVA del perché (es. "abbagliato
+    dal sole") - se non fornita, si usa una frase generica. Deciso in
+    chat: niente più etichette nude tipo '[SVANTAGGIO]', la causa entra
+    dentro la frase del colpo.
+    Un 1 naturale è sempre un fallimento critico (una disgrazia fisica
+    vera, pescata a caso - non solo un'etichetta); un 20 naturale è
+    sempre un successo e raddoppia il danno (colpo critico) - regole
+    richieste in chat.
     Restituisce (danno_inflitto, messaggio_di_log)."""
     defender_ac = DnDEngine.calculate_ac(
         DnDEngine.get_modifier(defender_dex), defender_armor_level, COSMO_ATTUNEMENT_FOR_AC
     )
     hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, defender_ac, mode=roll_mode)
 
-    # Etichetta esplicita: quale tiro ha risentito di un Imprevisto,
-    # invece di lasciare il collegamento implicito (segnalato in chat:
-    # si vedeva il messaggio dell'Imprevisto ma non si capiva SU QUALE
-    # tiro avesse agito davvero).
-    mode_note = ""
-    if roll_mode == "vantaggio":
-        mode_note = " [tirato con VANTAGGIO]"
-    elif roll_mode == "svantaggio":
-        mode_note = " [tirato con SVANTAGGIO]"
+    if roll_mode == "svantaggio":
+        prefix_note = f" ({cause_phrase})" if cause_phrase else " (in difficoltà)"
+    elif roll_mode == "vantaggio":
+        prefix_note = f" ({cause_phrase})" if cause_phrase else " (con un'apertura perfetta)"
+    else:
+        prefix_note = ""
 
     if not hit:
         if dice_roll == 1:
-            return 0, f"{attacker_name} lancia {technique_name}...{mode_note} FALLIMENTO CRITICO (1 naturale)! Un disastro."
-        return 0, f"{attacker_name} lancia {technique_name}, ma {defender_name} schiva!{mode_note} ({attack_total} vs CA {defender_ac})"
+            flavor = random.choice(CRITICAL_FUMBLE_FLAVORS)
+            return 0, f"{attacker_name} lancia {technique_name}{prefix_note}... {flavor}! (1 naturale)"
+        return 0, f"{attacker_name} lancia {technique_name}{prefix_note}, ma {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
 
     _, damage = DnDEngine.resolve_technique_damage(technique_power, attacker_armor_level)
     if dice_roll == 20:
         damage *= 2
-        return damage, (f"{attacker_name} colpisce con {technique_name}! COLPO CRITICO (20 naturale)!{mode_note} "
-                         f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
-    return damage, (f"{attacker_name} colpisce con {technique_name}!{mode_note} "
+        flavor = random.choice(CRITICAL_HIT_FLAVORS)
+        return damage, (f"{attacker_name} colpisce con {technique_name}{prefix_note}: {flavor}! "
+                         f"({attack_total} vs CA {defender_ac}) — Danno: {damage} (raddoppiato)")
+    return damage, (f"{attacker_name} colpisce con {technique_name}{prefix_note}! "
                      f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
 
 
@@ -250,10 +268,14 @@ EVENT_FLAT_DAMAGE_RANGE = (1, 4)
 
 RANDOM_EVENTS = [
     {"name": "Una spettatrice dalle tribune lancia un sasso a sorpresa", "effect": "danno_casuale"},
-    {"name": "Una nevicata improvvisa rende il terreno scivoloso", "effect": "svantaggio"},
-    {"name": "Un raggio di sole abbaglia l'Arena", "effect": "svantaggio"},
-    {"name": "Una folata di vento gelido disturba la concentrazione", "effect": "svantaggio"},
-    {"name": "Il pubblico esplode in un boato che carica d'entusiasmo", "effect": "vantaggio"},
+    {"name": "Una nevicata improvvisa rende il terreno scivoloso", "effect": "svantaggio",
+     "cause_phrase": "scivola sul terreno ghiacciato"},
+    {"name": "Un raggio di sole abbaglia l'Arena", "effect": "svantaggio",
+     "cause_phrase": "abbagliato dal sole"},
+    {"name": "Una folata di vento gelido disturba la concentrazione", "effect": "svantaggio",
+     "cause_phrase": "distratto dal vento gelido"},
+    {"name": "Il pubblico esplode in un boato che carica d'entusiasmo", "effect": "vantaggio",
+     "cause_phrase": "spinto dal boato della folla"},
     {"name": "Il terreno cede leggermente sotto i piedi", "effect": "danno_casuale"},
 ]
 
@@ -282,11 +304,13 @@ def maybe_trigger_event(knight: dict, opponent: dict) -> dict | None:
         return {
             "message": f"🎲 IMPREVISTO: {event['name']}! {colpito} subisce {dmg} di danno diretto.",
             "roll_mode": "normale",
+            "cause_phrase": None,
         }
 
     return {
         "message": f"🎲 IMPREVISTO: {event['name']}!",
         "roll_mode": event["effect"],  # 'vantaggio' o 'svantaggio' per il prossimo tiro
+        "cause_phrase": event.get("cause_phrase"),  # la frase da intrecciare nel messaggio del colpo
     }
 
 
