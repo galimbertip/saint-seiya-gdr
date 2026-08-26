@@ -86,6 +86,9 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
         "cosmo_max": cosmo,
         "str": 10 + armor["level"] // 10,
         "dex": 10 + armor["level"] // 10,
+        "con": 10 + armor["level"] // 10,
+        "tec": 10 + armor["level"] // 10,
+        "vol": 10 + armor["level"] // 10,
         "techniques": techniques,
     }
 
@@ -126,12 +129,16 @@ CRITICAL_HIT_FLAVORS = [
 ]
 
 
-def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: int,
-                  defender_name: str, defender_dex: int, defender_armor_level: int,
+def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attacker_armor_level: int,
+                  defender_name: str, defender_dex: int, defender_con: int, defender_armor_level: int,
                   technique_name: str, technique_power: int,
                   roll_mode: str = "normale", cause_phrase: str | None = None) -> tuple[int, str]:
     """Risolve un turno d'attacco riusando DnDEngine (CA, tiro per
     colpire, danno) - qui si orchestra soltanto, nessuna nuova formula.
+    attacker_tec/defender_con: Tecnica di chi attacca aumenta il danno
+    inflitto, Costituzione di chi difende lo riduce - richiesto in
+    chat: prima queste due statistiche non contavano nulla in
+    combattimento, solo Forza e Destrezza.
     roll_mode: 'normale' | 'vantaggio' | 'svantaggio' - concesso da un
     Imprevisto (vedi maybe_trigger_event) o da altre condizioni future.
     cause_phrase: la spiegazione NARRATIVA del perché (es. "abbagliato
@@ -146,7 +153,7 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
     defender_ac = DnDEngine.calculate_ac(
         DnDEngine.get_modifier(defender_dex), defender_armor_level, COSMO_ATTUNEMENT_FOR_AC
     )
-    hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, defender_ac, mode=roll_mode)
+    hit, dice_roll, attack_total = DnDEngine.resolve_attack(attacker_str, attacker_armor_level, defender_ac, mode=roll_mode)
 
     if roll_mode == "svantaggio":
         prefix_note = f" ({cause_phrase})" if cause_phrase else " (in difficoltà)"
@@ -166,7 +173,11 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_armor_level: in
         connector = "e" if roll_mode == "svantaggio" else "ma"
         return 0, f"{attacker_name} lancia {technique_name}{prefix_note}, {connector} {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
 
-    _, damage = DnDEngine.resolve_technique_damage(technique_power, attacker_armor_level)
+    attacker_tec_mod = DnDEngine.get_modifier(attacker_tec)
+    defender_con_mod = DnDEngine.get_modifier(defender_con)
+    _, damage = DnDEngine.resolve_technique_damage(
+        technique_power, attacker_armor_level, attacker_tec_mod=attacker_tec_mod, defender_con_mod=defender_con_mod
+    )
     if dice_roll == 20:
         damage *= 2
         flavor = random.choice(CRITICAL_HIT_FLAVORS)
@@ -356,6 +367,8 @@ def maybe_trigger_event(knight: dict, opponent: dict) -> dict | None:
 # flusso dei turni (chi dichiara, chi reagisce), non solo un numero
 # che scende - va tenuta separata dalla risoluzione dell'azione scelta
 # dal giocatore, non sommata dentro.
+STATUS_SAVE_DC = 14  # soglia del tiro salvezza di Volontà contro Veleno/Paralisi
+
 STATUS_RULES = {
     "veleno": {"kind": "veleno", "duration": 3},
     "pietrificazione": {"kind": "paralisi", "duration": 1},
@@ -387,6 +400,15 @@ def status_applied_message(target_name: str, technique_name: str, status: dict) 
     if status["kind"] == "veleno":
         return f"⚠️ {target_name} è avvelenato da {technique_name}!"
     return f"🥶 {target_name} è pietrificato da {technique_name}!"
+
+
+def status_resisted(defender_vol: int) -> bool:
+    """Tiro salvezza di Volontà contro un nuovo Veleno/Paralisi - se
+    supera la soglia STATUS_SAVE_DC, l'effetto non si applica affatto
+    (il colpo fa comunque il suo danno normale, solo l'effetto extra
+    viene resistito). Richiesto in chat: dare un ruolo vero alla
+    Volontà, prima non contava nulla in combattimento."""
+    return DnDEngine.resolve_saving_throw(defender_vol, STATUS_SAVE_DC)
 
 
 def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> tuple[list[str], bool]:
