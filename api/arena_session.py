@@ -229,8 +229,19 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
             out_of_range = not moved_too_much and not check_attack_range(
                 battle_state["player_position"], battle_state["opponent_position"], technique_name
             )
-            battle_state["player_moved_this_round"] = 0.0  # nuovo round, il conteggio riparte da zero
+        else:
+            moved_too_much = False
+            out_of_range = False
 
+        # L'azzeramento vale per QUALUNQUE azione dichiarata (attacca O
+        # carica) - bug corretto in chat: prima avveniva solo dentro il
+        # ramo 'attacca', quindi muoversi un po' e poi scegliere
+        # 'carica' lasciava il conteggio "appeso" ai round successivi,
+        # bloccando un attacco futuro anche senza essersi mossi in quel
+        # turno specifico.
+        battle_state["player_moved_this_round"] = 0.0
+
+        if action == "attacca":
             if moved_too_much:
                 log.append(f"{knight['raw_name']} si è mosso troppo per attaccare anche in questo round!")
                 battle_state["last_effect"] = None
