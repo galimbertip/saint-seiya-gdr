@@ -261,7 +261,8 @@ def get_roster(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         """
         SELECT r.armor_name, r.npc_name, r.claimed_by_knight_id,
                a.divinity, a.faction, a.level,
-               k.formal_name AS claimed_by_name, k.player_level AS claimed_by_level
+               k.raw_name AS claimed_by_raw_name, k.surname AS claimed_by_surname,
+               k.player_level AS claimed_by_level
         FROM roster r
         JOIN armors a ON a.name = r.armor_name
         LEFT JOIN knights k ON k.id = r.claimed_by_knight_id
