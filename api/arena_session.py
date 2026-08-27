@@ -24,6 +24,7 @@ from core.arena_manager import (
     resolve_defense, find_defensive_technique, get_unlocked_senses,
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     status_resisted, calculate_movement_points, try_move, wander_opponent,
+    check_attack_range, movement_uses_turn,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
@@ -61,6 +62,7 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "player_position": dict(PLAYER_START_POSITION),
         "opponent_position": dict(OPPONENT_START_POSITION),
         "last_effect": None,
+        "player_moved_this_round": 0.0,
     }
 
 
@@ -68,12 +70,14 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
     """Sposta il giocatore verso (target_x, target_y), entro i suoi
     Punti Movimento - se il bersaglio è troppo lontano, si ferma al
     massimo raggiungibile invece di rifiutare lo spostamento. Oltre la
-    soglia gratuita (FREE_MOVEMENT_RANGE) il tempo passa. Fase 1: la
-    posizione è ancora solo visiva, non blocca né abilita nessuna
-    azione di combattimento. Muove anche l'avversario di un piccolo
-    passo a caso (richiesto in chat: 'sembrare vivo', nessun effetto
-    tattico). Muta `knight` e `battle_state` in place.
-    Restituisce i messaggi di log."""
+    soglia gratuita (FREE_MOVEMENT_RANGE) il tempo passa.
+    Fase 2: la distanza percorsa si accumula in
+    battle_state['player_moved_this_round'] - se supera metà dei Punti
+    Movimento, il prossimo 'attacca' di questo round verrà rifiutato
+    (vedi resolve_declare) - muoversi troppo consuma il turno.
+    Muove anche l'avversario di un piccolo passo a caso (Fase 1:
+    'sembrare vivo', nessun effetto tattico). Muta `knight` e
+    `battle_state` in place. Restituisce i messaggi di log."""
     log: list[str] = []
     battle_state["last_effect"] = None  # muoversi non è un colpo, niente da disegnare sulla mappa
     movement_points = calculate_movement_points(knight["player_level"], knight["age"])
@@ -82,6 +86,7 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
         battle_state["player_position"], target_x, target_y, movement_points
     )
     battle_state["player_position"] = new_pos
+    battle_state["player_moved_this_round"] = battle_state.get("player_moved_this_round", 0.0) + distance_moved
 
     if moved_fully:
         log.append(f"{knight['raw_name']} si sposta di {distance_moved:.1f} unità.")
@@ -218,38 +223,52 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                 return log, True, winner
 
         if action == "attacca":
-            dmg, msg = resolve_turn(
-                knight["raw_name"], knight["str"], knight["tec"], armor["level"],
-                opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
-                technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
+            movement_points = calculate_movement_points(knight["player_level"], knight["age"])
+            moved_too_much = movement_uses_turn(battle_state.get("player_moved_this_round", 0.0), movement_points)
+            out_of_range = not moved_too_much and not check_attack_range(
+                battle_state["player_position"], battle_state["opponent_position"], technique_name
             )
-            dmg = apply_charge(dmg, True, battle_state)
-            msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
+            battle_state["player_moved_this_round"] = 0.0  # nuovo round, il conteggio riparte da zero
 
-            if dmg == 0:
-                # Schivata vera (il tiro per colpire ha già fallito): niente
-                # da difendere, la reazione dell'avversario non ha senso.
-                log.append(msg)
-                battle_state["last_effect"] = {"attacker": "player", "outcome": "miss", "tech_type": technique_type}
+            if moved_too_much:
+                log.append(f"{knight['raw_name']} si è mosso troppo per attaccare anche in questo round!")
+                battle_state["last_effect"] = None
+            elif out_of_range:
+                log.append(f"{knight['raw_name']} è troppo lontano per colpire con {technique_name} da qui!")
+                battle_state["last_effect"] = None
             else:
-                defense = opponent_reacts(opponent)
-                if defense:
-                    reduced = resolve_defense(dmg, defense["power"])
-                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
-                    log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
-                    battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": technique_type}
-                else:
-                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
-                    log.append(msg)
-                    battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
+                dmg, msg = resolve_turn(
+                    knight["raw_name"], knight["str"], knight["tec"], armor["level"],
+                    opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
+                    technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
+                )
+                dmg = apply_charge(dmg, True, battle_state)
+                msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
 
-                status = maybe_apply_status(technique_type, technique_power)
-                if status:
-                    if status_resisted(opponent["vol"]):
-                        log.append(f"💪 {opponent['name']} resiste all'effetto con la sua Volontà!")
+                if dmg == 0:
+                    # Schivata vera (il tiro per colpire ha già fallito): niente
+                    # da difendere, la reazione dell'avversario non ha senso.
+                    log.append(msg)
+                    battle_state["last_effect"] = {"attacker": "player", "outcome": "miss", "tech_type": technique_type}
+                else:
+                    defense = opponent_reacts(opponent)
+                    if defense:
+                        reduced = resolve_defense(dmg, defense["power"])
+                        opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
+                        log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
+                        battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": technique_type}
                     else:
-                        battle_state.setdefault("opponent_statuses", []).append(status)
-                        log.append(status_applied_message(opponent["name"], technique_name, status))
+                        opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
+                        log.append(msg)
+                        battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
+
+                    status = maybe_apply_status(technique_type, technique_power)
+                    if status:
+                        if status_resisted(opponent["vol"]):
+                            log.append(f"💪 {opponent['name']} resiste all'effetto con la sua Volontà!")
+                        else:
+                            battle_state.setdefault("opponent_statuses", []).append(status)
+                            log.append(status_applied_message(opponent["name"], technique_name, status))
         else:  # carica
             knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
             battle_state["player_charge_multiplier"] = max(
