@@ -148,6 +148,22 @@
   }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+  /* Disposizione dell'Arena: pannello combattente sinistro, mappa al
+     centro, pannello combattente destro - pensata per estendersi in
+     futuro a più cavalieri per lato (richiesto in chat). Su schermi
+     stretti i pannelli scendono sotto la mappa invece di schiacciarsi. */
+  .arena-columns { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .fighter-panel {
+    flex: 1 1 220px;
+    min-width: 220px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .fighter-panel.opponent-panel button { opacity: 0.55; cursor: not-allowed; }
+  .arena-map-column { flex: 2 1 340px; min-width: 300px; }
+
   /* --- Schermi stretti (smartphone) --- */
   @media (max-width: 640px) {
     body { padding: 12px; }
@@ -686,74 +702,95 @@ function renderArenaTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Arena del Santuario"));
 
-  const fightersCard = el("div", { class: "card" });
-  fightersCard.append(el("h2", {}, "Combattenti"));
-  fightersCard.append(el("div", { class: "hint" }, "Tu"));
-  // Scala condivisa: chi ha più Cosmo massimo ha la barra fisicamente
-  // più "grossa", non solo la percentuale - deciso in chat, prima le
-  // due barre avevano sempre la stessa lunghezza anche con Cosmo
-  // massimo molto diverso tra i due combattenti.
-  const sharedMaxCosmo = state.battle
-    ? Math.max(state.character.cosmo_max, state.battle.opponent.cosmo_max)
-    : state.character.cosmo_max;
-  fightersCard.append(renderFullBar(state.character.cosmo_cur, state.character.cosmo_max, sharedMaxCosmo));
-  if (state.battle) {
-    const o = state.battle.opponent;
-    fightersCard.append(el("div", { class: "hint" }, `${o.name} (${o.divinity} / ${o.faction})`));
-    fightersCard.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
+  if (!state.battle && !state.opponentCandidates) {
+    const searchCard = el("div", { class: "card" });
+    searchCard.append(el("h2", {}, "Cerca un avversario"));
+    searchCard.append(el("p", { class: "hint" }, "Scegli la difficoltà dell'avversario:"));
+    searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("facile") }, "🗡 Facile"));
+    searchCard.append(el("button", { onClick: () => searchOpponent("medio") }, "🗡 Medio"));
+    searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
+    wrap.append(searchCard);
+  } else if (!state.battle && state.opponentCandidates) {
+    const waitingCard = el("div", { class: "card" });
+    waitingCard.append(el("h2", {}, "Sala d'attesa"));
+    waitingCard.append(el("p", { class: "hint" }, "5 rivali si fanno avanti dalla sala d'attesa - chi sfidi?"));
+    for (const candidate of state.opponentCandidates) {
+      waitingCard.append(el("button", {
+        onClick: () => challengeOpponent(candidate),
+      }, `⚔ ${candidate.name} (${candidate.divinity} / ${candidate.faction}, livello ${candidate.armor_level})`));
+    }
+    waitingCard.append(el("button", { class: "secondary", onClick: () => { state.opponentCandidates = null; render(); } }, "◄ Cambia difficoltà"));
+    wrap.append(waitingCard);
   } else {
-    fightersCard.append(el("div", { class: "hint" }, "Nessun avversario"));
-  }
-  wrap.append(fightersCard);
+    const k = state.character;
+    const o = state.battle.opponent;
+    // Scala condivisa: chi ha più Cosmo massimo ha la barra fisicamente
+    // più "grossa", non solo la percentuale - prima le due barre
+    // avevano sempre la stessa lunghezza anche con Cosmo massimo
+    // molto diverso tra i due combattenti.
+    const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
 
-  if (state.battle) {
+    const columns = el("div", { class: "arena-columns" });
+
+    // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
+    const leftPanel = el("div", { class: "fighter-panel" });
+    leftPanel.append(el("h2", {}, k.formal_name));
+    leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
+    leftPanel.append(renderFullBar(k.cosmo_cur, k.cosmo_max, sharedMaxCosmo));
+
+    if (state.battle.pending_opponent_technique) {
+      const t = state.battle.pending_opponent_technique;
+      leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
+      leftPanel.append(el("button", { onClick: () => reactToAttack(true) }, "🛡 Difenditi"));
+      leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack(false) }, "😤 Incassa il colpo"));
+    } else {
+      const senses = k.senses;
+      const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
+        k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"))
+      );
+      leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
+      for (const t of attackOptions) {
+        leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type) }, `⚔ ${t.name} (${t.power})`));
+      }
+      leftPanel.append(el("button", {
+        onClick: declareCharge,
+        class: "secondary",
+        ...(senses.sesto ? {} : { disabled: "disabled" }),
+      }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica (richiede Sesto Senso)"));
+      leftPanel.append(el("button", { class: "secondary", onClick: retreat }, "Ritirati"));
+    }
+    columns.append(leftPanel);
+
+    // --- Colonna centrale: la mappa ---
+    const mapColumn = el("div", { class: "arena-map-column" });
     const mapCard = el("div", { class: "card" });
     mapCard.append(el("h2", {}, "Arena"));
     mapCard.append(renderArenaMap());
     const movementHint = state.battle.pending_opponent_technique
       ? "Rispondi all'attacco prima di poterti muovere ancora."
-      : `Punti Movimento: ${state.character.movement_points} — clicca sulla mappa per spostarti.`;
+      : `Punti Movimento: ${k.movement_points} — clicca sulla mappa per spostarti.`;
     mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
-    wrap.append(mapCard);
-  }
+    mapColumn.append(mapCard);
+    columns.append(mapColumn);
 
-  const actionsCard = el("div", { class: "card" });
-  actionsCard.append(el("h2", {}, "Le tue azioni"));
+    // --- Pannello destro: L'AVVERSARIO ---
+    // Le sue tecniche sono mostrate ma NON cliccabili - oggi lo
+    // controlla l'IA, ma la disposizione è pronta per un domani in cui
+    // due cavalieri diversi (magari due giocatori) potrebbero
+    // scegliere ciascuno le proprie tecniche dalla stessa schermata
+    // (richiesto in chat).
+    const rightPanel = el("div", { class: "fighter-panel opponent-panel" });
+    rightPanel.append(el("h2", {}, o.name));
+    rightPanel.append(el("p", { class: "hint" }, `${o.divinity} / ${o.faction} · Livello armatura ${o.armor_level}`));
+    rightPanel.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
+    rightPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le sue tecniche:"));
+    for (const t of o.techniques) {
+      rightPanel.append(el("button", { disabled: "disabled" }, `⚔ ${t.name} (${t.power})`));
+    }
+    columns.append(rightPanel);
 
-  if (!state.battle && !state.opponentCandidates) {
-    actionsCard.append(el("p", { class: "hint" }, "Scegli la difficoltà dell'avversario:"));
-    actionsCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("facile") }, "🗡 Facile"));
-    actionsCard.append(el("button", { onClick: () => searchOpponent("medio") }, "🗡 Medio"));
-    actionsCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
-  } else if (!state.battle && state.opponentCandidates) {
-    actionsCard.append(el("p", { class: "hint" }, "5 rivali si fanno avanti dalla sala d'attesa - chi sfidi?"));
-    for (const candidate of state.opponentCandidates) {
-      actionsCard.append(el("button", {
-        onClick: () => challengeOpponent(candidate),
-      }, `⚔ ${candidate.name} (${candidate.divinity} / ${candidate.faction}, livello ${candidate.armor_level})`));
-    }
-    actionsCard.append(el("button", { class: "secondary", onClick: () => { state.opponentCandidates = null; render(); } }, "◄ Cambia difficoltà"));
-  } else if (state.battle.pending_opponent_technique) {
-    const t = state.battle.pending_opponent_technique;
-    actionsCard.append(el("h2", {}, `⚔ ${state.battle.opponent.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
-    actionsCard.append(el("button", { onClick: () => reactToAttack(true) }, "🛡 Difenditi"));
-    actionsCard.append(el("button", { class: "secondary", onClick: () => reactToAttack(false) }, "😤 Incassa il colpo"));
-  } else {
-    const senses = state.character.senses;
-    const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
-      state.character.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"))
-    );
-    for (const t of attackOptions) {
-      actionsCard.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type) }, `⚔ ${t.name} (potenza ${t.power})`));
-    }
-    actionsCard.append(el("button", {
-      onClick: declareCharge,
-      class: "secondary",
-      ...(senses.sesto ? {} : { disabled: "disabled" }),
-    }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica il Cosmo (richiede Sesto Senso)"));
-    actionsCard.append(el("button", { class: "secondary", onClick: retreat }, "Ritirati"));
+    wrap.append(columns);
   }
-  wrap.append(actionsCard);
 
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Cronaca dello scontro"));
