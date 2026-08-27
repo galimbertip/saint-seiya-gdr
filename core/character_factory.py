@@ -20,6 +20,11 @@ from database.db_manager import get_armor, list_armors_for_player_level
 STARTING_COSMO_BASE = 100
 STARTING_STAT_BASE = 10
 
+# Corporatura: richiesta in chat, sposta la Costituzione di partenza -
+# un cavaliere robusto incassa meglio, uno minuto un po' meno. Piccoli
+# scarti (non uno squilibrio), applicati una volta sola alla creazione.
+BUILD_CON_BONUS = {"Minuta": -1, "Media": 0, "Robusta": 2}
+
 
 class ArmorNotFoundError(ValueError):
     pass
@@ -52,13 +57,17 @@ def list_available_armors(conn: sqlite3.Connection, player_level: int) -> list[s
 
 def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
                    player_level: int = 1, surname: str = "", age: int = 15,
-                   gender: str = "", origin: str = "") -> dict:
+                   gender: str = "", origin: str = "", build: str = "Media") -> dict:
     """Crea un nuovo cavaliere, validando armatura e livello. Solleva
     ArmorNotFoundError / ArmorLevelTooHighError se la scelta non è valida,
     invece di salvare comunque come faceva la versione di Gemini.
     surname/gender/origin: dettagli narrativi opzionali del personaggio
     (richiesti in chat per la creazione 'come vuoi tu') - nessun
-    collegamento con dati reali del giocatore, sono del personaggio."""
+    collegamento con dati reali del giocatore, sono del personaggio.
+    build ('Minuta'/'Media'/'Robusta'): sposta la Costituzione di
+    partenza (vedi BUILD_CON_BONUS) - anche questo richiesto in chat,
+    per dare un effetto MECCANICO reale alla corporatura scelta, non
+    solo narrativo."""
 
     armor = get_armor(armor_name, conn)
     if armor is None:
@@ -71,6 +80,7 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
         )
 
     stats = _starting_stats(armor["level"])
+    stats["con"] = max(1, stats["con"] + BUILD_CON_BONUS.get(build, 0))
     cosmo = STARTING_COSMO_BASE + armor["level"]
     full_display_name = f"{raw_name} {surname}".strip()
     formal_name = f"{full_display_name} di {armor_name}"
@@ -80,12 +90,12 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
         """
         INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
                               str, dex, con, tec, vol, player_level, xp, stamina, age,
-                              surname, gender, origin)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?)
+                              surname, gender, origin, build)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?)
         """,
         (formal_name, raw_name, armor_name, cosmo, cosmo,
          stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
-         age, surname, gender, origin),
+         age, surname, gender, origin, build),
     )
     conn.commit()
 
