@@ -821,11 +821,51 @@ function renderFullBar(value, max, scaleMax) {
 
 // Mappa 2D dell'Arena, Fase 1: griglia 10x10 come "righello", movimento
 // libero/continuo (non a caselle - deciso in chat, stile Football
-// Manager). Un canvas quadrato, i due combattenti come pallini
-// colorati. Cliccare/toccare sposta il giocatore verso quel punto,
+// Manager). Cliccare/toccare sposta il giocatore verso quel punto,
 // entro i Punti Movimento disponibili - se troppo lontano, ci si ferma
 // al massimo raggiungibile invece di rifiutare il click. La distanza
 // non blocca ancora nulla nel combattimento (Fase 1: solo visiva).
+//
+// I due combattenti sono figure stilizzate (testa + mantello a
+// triangolo), non più pallini - e dopo ogni colpo, battle.last_effect
+// (impostato dal backend) dice alla mappa cosa disegnare: un fascio
+// colorato per elemento della tecnica, un segno di scudo se parato,
+// un segno d'impatto se il colpo è passato, o uno scarto laterale del
+// colpito se ha schivato - tutto richiesto in chat.
+
+function elementColor(techType) {
+  const t = (techType || "").toLowerCase();
+  if (t.includes("ghiaccio")) return "#AEE6FF";
+  if (t.includes("fuoco")) return "#FF7043";
+  if (t.includes("veleno")) return "#7CB342";
+  if (t.includes("acqua")) return "#4FC3F7";
+  if (t.includes("psichico") || t.includes("illusione")) return "#B266FF";
+  if (t.includes("cosmico") || t.includes("cosmo")) return "#3FA9F5";
+  if (t.includes("fisico")) return "#D4AF37";
+  return "#EAE6DA"; // elemento non riconosciuto: colore neutro
+}
+
+function drawKnightFigure(ctx, x, y, color, label) {
+  // Una figura stilizzata semplice: testa (cerchio) + mantello
+  // (triangolo) - non un pallino, ma non serve un vero disegno
+  // dettagliato per leggersi bene a colpo d'occhio su una mappa piccola.
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y - 13, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x, y - 8);
+  ctx.lineTo(x - 9, y + 11);
+  ctx.lineTo(x + 9, y + 11);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#EAE6DA";
+  ctx.font = "11px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, x, y - 22);
+}
+
 function renderArenaMap() {
   const SIZE = 340;
   const canvas = document.createElement("canvas");
@@ -860,18 +900,43 @@ function renderArenaMap() {
   const canMove = battle && !battle.pending_opponent_technique;
 
   if (battle) {
-    const drawFighter = (pos, color, label) => {
-      ctx.fillStyle = color;
+    const effect = battle.last_effect;
+
+    // Posizioni a schermo (pixel), partendo da quelle vere sulla griglia.
+    let playerPx = { x: battle.player_position.x * scale, y: battle.player_position.y * scale };
+    let opponentPx = { x: battle.opponent_position.x * scale, y: battle.opponent_position.y * scale };
+
+    // Su una schivata, il colpito si scosta lateralmente SOLO per
+    // questo disegno - non tocca la sua posizione vera sulla griglia
+    // (quella resta quella tattica, gestita a parte).
+    if (effect && effect.outcome === "miss") {
+      const dodgerPx = effect.attacker === "player" ? opponentPx : playerPx;
+      dodgerPx.x = Math.min(SIZE - 15, dodgerPx.x + 28);
+    }
+
+    // Il fascio della tecnica: solo se il colpo è arrivato (parato o
+    // no) - su una schivata non ha senso disegnarlo, non ha mai toccato.
+    if (effect && (effect.outcome === "hit" || effect.outcome === "blocked")) {
+      const fromPx = effect.attacker === "player" ? playerPx : opponentPx;
+      const toPx = effect.attacker === "player" ? opponentPx : playerPx;
+      ctx.strokeStyle = elementColor(effect.tech_type);
+      ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.arc(pos.x * scale, pos.y * scale, 11, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#EAE6DA";
-      ctx.font = "11px Arial";
+      ctx.moveTo(fromPx.x, fromPx.y);
+      ctx.lineTo(toPx.x, toPx.y);
+      ctx.stroke();
+    }
+
+    drawKnightFigure(ctx, opponentPx.x, opponentPx.y, "#C0392B", battle.opponent.name.split(" ").slice(-1)[0]);
+    drawKnightFigure(ctx, playerPx.x, playerPx.y, "#3FA9F5", "Tu");
+
+    // Segno di parata/colpo sopra chi ha subito l'attacco.
+    if (effect && (effect.outcome === "hit" || effect.outcome === "blocked")) {
+      const targetPx = effect.attacker === "player" ? opponentPx : playerPx;
+      ctx.font = "20px Arial";
       ctx.textAlign = "center";
-      ctx.fillText(label, pos.x * scale, pos.y * scale - 16);
-    };
-    drawFighter(battle.opponent_position, "#C0392B", battle.opponent.name.split(" ").slice(-1)[0]);
-    drawFighter(battle.player_position, "#3FA9F5", "Tu");
+      ctx.fillText(effect.outcome === "blocked" ? "🛡" : "💥", targetPx.x + 18, targetPx.y - 18);
+    }
   }
 
   canvas.style.cursor = canMove ? "crosshair" : "default";
