@@ -24,7 +24,7 @@ from core.arena_manager import (
     resolve_defense, find_defensive_technique, get_unlocked_senses,
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     status_resisted, calculate_movement_points, try_move, wander_opponent,
-    check_attack_range, movement_uses_turn,
+    check_attack_range, movement_uses_turn, range_effect, combine_roll_modes, distance_between,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
@@ -237,13 +237,20 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                 log.append(f"{knight['raw_name']} è troppo lontano per colpire con {technique_name} da qui!")
                 battle_state["last_effect"] = None
             else:
+                distance = distance_between(battle_state["player_position"], battle_state["opponent_position"])
+                range_mode, range_power_mult = range_effect(distance, technique_name)
+                combined_mode = combine_roll_modes(roll_mode, range_mode)
+                if range_mode == "svantaggio" and roll_mode == "normale":
+                    cause_phrase = "il colpo arriva da lontano, meno preciso"
+
                 dmg, msg = resolve_turn(
                     knight["raw_name"], knight["str"], knight["tec"], armor["level"],
                     opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
-                    technique_name, technique_power, roll_mode=roll_mode, cause_phrase=cause_phrase,
+                    technique_name, technique_power, roll_mode=combined_mode, cause_phrase=cause_phrase,
                 )
+                dmg = round(dmg * range_power_mult)
                 dmg = apply_charge(dmg, True, battle_state)
-                msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica ha cambiato il danno
+                msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica/distanza ha cambiato il danno
 
                 if dmg == 0:
                     # Schivata vera (il tiro per colpire ha già fallito): niente
