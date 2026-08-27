@@ -241,6 +241,7 @@ const state = {
   battle: null,             // battle_state, o null fuori combattimento
   opponentCandidates: null, // sala d'attesa: 5 avversari tra cui scegliere, o null
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
+  roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
   trainingLog: [],
   arenaLog: [],
 };
@@ -729,7 +730,7 @@ function renderGameScreen() {
 
   // --- Tabs ---
   const tabs = el("div", { class: "tabs" });
-  const tabDefs = [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"]];
+  const tabDefs = [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
   for (const [key, label] of tabDefs) {
     tabs.append(el("button", {
       class: "tab-btn" + (state.gameTab === key ? " active" : ""),
@@ -741,8 +742,66 @@ function renderGameScreen() {
   if (state.gameTab === "sheet") wrap.append(renderSheetTab());
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
+  else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
 
   wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
+  return wrap;
+}
+
+async function loadRoster() {
+  try {
+    state.roster = await api("/roster");
+  } catch (e) {
+    showError(e.message);
+    state.roster = [];
+  }
+  render();
+}
+
+// La Gerarchia (richiesta in chat): tutte le 224 armature, raggruppate
+// per divinità e fazione, ciascuna con chi la occupa - un PNG fisso
+// (etichettato chiaramente, per far capire che è ancora selezionabile
+// in creazione personaggio) o il cavaliere giocatore che l'ha già
+// reclamata.
+function renderHierarchyTab() {
+  const wrap = el("div");
+
+  if (state.roster === null) {
+    loadRoster();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Gerarchia...")));
+    return wrap;
+  }
+
+  const groups = {};
+  for (const r of state.roster) {
+    groups[r.divinity] = groups[r.divinity] || {};
+    groups[r.divinity][r.faction] = groups[r.divinity][r.faction] || [];
+    groups[r.divinity][r.faction].push(r);
+  }
+
+  for (const divinity of Object.keys(groups).sort()) {
+    const divCard = el("div", { class: "card" });
+    divCard.append(el("h2", {}, divinity));
+    for (const faction of Object.keys(groups[divinity]).sort()) {
+      divCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, faction));
+      const table = el("table");
+      table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Livello"), el("th", {}, "Occupante")));
+      for (const entry of groups[divinity][faction]) {
+        const occupantCell = entry.claimed_by_name
+          ? el("td", {}, `${entry.claimed_by_name} (livello ${entry.claimed_by_level})`)
+          : el("td", {}, entry.npc_name, el("span", {
+              style: "background:var(--gold);color:#1a1a1a;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;font-weight:700;",
+            }, "PNG"));
+        const row = el("tr", {}, el("td", {}, entry.armor_name), el("td", {}, String(entry.level)), occupantCell);
+        table.append(row);
+      }
+      const scrollWrap = el("div", { class: "table-scroll" });
+      scrollWrap.append(table);
+      divCard.append(scrollWrap);
+    }
+    wrap.append(divCard);
+  }
+
   return wrap;
 }
 
