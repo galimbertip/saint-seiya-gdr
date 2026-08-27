@@ -90,6 +90,10 @@ class CreateCharacterRequest(BaseModel):
     raw_name: str
     armor_name: str
     player_level: int = 1
+    surname: Optional[str] = ""
+    age: Optional[int] = 15
+    gender: Optional[str] = ""
+    origin: Optional[str] = ""
 
 
 class TrainRequest(BaseModel):
@@ -180,7 +184,10 @@ def api_list_characters(conn=Depends(get_db)):
 @app.post("/characters")
 def api_create_character(req: CreateCharacterRequest, conn=Depends(get_db)):
     try:
-        knight = create_knight(conn, req.raw_name, req.armor_name, req.player_level)
+        knight = create_knight(
+            conn, req.raw_name, req.armor_name, req.player_level,
+            surname=req.surname or "", age=req.age or 15, gender=req.gender or "", origin=req.origin or "",
+        )
     except (ArmorNotFoundError, ArmorLevelTooHighError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _knight_payload(conn, knight)
