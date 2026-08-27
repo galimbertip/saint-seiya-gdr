@@ -230,7 +230,7 @@ function stripTechnicalDetails(line) {
 
 // --- Stato globale della pagina (nessun framework, solo un oggetto e un render()) ---
 const state = {
-  screen: "start",          // start | creation | game
+  screen: "startPage",       // startPage | loadGame | creation | game
   appVersion: null,         // recuperata all'avvio da GET / (fonte di verità: core/version.py)
   characters: [],
   characterId: null,
@@ -265,9 +265,12 @@ function showError(msg) {
   setTimeout(() => banner.classList.add("hidden"), 6000);
 }
 
-// --- Home e schermata "Carica Partita" ---
-async function loadHomeScreen() {
-  state.screen = "home";
+// --- Pagina Iniziale (Nuova/Carica Partita) e schermata "Carica Partita" ---
+// Rinominata da "Home" in chat: la vera Home (una volta dentro al
+// gioco) sarà la Scheda Cavaliere - questa è solo la porta d'ingresso
+// prima di aver caricato un personaggio, concettualmente diversa.
+async function loadStartPage() {
+  state.screen = "startPage";
   try {
     state.characters = await api("/characters");
   } catch (e) {
@@ -539,7 +542,7 @@ function applyArenaResult(result) {
 function render() {
   const app = $("#app");
   app.innerHTML = "";
-  if (state.screen === "home") app.append(renderHomeScreen());
+  if (state.screen === "startPage") app.append(renderStartPage());
   else if (state.screen === "loadGame") app.append(renderLoadGameScreen());
   else if (state.screen === "creation") app.append(renderCreationScreen());
   else if (state.screen === "game") app.append(renderGameScreen());
@@ -575,7 +578,7 @@ function renderEmblem() {
   return holder.firstElementChild;
 }
 
-function renderHomeScreen() {
+function renderStartPage() {
   const wrap = el("div", { style: "max-width:420px;margin:40px auto;text-align:center;" });
   wrap.append(renderEmblem());
   wrap.append(el("h1", {}, "SAINT SEIYA"));
@@ -622,7 +625,7 @@ function renderLoadGameScreen() {
   }
   wrap.append(card);
 
-  wrap.append(el("button", { class: "secondary", onClick: loadHomeScreen }, "◄ Indietro"));
+  wrap.append(el("button", { class: "secondary", onClick: loadStartPage }, "◄ Indietro"));
   return wrap;
 }
 
@@ -639,7 +642,7 @@ function renderCreationScreen() {
       onClick: () => { state.creationMode = "detailed"; render(); },
     }, "✏️ Crea Come Vuoi Tu"));
     wrap.append(modeCard);
-    wrap.append(el("button", { class: "secondary", onClick: loadHomeScreen }, "Annulla"));
+    wrap.append(el("button", { class: "secondary", onClick: loadStartPage }, "Annulla"));
     return wrap;
   }
 
@@ -1111,7 +1114,7 @@ async function loadAppVersion() {
 }
 
 loadAppVersion();
-loadHomeScreen();
+loadStartPage();
 </script>
 </body>
 </html>
