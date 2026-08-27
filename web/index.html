@@ -325,8 +325,25 @@ async function loadCreationScreen() {
 
 const RANDOM_NAMES = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri", "Amara", "Sofia", "Yuki", "Elena", "Priya"];
 const RANDOM_SURNAMES = ["Takeda", "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau", "Petrova"];
-const RANDOM_ORIGINS = ["Giappone", "Italia", "Russia", "Brasile", "Cina", "Grecia", "Svezia", "Francia", "Egitto", "India"];
+// Provenienza: elenco chiuso (non testo libero) perché ciascuna è
+// collegata a un'affinità elementale vera in combattimento (vedi
+// ORIGIN_ELEMENT_AFFINITY in core/arena_manager.py - questa lista deve
+// restare identica a quella, altrimenti una provenienza scelta qui non
+// verrebbe riconosciuta da nessuna regola lato server.
+const ORIGINS_WITH_AFFINITY = [
+  { name: "Siberia", element: "Ghiaccio" },
+  { name: "Russia", element: "Ghiaccio" },
+  { name: "Svezia", element: "Ghiaccio" },
+  { name: "Grecia", element: "Cosmico" },
+  { name: "Giappone", element: "Cosmico" },
+  { name: "Italia", element: "Fisico" },
+  { name: "Cina", element: "Fisico" },
+  { name: "Brasile", element: "Fuoco" },
+  { name: "Egitto", element: "Psichico" },
+  { name: "India", element: "Psichico" },
+];
 const RANDOM_GENDERS = ["Maschio", "Femmina"];
+const BUILD_OPTIONS = ["Minuta", "Media", "Robusta"];
 
 function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -339,7 +356,8 @@ async function createRandomCharacter() {
     surname: randomFrom(RANDOM_SURNAMES),
     age: 14 + Math.floor(Math.random() * 9),  // 14-22, l'età tipica di un cavaliere
     gender: randomFrom(RANDOM_GENDERS),
-    origin: randomFrom(RANDOM_ORIGINS),
+    origin: randomFrom(ORIGINS_WITH_AFFINITY).name,
+    build: randomFrom(BUILD_OPTIONS),
   };
   await createCharacter(randomFrom(RANDOM_NAMES), armor.name, details);
 }
@@ -351,7 +369,7 @@ async function createCharacter(rawName, armorName, details = {}) {
       body: JSON.stringify({
         raw_name: rawName, armor_name: armorName, player_level: 1,
         surname: details.surname || "", age: details.age || 15,
-        gender: details.gender || "", origin: details.origin || "",
+        gender: details.gender || "", origin: details.origin || "", build: details.build || "Media",
       }),
     });
     state.characterId = character.id;
@@ -380,7 +398,7 @@ async function doTrain(mode) {
     });
     state.character = result.character;
     state.weeklySchedule = [...state.character.weekly_schedule_list];
-    state.trainingLog = result.log.map((l) => `${l.day} (${l.focus}): ${l.message}`);
+    state.trainingLog = result.log.map((l) => (l.day ? `${l.day} (${l.focus}): ${l.message}` : l.message));
     render();
   } catch (e) {
     showError(e.message);
@@ -486,12 +504,15 @@ async function retreat() {
   }
 }
 
-// Chiamata dal pulsante "Torna al Santuario": se si esce mentre un
+// Chiamata dal pulsante "Torna alla Sala dei Cavalieri" (rinominato in
+// chat da "Torna al Santuario" - troppo legato ad Athena, un nome che
+// non presuppone nessuna divinità specifica visto che ormai il gioco
+// non è più legato a un solo pantheon): se si esce mentre un
 // combattimento è ancora aperto, ci si ritira PRIMA di lasciare la
 // schermata di gioco - altrimenti il Cosmo restava bloccato basso per
 // sempre (bug segnalato in chat: l'unica cosa che lo ricarica è finire
 // uno scontro per davvero, vincendo, perdendo o ritirandosi).
-async function goToSanctuary() {
+async function goToKnightsHall() {
   if (state.battle) {
     try {
       await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
@@ -638,9 +659,18 @@ function renderCreationScreen() {
   for (const g of ["", "Maschio", "Femmina", "Altro"]) {
     genderSelect.append(el("option", { value: g }, g || "Sesso (opzionale)"));
   }
-  const originInput = el("input", { placeholder: "Provenienza (opzionale, es. Giappone)" });
-  row2.append(ageInput, genderSelect, originInput);
+  const originSelect = el("select", {});
+  originSelect.append(el("option", { value: "" }, "Provenienza (opzionale)"));
+  for (const o of ORIGINS_WITH_AFFINITY) {
+    originSelect.append(el("option", { value: o.name }, `${o.name} (${o.element})`));
+  }
+  const buildSelect = el("select", {});
+  for (const b of BUILD_OPTIONS) {
+    buildSelect.append(el("option", { value: b, ...(b === "Media" ? { selected: "selected" } : {}) }, b));
+  }
+  row2.append(ageInput, genderSelect, originSelect, buildSelect);
   nameCard.append(row2);
+  nameCard.append(el("p", { class: "hint" }, "La provenienza dà un piccolo bonus/resistenza con l'elemento indicato. La corporatura sposta la Costituzione di partenza."));
   wrap.append(nameCard);
 
   const armorCard = el("div", { class: "card" });
@@ -673,7 +703,8 @@ function renderCreationScreen() {
         surname: surnameInput.value.trim(),
         age,
         gender: genderSelect.value,
-        origin: originInput.value.trim(),
+        origin: originSelect.value,
+        build: buildSelect.value,
       });
     },
   }, "Crea e Seleziona");
@@ -708,7 +739,7 @@ function renderGameScreen() {
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
 
-  wrap.append(el("button", { class: "secondary", onClick: goToSanctuary }, "◄ Torna al Santuario"));
+  wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
   return wrap;
 }
 
@@ -741,7 +772,7 @@ function renderSheetTab() {
   const progCard = el("div", { class: "card" });
   progCard.append(el("h2", {}, "Progressione"));
   progCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp} · Età ${k.age} anni`));
-  const dettagli = [k.gender, k.origin].filter(Boolean).join(" · ");
+  const dettagli = [k.gender, k.origin, k.build && k.build !== "Media" ? `Corporatura ${k.build}` : null].filter(Boolean).join(" · ");
   if (dettagli) progCard.append(el("p", { class: "hint" }, dettagli));
   const senses = k.senses;
   const mark = (b) => (b ? "✓" : "✗");
