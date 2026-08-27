@@ -27,11 +27,11 @@ from pydantic import BaseModel
 
 from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
-    get_armor, get_techniques_for_armor, list_armors_for_player_level,
+    get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
-    ArmorNotFoundError, ArmorLevelTooHighError,
+    ArmorNotFoundError, ArmorLevelTooHighError, ArmorAlreadyClaimedError, ensure_roster_populated,
 )
 from core.fm_manager import (
     RosterManager, get_calendar_display, parse_weekly_schedule,
@@ -56,13 +56,15 @@ app.add_middleware(
 
 
 def _init_schema_once() -> None:
-    """Crea le tabelle e carica il catalogo armature dai CSV - va fatto
-    UNA SOLA VOLTA all'avvio del processo, non ad ogni richiesta
-    (il refresh del catalogo fa oltre 200 upsert, sarebbe uno spreco
-    farlo per ogni singola chiamata API)."""
+    """Crea le tabelle, carica il catalogo armature dai CSV, e popola la
+    Gerarchia (un PNG fisso per ogni armatura che non ne ha ancora uno)
+    - va fatto UNA SOLA VOLTA all'avvio del processo, non ad ogni
+    richiesta (il refresh del catalogo fa oltre 200 upsert, sarebbe uno
+    spreco farlo per ogni singola chiamata API)."""
     conn = get_connection()
     init_db(conn)
     refresh_armors_catalog(conn)
+    ensure_roster_populated(conn)
     conn.close()
 
 
@@ -190,7 +192,7 @@ def api_create_character(req: CreateCharacterRequest, conn=Depends(get_db)):
             surname=req.surname or "", age=req.age or 15, gender=req.gender or "", origin=req.origin or "",
             build=req.build or "Media",
         )
-    except (ArmorNotFoundError, ArmorLevelTooHighError) as e:
+    except (ArmorNotFoundError, ArmorLevelTooHighError, ArmorAlreadyClaimedError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _knight_payload(conn, knight)
 
@@ -213,6 +215,14 @@ def api_delete_character(knight_id: int, conn=Depends(get_db)):
 @app.get("/armors")
 def api_list_armors(player_level: int = 1, conn=Depends(get_db)):
     return [dict(a) for a in list_armors_for_player_level(player_level, conn)]
+
+
+@app.get("/roster")
+def api_get_roster(conn=Depends(get_db)):
+    """La Gerarchia completa (richiesta in chat): tutte le 224 armature
+    con chi le occupa - il PNG fisso se libere, il personaggio
+    giocatore se reclamate. Ordinata per divinità/fazione/livello."""
+    return [dict(r) for r in get_roster(conn)]
 
 
 @app.get("/armors/{armor_name}/techniques")
