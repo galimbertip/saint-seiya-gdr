@@ -51,10 +51,14 @@ def list_available_armors(conn: sqlite3.Connection, player_level: int) -> list[s
 
 
 def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
-                   player_level: int = 1) -> dict:
+                   player_level: int = 1, surname: str = "", age: int = 15,
+                   gender: str = "", origin: str = "") -> dict:
     """Crea un nuovo cavaliere, validando armatura e livello. Solleva
     ArmorNotFoundError / ArmorLevelTooHighError se la scelta non è valida,
-    invece di salvare comunque come faceva la versione di Gemini."""
+    invece di salvare comunque come faceva la versione di Gemini.
+    surname/gender/origin: dettagli narrativi opzionali del personaggio
+    (richiesti in chat per la creazione 'come vuoi tu') - nessun
+    collegamento con dati reali del giocatore, sono del personaggio."""
 
     armor = get_armor(armor_name, conn)
     if armor is None:
@@ -68,17 +72,20 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
 
     stats = _starting_stats(armor["level"])
     cosmo = STARTING_COSMO_BASE + armor["level"]
-    formal_name = f"{raw_name} di {armor_name}"
+    full_display_name = f"{raw_name} {surname}".strip()
+    formal_name = f"{full_display_name} di {armor_name}"
 
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
-                              str, dex, con, tec, vol, player_level, xp, stamina, age)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, 15)
+                              str, dex, con, tec, vol, player_level, xp, stamina, age,
+                              surname, gender, origin)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?)
         """,
         (formal_name, raw_name, armor_name, cosmo, cosmo,
-         stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level),
+         stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
+         age, surname, gender, origin),
     )
     conn.commit()
 
