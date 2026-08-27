@@ -420,25 +420,64 @@ def combine_roll_modes(mode_a: str, mode_b: str) -> str:
     return mode_a if mode_a != "normale" else mode_b
 
 
-# --- Provenienza: affinità elementale (richiesto in chat) ------------------
-# Prima la Provenienza era puramente decorativa. Ora, se l'elemento
-# della tecnica usata corrisponde all'affinità della propria terra
-# d'origine, si ottiene un piccolo bonus quando SI ATTACCA con
-# quell'elemento, o un po' di resistenza quando lo SI SUBISCE - "sei
-# di casa" con quel clima/energia. Elenco chiuso (non testo libero):
-# serve per riconoscere l'affinità in modo affidabile.
-ORIGIN_ELEMENT_AFFINITY = {
-    "Siberia": "ghiaccio",
-    "Russia": "ghiaccio",
-    "Svezia": "ghiaccio",
-    "Grecia": "cosmico",
-    "Giappone": "cosmico",
-    "Italia": "fisico",
-    "Cina": "fisico",
-    "Brasile": "fuoco",
-    "Egitto": "psichico",
-    "India": "psichico",
+# --- Provenienza: gerarchia geografica e affinità elementale ---------------
+# Prima la Provenienza era un elenco piatto di 10 nazioni (segnalato in
+# chat: troppo scarno). Ora è un vero albero Continente -> Macrozona ->
+# Nazione, con più nazioni possibili incluse - l'affinità elementale
+# resta legata alla MACROZONA (non a ogni singola nazione: con un
+# centinaio di nazioni sarebbe stato ingestibile assegnarne una a testa
+# in modo sensato, mentre un continente/regione condivide un clima e
+# un immaginario più coerenti). GEO_ORIGINS è la fonte di verità unica
+# (anche per il frontend, che la legge da GET /geo-origins) -
+# ORIGIN_ELEMENT_AFFINITY viene DERIVATA da qui, non scritta a mano.
+GEO_ORIGINS = {
+    "Europa": {
+        "Nord Europa": {"element": "ghiaccio", "countries": ["Svezia", "Norvegia", "Finlandia", "Danimarca", "Islanda"]},
+        "Europa Orientale": {"element": "ghiaccio", "countries": ["Russia", "Ucraina", "Bielorussia", "Polonia", "Lituania", "Lettonia", "Estonia"]},
+        "Europa Mediterranea": {"element": "cosmico", "countries": ["Grecia", "Italia", "Spagna", "Portogallo", "Malta", "Cipro"]},
+        "Europa Occidentale": {"element": "fisico", "countries": ["Francia", "Germania", "Regno Unito", "Irlanda", "Belgio", "Paesi Bassi", "Lussemburgo", "Svizzera", "Austria"]},
+        "Balcani e Europa Centrale": {"element": "fisico", "countries": ["Serbia", "Croazia", "Romania", "Bulgaria", "Slovenia", "Bosnia ed Erzegovina", "Albania", "Macedonia del Nord", "Montenegro", "Ungheria"]},
+    },
+    "Asia": {
+        "Asia Orientale": {"element": "cosmico", "countries": ["Giappone", "Cina", "Corea del Sud", "Corea del Nord", "Taiwan", "Mongolia"]},
+        "Asia Meridionale": {"element": "psichico", "countries": ["India", "Pakistan", "Bangladesh", "Sri Lanka", "Nepal", "Bhutan"]},
+        "Asia Sud-Orientale": {"element": "fuoco", "countries": ["Thailandia", "Vietnam", "Indonesia", "Filippine", "Malesia", "Singapore", "Myanmar", "Cambogia", "Laos"]},
+        "Medio Oriente": {"element": "fuoco", "countries": ["Arabia Saudita", "Emirati Arabi Uniti", "Iran", "Iraq", "Israele", "Turchia", "Giordania", "Libano", "Qatar", "Kuwait"]},
+        "Asia Centrale": {"element": "ghiaccio", "countries": ["Kazakistan", "Uzbekistan", "Turkmenistan", "Kirghizistan", "Tagikistan"]},
+    },
+    "Africa": {
+        "Africa del Nord": {"element": "psichico", "countries": ["Egitto", "Marocco", "Algeria", "Tunisia", "Libia"]},
+        "Africa Occidentale": {"element": "fisico", "countries": ["Nigeria", "Ghana", "Senegal", "Costa d'Avorio", "Mali"]},
+        "Africa Orientale": {"element": "fisico", "countries": ["Kenya", "Etiopia", "Tanzania", "Uganda", "Somalia"]},
+        "Africa Australe": {"element": "fisico", "countries": ["Sudafrica", "Zimbabwe", "Botswana", "Namibia", "Mozambico"]},
+        "Africa Centrale": {"element": "fuoco", "countries": ["Repubblica Democratica del Congo", "Camerun", "Angola", "Gabon"]},
+    },
+    "Nord America": {
+        "America Settentrionale": {"element": "ghiaccio", "countries": ["Canada", "Stati Uniti", "Groenlandia"]},
+        "Centro America e Caraibi": {"element": "fuoco", "countries": ["Messico", "Cuba", "Giamaica", "Repubblica Dominicana", "Panama", "Costa Rica", "Guatemala"]},
+    },
+    "Sud America": {
+        "Sud America Tropicale": {"element": "fuoco", "countries": ["Brasile", "Colombia", "Venezuela", "Ecuador", "Perù"]},
+        "Sud America Australe": {"element": "fisico", "countries": ["Argentina", "Cile", "Uruguay", "Paraguay", "Bolivia"]},
+    },
+    "Oceania": {
+        "Oceania": {"element": "fisico", "countries": ["Australia", "Nuova Zelanda", "Figi", "Papua Nuova Guinea", "Samoa"]},
+    },
 }
+
+
+def _build_origin_affinity() -> dict[str, str]:
+    """Deriva {nazione: elemento} da GEO_ORIGINS - una sola fonte di
+    verità, invece di un elenco scritto a mano che potrebbe disallinearsi."""
+    flat = {}
+    for macrozones in GEO_ORIGINS.values():
+        for zone in macrozones.values():
+            for country in zone["countries"]:
+                flat[country] = zone["element"]
+    return flat
+
+
+ORIGIN_ELEMENT_AFFINITY = _build_origin_affinity()
 AFFINITY_ATTACK_BONUS = 1.15
 AFFINITY_DEFENSE_RESISTANCE = 0.85
 
@@ -602,42 +641,6 @@ def status_resisted(defender_vol: int) -> bool:
     viene resistito). Richiesto in chat: dare un ruolo vero alla
     Volontà, prima non contava nulla in combattimento."""
     return DnDEngine.resolve_saving_throw(defender_vol, STATUS_SAVE_DC)
-
-
-# --- Provenienza: affinità elementale --------------------------------
-# Richiesto in chat: un cavaliere che viene da un luogo associato a un
-# elemento è un po' più efficace ad attaccare con quell'elemento, e un
-# po' più resistente a subirlo - "è di casa" con quel clima/energia.
-# Bonus/resistenza volutamente piccoli (15%): un tocco di
-# personalizzazione, non uno squilibrio. La provenienza è un elenco
-# chiuso (non testo libero) apposta, altrimenti un refuso o una scelta
-# fuori elenco non verrebbe riconosciuta da nessuna regola.
-ORIGIN_ELEMENT_AFFINITY = {
-    "Siberia": "ghiaccio",
-    "Russia": "ghiaccio",
-    "Svezia": "ghiaccio",
-    "Grecia": "cosmico",
-    "Giappone": "cosmico",
-    "Italia": "fisico",
-    "Cina": "fisico",
-    "Brasile": "fuoco",
-    "Egitto": "psichico",
-    "India": "psichico",
-}
-
-ORIGIN_AFFINITY_ATTACK_BONUS = 1.15
-ORIGIN_AFFINITY_DEFENSE_RESISTANCE = 0.85
-
-
-def origin_affinity_modifier(origin: str, tech_type: str, as_attacker: bool) -> float:
-    """Se l'elemento della tecnica corrisponde all'affinità della
-    provenienza, un piccolo bonus in attacco o resistenza in difesa -
-    1.0 (nessun effetto) se la provenienza non ha un'affinità nota o
-    non corrisponde all'elemento della tecnica usata."""
-    affinity = ORIGIN_ELEMENT_AFFINITY.get(origin)
-    if not affinity or affinity not in (tech_type or "").lower():
-        return 1.0
-    return ORIGIN_AFFINITY_ATTACK_BONUS if as_attacker else ORIGIN_AFFINITY_DEFENSE_RESISTANCE
 
 
 def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> tuple[list[str], bool]:
