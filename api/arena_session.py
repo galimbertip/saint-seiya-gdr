@@ -60,6 +60,7 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "opponent_statuses": [],
         "player_position": dict(PLAYER_START_POSITION),
         "opponent_position": dict(OPPONENT_START_POSITION),
+        "last_effect": None,
     }
 
 
@@ -74,6 +75,7 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
     tattico). Muta `knight` e `battle_state` in place.
     Restituisce i messaggi di log."""
     log: list[str] = []
+    battle_state["last_effect"] = None  # muoversi non è un colpo, niente da disegnare sulla mappa
     movement_points = calculate_movement_points(knight["player_level"], knight["age"])
 
     moved_fully, new_pos, distance_moved, minutes_cost = try_move(
@@ -195,6 +197,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
 
     if player_blocked:
         log.append(f"{knight['raw_name']} non riesce ad agire questo turno!")
+        battle_state["last_effect"] = None
         aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
         if aging_msg:
             log.append(aging_msg)
@@ -227,15 +230,18 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                 # Schivata vera (il tiro per colpire ha già fallito): niente
                 # da difendere, la reazione dell'avversario non ha senso.
                 log.append(msg)
+                battle_state["last_effect"] = {"attacker": "player", "outcome": "miss", "tech_type": technique_type}
             else:
                 defense = opponent_reacts(opponent)
                 if defense:
                     reduced = resolve_defense(dmg, defense["power"])
                     opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
                     log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
+                    battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": technique_type}
                 else:
                     opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
                     log.append(msg)
+                    battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
 
                 status = maybe_apply_status(technique_type, technique_power)
                 if status:
@@ -250,6 +256,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                 battle_state["player_charge_multiplier"], CHARGE_DAMAGE_MULTIPLIER
             )
             log.append(f"{knight['raw_name']} carica il Cosmo, pronto a colpire più forte.")
+            battle_state["last_effect"] = None
 
         aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
         if aging_msg:
@@ -326,14 +333,17 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         # Schivata vera: niente da difendere, la scelta Difenditi/Incassa
         # non ha inciso su un colpo che non è mai arrivato.
         log.append(msg2)
+        battle_state["last_effect"] = {"attacker": "opponent", "outcome": "miss", "tech_type": t.get("tech_type", "")}
     elif defend:
         defense_technique = my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
         reduced = resolve_defense(dmg2, defense_technique["power"])
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
         log.append(f"{msg2} — ti difendi con {defense_technique['name']}, il danno scende a {reduced}.")
+        battle_state["last_effect"] = {"attacker": "opponent", "outcome": "blocked", "tech_type": t.get("tech_type", "")}
     else:
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - dmg2)
         log.append(msg2)
+        battle_state["last_effect"] = {"attacker": "opponent", "outcome": "hit", "tech_type": t.get("tech_type", "")}
 
     if dmg2 > 0:
         status = maybe_apply_status(t.get("tech_type", ""), t["power"])
