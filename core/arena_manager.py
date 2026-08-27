@@ -270,8 +270,6 @@ def find_defensive_technique(techniques: list[dict]) -> dict | None:
 # quello è lavoro della Fase 2, quando la mappa toccherà per davvero le
 # scelte tattiche e non solo l'occhio.
 GRID_SIZE = 10
-FREE_MOVEMENT_RANGE = 2.0  # muoversi fino a qui è gratis (in unità di griglia)
-MOVEMENT_MINUTES_PER_UNIT = 5  # oltre la soglia gratuita, quanto tempo costa ogni unità in più
 
 PLAYER_START_POSITION = {"x": 1.5, "y": 5.0}
 OPPONENT_START_POSITION = {"x": 8.5, "y": 5.0}
@@ -301,15 +299,19 @@ def clamp_to_grid(x: float, y: float) -> dict:
 
 
 def try_move(current_pos: dict, target_x: float, target_y: float,
-             movement_points: int) -> tuple[bool, dict, float, int]:
+             movement_points: int) -> tuple[bool, dict, float]:
     """Verifica e risolve uno spostamento verso (target_x, target_y).
     Se la distanza richiesta supera i Punti Movimento disponibili, il
     personaggio si ferma al massimo raggiungibile in quella direzione
     invece di fallire lo spostamento (più comodo da giocare: cliccare
     'un po' troppo lontano' ti porta comunque il più vicino possibile
     a dove volevi, non ti nega il movimento).
-    Restituisce (mosso_per_intero, nuova_posizione, distanza_percorsa,
-    minuti_di_costo - 0 se dentro la soglia gratuita)."""
+    Nessun costo in tempo qui (tolto in chat: era ridondante con la
+    perdita del turno per movimento eccessivo della Fase 2 - pagare
+    minuti EXTRA in più, oltre a perdere l'attacco del round, era un
+    doppio conto per la stessa causa). Il tempo passa comunque tramite
+    il costo normale del round quando si dichiara un'azione.
+    Restituisce (mosso_per_intero, nuova_posizione, distanza_percorsa)."""
     target = clamp_to_grid(target_x, target_y)
     requested_distance = distance_between(current_pos, target)
 
@@ -327,9 +329,7 @@ def try_move(current_pos: dict, target_x: float, target_y: float,
         moved_fully = False
         distance_moved = movement_points
 
-    extra_distance = max(0.0, distance_moved - FREE_MOVEMENT_RANGE)
-    minutes_cost = round(extra_distance * MOVEMENT_MINUTES_PER_UNIT)
-    return moved_fully, new_pos, distance_moved, minutes_cost
+    return moved_fully, new_pos, distance_moved
 
 
 def wander_opponent(current_pos: dict) -> dict:
