@@ -58,7 +58,10 @@ CREATE TABLE IF NOT EXISTS knights (
     age INTEGER NOT NULL DEFAULT 15,
     game_day INTEGER NOT NULL DEFAULT 1,
     game_minutes INTEGER NOT NULL DEFAULT 0,
-    weekly_schedule TEXT NOT NULL DEFAULT 'Cosmo,Forza,Destrezza,Costituzione,Tecnica,Volontà,Riposo'
+    weekly_schedule TEXT NOT NULL DEFAULT 'Cosmo,Forza,Destrezza,Costituzione,Tecnica,Volontà,Riposo',
+    surname TEXT NOT NULL DEFAULT '',
+    gender TEXT NOT NULL DEFAULT '',
+    origin TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -91,6 +94,15 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
         log.info("Migrazione: aggiunta colonna weekly_schedule a knights (programma di default per i salvataggi esistenti).")
+    if "surname" not in existing_columns:
+        # Creazione personaggio più dettagliata (richiesta in chat):
+        # Cognome, Sesso, Provenienza - dati puramente narrativi del
+        # personaggio, nessun collegamento con dati reali del giocatore.
+        conn.execute("ALTER TABLE knights ADD COLUMN surname TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN gender TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN origin TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne surname/gender/origin a knights (vuote per i salvataggi esistenti).")
 
 
 def get_connection() -> sqlite3.Connection:
