@@ -89,6 +89,7 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
         "con": 10 + armor["level"] // 10,
         "tec": 10 + armor["level"] // 10,
         "vol": 10 + armor["level"] // 10,
+        "origin": random.choice(list(ORIGIN_ELEMENT_AFFINITY.keys())),
         "techniques": techniques,
     }
 
@@ -407,6 +408,38 @@ def combine_roll_modes(mode_a: str, mode_b: str) -> str:
     return mode_a if mode_a != "normale" else mode_b
 
 
+# --- Provenienza: affinità elementale (richiesto in chat) ------------------
+# Prima la Provenienza era puramente decorativa. Ora, se l'elemento
+# della tecnica usata corrisponde all'affinità della propria terra
+# d'origine, si ottiene un piccolo bonus quando SI ATTACCA con
+# quell'elemento, o un po' di resistenza quando lo SI SUBISCE - "sei
+# di casa" con quel clima/energia. Elenco chiuso (non testo libero):
+# serve per riconoscere l'affinità in modo affidabile.
+ORIGIN_ELEMENT_AFFINITY = {
+    "Siberia": "ghiaccio",
+    "Russia": "ghiaccio",
+    "Svezia": "ghiaccio",
+    "Grecia": "cosmico",
+    "Giappone": "cosmico",
+    "Italia": "fisico",
+    "Cina": "fisico",
+    "Brasile": "fuoco",
+    "Egitto": "psichico",
+    "India": "psichico",
+}
+AFFINITY_ATTACK_BONUS = 1.15
+AFFINITY_DEFENSE_RESISTANCE = 0.85
+
+
+def origin_affinity_modifier(origin: str, tech_type: str, as_attacker: bool) -> float:
+    """Restituisce il moltiplicatore di danno dovuto all'affinità
+    elementale della Provenienza (1.0 se non c'è corrispondenza)."""
+    affinity = ORIGIN_ELEMENT_AFFINITY.get(origin)
+    if not affinity or affinity not in (tech_type or "").lower():
+        return 1.0
+    return AFFINITY_ATTACK_BONUS if as_attacker else AFFINITY_DEFENSE_RESISTANCE
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
@@ -557,6 +590,42 @@ def status_resisted(defender_vol: int) -> bool:
     viene resistito). Richiesto in chat: dare un ruolo vero alla
     Volontà, prima non contava nulla in combattimento."""
     return DnDEngine.resolve_saving_throw(defender_vol, STATUS_SAVE_DC)
+
+
+# --- Provenienza: affinità elementale --------------------------------
+# Richiesto in chat: un cavaliere che viene da un luogo associato a un
+# elemento è un po' più efficace ad attaccare con quell'elemento, e un
+# po' più resistente a subirlo - "è di casa" con quel clima/energia.
+# Bonus/resistenza volutamente piccoli (15%): un tocco di
+# personalizzazione, non uno squilibrio. La provenienza è un elenco
+# chiuso (non testo libero) apposta, altrimenti un refuso o una scelta
+# fuori elenco non verrebbe riconosciuta da nessuna regola.
+ORIGIN_ELEMENT_AFFINITY = {
+    "Siberia": "ghiaccio",
+    "Russia": "ghiaccio",
+    "Svezia": "ghiaccio",
+    "Grecia": "cosmico",
+    "Giappone": "cosmico",
+    "Italia": "fisico",
+    "Cina": "fisico",
+    "Brasile": "fuoco",
+    "Egitto": "psichico",
+    "India": "psichico",
+}
+
+ORIGIN_AFFINITY_ATTACK_BONUS = 1.15
+ORIGIN_AFFINITY_DEFENSE_RESISTANCE = 0.85
+
+
+def origin_affinity_modifier(origin: str, tech_type: str, as_attacker: bool) -> float:
+    """Se l'elemento della tecnica corrisponde all'affinità della
+    provenienza, un piccolo bonus in attacco o resistenza in difesa -
+    1.0 (nessun effetto) se la provenienza non ha un'affinità nota o
+    non corrisponde all'elemento della tecnica usata."""
+    affinity = ORIGIN_ELEMENT_AFFINITY.get(origin)
+    if not affinity or affinity not in (tech_type or "").lower():
+        return 1.0
+    return ORIGIN_AFFINITY_ATTACK_BONUS if as_attacker else ORIGIN_AFFINITY_DEFENSE_RESISTANCE
 
 
 def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> tuple[list[str], bool]:
