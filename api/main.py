@@ -37,7 +37,7 @@ from core.fm_manager import (
     RosterManager, get_calendar_display, parse_weekly_schedule,
     serialize_weekly_schedule, TRAINING_FOCUS_OPTIONS,
 )
-from core.arena_manager import find_defensive_technique, get_unlocked_senses, calculate_movement_points
+from core.arena_manager import find_defensive_technique, get_unlocked_senses, calculate_movement_points, GEO_ORIGINS
 from core.version import APP_VERSION
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
@@ -223,6 +223,15 @@ def api_get_roster(conn=Depends(get_db)):
     con chi le occupa - il PNG fisso se libere, il personaggio
     giocatore se reclamate. Ordinata per divinità/fazione/livello."""
     return [dict(r) for r in get_roster(conn)]
+
+
+@app.get("/geo-origins")
+def api_geo_origins():
+    """L'albero Continente -> Macrozona -> Nazione per il menu a tendina
+    della Provenienza in creazione personaggio (richiesto in chat) -
+    fonte di verità unica, condivisa con l'affinità elementale usata in
+    combattimento (vedi core/arena_manager.py)."""
+    return GEO_ORIGINS
 
 
 @app.get("/armors/{armor_name}/techniques")
