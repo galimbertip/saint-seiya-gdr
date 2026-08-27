@@ -94,6 +94,7 @@ class CreateCharacterRequest(BaseModel):
     age: Optional[int] = 15
     gender: Optional[str] = ""
     origin: Optional[str] = ""
+    build: Optional[str] = "Media"
 
 
 class TrainRequest(BaseModel):
@@ -187,6 +188,7 @@ def api_create_character(req: CreateCharacterRequest, conn=Depends(get_db)):
         knight = create_knight(
             conn, req.raw_name, req.armor_name, req.player_level,
             surname=req.surname or "", age=req.age or 15, gender=req.gender or "", origin=req.origin or "",
+            build=req.build or "Media",
         )
     except (ArmorNotFoundError, ArmorLevelTooHighError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -223,6 +225,7 @@ def api_armor_techniques(armor_name: str, conn=Depends(get_db)):
 @app.post("/characters/{knight_id}/train")
 def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
+    old_level = knight["player_level"]
 
     schedule = list(req.schedule[:7])
     while len(schedule) < 7:
@@ -240,8 +243,27 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
 
     save_knight(conn, knight)
 
+    log_entries = [{"day": d, "focus": f, "message": m} for d, f, m in results]
+
+    # Annuncio armature sbloccate salendo di livello - richiesto in chat:
+    # prima si scopriva solo per caso entrando in creazione di un nuovo
+    # personaggio. Confronta il livello PRIMA e DOPO l'allenamento (può
+    # essere salito di più di uno, con Avanza Mese), non solo l'ultimo.
+    new_level = knight["player_level"]
+    if new_level > old_level:
+        newly_unlocked = conn.execute(
+            "SELECT name FROM armors WHERE min_player_level > ? AND min_player_level <= ? ORDER BY min_player_level",
+            (old_level, new_level),
+        ).fetchall()
+        if newly_unlocked:
+            names = ", ".join(row["name"] for row in newly_unlocked)
+            log_entries.append({
+                "day": "", "focus": "",
+                "message": f"🗡️ Livello raggiunto! In una nuova creazione potresti scegliere: {names}",
+            })
+
     return {
-        "log": [{"day": d, "focus": f, "message": m} for d, f, m in results],
+        "log": log_entries,
         "character": _knight_payload(conn, knight),
     }
 
