@@ -69,12 +69,16 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
 def move_player(knight: dict, battle_state: dict, target_x: float, target_y: float) -> list[str]:
     """Sposta il giocatore verso (target_x, target_y), entro i suoi
     Punti Movimento - se il bersaglio è troppo lontano, si ferma al
-    massimo raggiungibile invece di rifiutare lo spostamento. Oltre la
-    soglia gratuita (FREE_MOVEMENT_RANGE) il tempo passa.
-    Fase 2: la distanza percorsa si accumula in
+    massimo raggiungibile invece di rifiutare lo spostamento.
+    Nessun costo in tempo per il movimento in sé (tolto in chat: era
+    ridondante con la perdita del turno per movimento eccessivo,
+    pagare minuti extra E perdere l'attacco per la stessa causa era un
+    doppio conto). La distanza percorsa si accumula in
     battle_state['player_moved_this_round'] - se supera metà dei Punti
     Movimento, il prossimo 'attacca' di questo round verrà rifiutato
-    (vedi resolve_declare) - muoversi troppo consuma il turno.
+    (vedi resolve_declare); qui lo si segnala SUBITO, al momento dello
+    spostamento, non solo dopo che si è già tentato di attaccare
+    (corretto in chat: prima si scopriva solo a cose fatte).
     Muove anche l'avversario di un piccolo passo a caso (Fase 1:
     'sembrare vivo', nessun effetto tattico). Muta `knight` e
     `battle_state` in place. Restituisce i messaggi di log."""
@@ -82,7 +86,7 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
     battle_state["last_effect"] = None  # muoversi non è un colpo, niente da disegnare sulla mappa
     movement_points = calculate_movement_points(knight["player_level"], knight["age"])
 
-    moved_fully, new_pos, distance_moved, minutes_cost = try_move(
+    moved_fully, new_pos, distance_moved = try_move(
         battle_state["player_position"], target_x, target_y, movement_points
     )
     battle_state["player_position"] = new_pos
@@ -96,11 +100,8 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
             f"Movimento ({movement_points}) bastano solo per {distance_moved:.1f} unità."
         )
 
-    if minutes_cost > 0:
-        aging_msg = RosterManager.spend_time(knight, minutes_cost)
-        log.append(f"Lo spostamento più lungo costa {minutes_cost} minuti.")
-        if aging_msg:
-            log.append(aging_msg)
+    if movement_uses_turn(battle_state["player_moved_this_round"], movement_points):
+        log.append(f"⚠️ {knight['raw_name']} si è mosso troppo: non potrà attaccare in questo round (potrà comunque Caricare).")
 
     battle_state["opponent_position"] = wander_opponent(battle_state["opponent_position"])
 
