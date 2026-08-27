@@ -242,6 +242,7 @@ const state = {
   opponentCandidates: null, // sala d'attesa: 5 avversari tra cui scegliere, o null
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
+  geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   trainingLog: [],
   arenaLog: [],
 };
@@ -324,30 +325,30 @@ async function loadCreationScreen() {
     showError(e.message);
     state.armors = [];
   }
+  if (state.geoOrigins === null) {
+    try {
+      state.geoOrigins = await api("/geo-origins");
+    } catch (e) {
+      showError(e.message);
+      state.geoOrigins = {};
+    }
+  }
   render();
 }
 
 const RANDOM_NAMES = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri", "Amara", "Sofia", "Yuki", "Elena", "Priya"];
 const RANDOM_SURNAMES = ["Takeda", "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau", "Petrova"];
-// Provenienza: elenco chiuso (non testo libero) perché ciascuna è
-// collegata a un'affinità elementale vera in combattimento (vedi
-// ORIGIN_ELEMENT_AFFINITY in core/arena_manager.py - questa lista deve
-// restare identica a quella, altrimenti una provenienza scelta qui non
-// verrebbe riconosciuta da nessuna regola lato server.
-const ORIGINS_WITH_AFFINITY = [
-  { name: "Siberia", element: "Ghiaccio" },
-  { name: "Russia", element: "Ghiaccio" },
-  { name: "Svezia", element: "Ghiaccio" },
-  { name: "Grecia", element: "Cosmico" },
-  { name: "Giappone", element: "Cosmico" },
-  { name: "Italia", element: "Fisico" },
-  { name: "Cina", element: "Fisico" },
-  { name: "Brasile", element: "Fuoco" },
-  { name: "Egitto", element: "Psichico" },
-  { name: "India", element: "Psichico" },
-];
 const RANDOM_GENDERS = ["Maschio", "Femmina"];
 const BUILD_OPTIONS = ["Minuta", "Media", "Robusta"];
+
+// Pesca una nazione a caso dall'intero albero geografico (state.geoOrigins,
+// caricato da GET /geo-origins) - usata dal Personaggio Casuale.
+function randomCountryFromGeo() {
+  const continents = Object.values(state.geoOrigins || {});
+  if (continents.length === 0) return "";
+  const zones = Object.values(randomFrom(continents));
+  return randomFrom(randomFrom(zones).countries);
+}
 
 function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -360,7 +361,7 @@ async function createRandomCharacter() {
     surname: randomFrom(RANDOM_SURNAMES),
     age: 14 + Math.floor(Math.random() * 9),  // 14-22, l'età tipica di un cavaliere
     gender: randomFrom(RANDOM_GENDERS),
-    origin: randomFrom(ORIGINS_WITH_AFFINITY).name,
+    origin: randomCountryFromGeo(),
     build: randomFrom(BUILD_OPTIONS),
   };
   await createCharacter(randomFrom(RANDOM_NAMES), armor.name, details);
@@ -663,18 +664,66 @@ function renderCreationScreen() {
   for (const g of ["", "Maschio", "Femmina", "Altro"]) {
     genderSelect.append(el("option", { value: g }, g || "Sesso (opzionale)"));
   }
-  const originSelect = el("select", {});
-  originSelect.append(el("option", { value: "" }, "Provenienza (opzionale)"));
-  for (const o of ORIGINS_WITH_AFFINITY) {
-    originSelect.append(el("option", { value: o.name }, `${o.name} (${o.element})`));
-  }
   const buildSelect = el("select", {});
   for (const b of BUILD_OPTIONS) {
     buildSelect.append(el("option", { value: b, ...(b === "Media" ? { selected: "selected" } : {}) }, b));
   }
-  row2.append(ageInput, genderSelect, originSelect, buildSelect);
+  row2.append(ageInput, genderSelect, buildSelect);
   nameCard.append(row2);
-  nameCard.append(el("p", { class: "hint" }, "La provenienza dà un piccolo bonus/resistenza con l'elemento indicato. La corporatura sposta la Costituzione di partenza."));
+
+  // Provenienza: menu a cascata Continente -> Macrozona -> Nazione
+  // (richiesto in chat: l'elenco piatto di 10 nazioni era troppo
+  // scarno). L'albero arriva da GET /geo-origins, la stessa fonte di
+  // verità usata dal server per l'affinità elementale in combattimento.
+  const row3 = el("div", { class: "row" });
+  const continentSelect = el("select", {});
+  const macrozoneSelect = el("select", { disabled: "disabled" });
+  const countrySelect = el("select", { disabled: "disabled" });
+
+  continentSelect.append(el("option", { value: "" }, "Continente (opzionale)"));
+  for (const continent of Object.keys(state.geoOrigins || {}).sort()) {
+    continentSelect.append(el("option", { value: continent }, continent));
+  }
+  macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
+  countrySelect.append(el("option", { value: "" }, "Nazione"));
+
+  continentSelect.addEventListener("change", () => {
+    macrozoneSelect.innerHTML = "";
+    countrySelect.innerHTML = "";
+    countrySelect.append(el("option", { value: "" }, "Nazione"));
+    countrySelect.disabled = true;
+    const continent = continentSelect.value;
+    if (!continent) {
+      macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
+      macrozoneSelect.disabled = true;
+      return;
+    }
+    macrozoneSelect.disabled = false;
+    macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
+    for (const zone of Object.keys(state.geoOrigins[continent]).sort()) {
+      macrozoneSelect.append(el("option", { value: zone }, zone));
+    }
+  });
+
+  macrozoneSelect.addEventListener("change", () => {
+    countrySelect.innerHTML = "";
+    const continent = continentSelect.value;
+    const zone = macrozoneSelect.value;
+    if (!zone) {
+      countrySelect.append(el("option", { value: "" }, "Nazione"));
+      countrySelect.disabled = true;
+      return;
+    }
+    countrySelect.disabled = false;
+    countrySelect.append(el("option", { value: "" }, "Nazione"));
+    for (const country of state.geoOrigins[continent][zone].countries) {
+      countrySelect.append(el("option", { value: country }, country));
+    }
+  });
+
+  row3.append(continentSelect, macrozoneSelect, countrySelect);
+  nameCard.append(row3);
+  nameCard.append(el("p", { class: "hint" }, "La provenienza dà un piccolo bonus/resistenza con l'elemento della sua macrozona. La corporatura sposta la Costituzione di partenza."));
   wrap.append(nameCard);
 
   const armorCard = el("div", { class: "card" });
@@ -707,7 +756,7 @@ function renderCreationScreen() {
         surname: surnameInput.value.trim(),
         age,
         gender: genderSelect.value,
-        origin: originSelect.value,
+        origin: countrySelect.value,
         build: buildSelect.value,
       });
     },
@@ -787,8 +836,9 @@ function renderHierarchyTab() {
       const table = el("table");
       table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Livello"), el("th", {}, "Occupante")));
       for (const entry of groups[divinity][faction]) {
-        const occupantCell = entry.claimed_by_name
-          ? el("td", {}, `${entry.claimed_by_name} (livello ${entry.claimed_by_level})`)
+        const playerDisplayName = [entry.claimed_by_raw_name, entry.claimed_by_surname].filter(Boolean).join(" ");
+        const occupantCell = entry.claimed_by_raw_name
+          ? el("td", {}, `${playerDisplayName} (livello ${entry.claimed_by_level})`)
           : el("td", {}, entry.npc_name, el("span", {
               style: "background:var(--gold);color:#1a1a1a;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;font-weight:700;",
             }, "PNG"));
