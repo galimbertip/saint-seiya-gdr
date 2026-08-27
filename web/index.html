@@ -240,6 +240,7 @@ const state = {
   weeklySchedule: [],
   battle: null,             // battle_state, o null fuori combattimento
   opponentCandidates: null, // sala d'attesa: 5 avversari tra cui scegliere, o null
+  creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   trainingLog: [],
   arenaLog: [],
 };
@@ -312,6 +313,7 @@ async function deleteCharacter(id, name) {
 // --- Creazione personaggio ---
 async function loadCreationScreen() {
   state.screen = "creation";
+  state.creationMode = null;  // riparte sempre dalla scelta, ad ogni nuovo ingresso
   try {
     state.armors = await api("/armors?player_level=1");
   } catch (e) {
@@ -321,11 +323,36 @@ async function loadCreationScreen() {
   render();
 }
 
-async function createCharacter(rawName, armorName) {
+const RANDOM_NAMES = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri", "Amara", "Sofia", "Yuki", "Elena", "Priya"];
+const RANDOM_SURNAMES = ["Takeda", "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau", "Petrova"];
+const RANDOM_ORIGINS = ["Giappone", "Italia", "Russia", "Brasile", "Cina", "Grecia", "Svezia", "Francia", "Egitto", "India"];
+const RANDOM_GENDERS = ["Maschio", "Femmina"];
+
+function randomFrom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+async function createRandomCharacter() {
+  if (state.armors.length === 0) return showError("Nessuna armatura disponibile.");
+  const armor = randomFrom(state.armors);
+  const details = {
+    surname: randomFrom(RANDOM_SURNAMES),
+    age: 14 + Math.floor(Math.random() * 9),  // 14-22, l'età tipica di un cavaliere
+    gender: randomFrom(RANDOM_GENDERS),
+    origin: randomFrom(RANDOM_ORIGINS),
+  };
+  await createCharacter(randomFrom(RANDOM_NAMES), armor.name, details);
+}
+
+async function createCharacter(rawName, armorName, details = {}) {
   try {
     const character = await api("/characters", {
       method: "POST",
-      body: JSON.stringify({ raw_name: rawName, armor_name: armorName, player_level: 1 }),
+      body: JSON.stringify({
+        raw_name: rawName, armor_name: armorName, player_level: 1,
+        surname: details.surname || "", age: details.age || 15,
+        gender: details.gender || "", origin: details.origin || "",
+      }),
     });
     state.characterId = character.id;
     state.character = character;
@@ -582,9 +609,38 @@ function renderCreationScreen() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Crea il tuo Cavaliere"));
 
+  if (!state.creationMode) {
+    const modeCard = el("div", { class: "card" });
+    modeCard.append(el("h2", {}, "Come vuoi iniziare?"));
+    modeCard.append(el("button", { onClick: createRandomCharacter }, "🎲 Personaggio Casuale"));
+    modeCard.append(el("button", {
+      class: "secondary",
+      onClick: () => { state.creationMode = "detailed"; render(); },
+    }, "✏️ Crea Come Vuoi Tu"));
+    wrap.append(modeCard);
+    wrap.append(el("button", { class: "secondary", onClick: loadHomeScreen }, "Annulla"));
+    return wrap;
+  }
+
+  // --- Modalità "Crea Come Vuoi Tu": modulo esteso, richiesto in chat ---
   const nameCard = el("div", { class: "card" });
-  const nameInput = el("input", { placeholder: "Nome del personaggio (es. Seiya)" });
-  nameCard.append(el("h2", {}, "Nome"), nameInput);
+  nameCard.append(el("h2", {}, "Chi è il tuo Cavaliere"));
+
+  const row1 = el("div", { class: "row" });
+  const nameInput = el("input", { placeholder: "Nome (es. Seiya)" });
+  const surnameInput = el("input", { placeholder: "Cognome (opzionale)" });
+  row1.append(nameInput, surnameInput);
+  nameCard.append(row1);
+
+  const row2 = el("div", { class: "row" });
+  const ageInput = el("input", { type: "number", placeholder: "Età", value: "15", min: "10", max: "99" });
+  const genderSelect = el("select", {});
+  for (const g of ["", "Maschio", "Femmina", "Altro"]) {
+    genderSelect.append(el("option", { value: g }, g || "Sesso (opzionale)"));
+  }
+  const originInput = el("input", { placeholder: "Provenienza (opzionale, es. Giappone)" });
+  row2.append(ageInput, genderSelect, originInput);
+  nameCard.append(row2);
   wrap.append(nameCard);
 
   const armorCard = el("div", { class: "card" });
@@ -612,11 +668,17 @@ function renderCreationScreen() {
       const name = nameInput.value.trim();
       if (!name) return showError("Inserisci un nome per il personaggio.");
       if (!selectedArmor) return showError("Seleziona un'armatura dalla tabella.");
-      createCharacter(name, selectedArmor);
+      const age = parseInt(ageInput.value, 10) || 15;
+      createCharacter(name, selectedArmor, {
+        surname: surnameInput.value.trim(),
+        age,
+        gender: genderSelect.value,
+        origin: originInput.value.trim(),
+      });
     },
   }, "Crea e Seleziona");
   wrap.append(createBtn);
-  wrap.append(el("button", { class: "secondary", onClick: loadHomeScreen }, "Annulla"));
+  wrap.append(el("button", { class: "secondary", onClick: () => { state.creationMode = null; render(); } }, "◄ Indietro"));
   return wrap;
 }
 
@@ -679,6 +741,8 @@ function renderSheetTab() {
   const progCard = el("div", { class: "card" });
   progCard.append(el("h2", {}, "Progressione"));
   progCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp} · Età ${k.age} anni`));
+  const dettagli = [k.gender, k.origin].filter(Boolean).join(" · ");
+  if (dettagli) progCard.append(el("p", { class: "hint" }, dettagli));
   const senses = k.senses;
   const mark = (b) => (b ? "✓" : "✗");
   progCard.append(el("p", { class: "hint" },
