@@ -13,9 +13,13 @@ funzionante (bonus lineare semplice), non il bilanciamento definitivo -
 la struttura (che ci sia una dipendenza reale statistiche<->armatura)
 è quella buona, i numeri si tarano con le dinamiche.
 """
+import random
 import sqlite3
 
-from database.db_manager import get_armor, list_armors_for_player_level
+from database.db_manager import (
+    get_armor, list_armors_for_player_level, get_roster_entry, insert_roster_entry, claim_roster_slot,
+)
+from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
 
 STARTING_COSMO_BASE = 100
 STARTING_STAT_BASE = 10
@@ -24,6 +28,10 @@ STARTING_STAT_BASE = 10
 # un cavaliere robusto incassa meglio, uno minuto un po' meno. Piccoli
 # scarti (non uno squilibrio), applicati una volta sola alla creazione.
 BUILD_CON_BONUS = {"Minuta": -1, "Media": 0, "Robusta": 2}
+
+
+class ArmorAlreadyClaimedError(ValueError):
+    pass
 
 
 class ArmorNotFoundError(ValueError):
@@ -61,6 +69,9 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     """Crea un nuovo cavaliere, validando armatura e livello. Solleva
     ArmorNotFoundError / ArmorLevelTooHighError se la scelta non è valida,
     invece di salvare comunque come faceva la versione di Gemini.
+    ArmorAlreadyClaimedError se l'armatura è già portata da un altro
+    personaggio giocatore (richiesto in chat: la gerarchia è 1 a 1, un
+    solo occupante per slot - il PNG fisso finché nessuno la reclama).
     surname/gender/origin: dettagli narrativi opzionali del personaggio
     (richiesti in chat per la creazione 'come vuoi tu') - nessun
     collegamento con dati reali del giocatore, sono del personaggio.
@@ -77,6 +88,12 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
         raise ArmorLevelTooHighError(
             f"{armor_name!r} richiede livello giocatore {armor['min_player_level']}, "
             f"ma il personaggio è livello {player_level}."
+        )
+
+    roster_entry = get_roster_entry(conn, armor_name)
+    if roster_entry is not None and roster_entry["claimed_by_knight_id"] is not None:
+        raise ArmorAlreadyClaimedError(
+            f"{armor_name!r} è già portata da un altro cavaliere - scegline un'altra dalla Gerarchia."
         )
 
     stats = _starting_stats(armor["level"])
@@ -99,7 +116,27 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     )
     conn.commit()
 
+    claim_roster_slot(conn, armor_name, cur.lastrowid)
+
     return get_knight(conn, cur.lastrowid)
+
+
+def ensure_roster_populated(conn: sqlite3.Connection) -> int:
+    """Genera un PNG fisso per ogni armatura del catalogo che non ne ha
+    ancora uno - va richiamata all'avvio, come refresh_armors_catalog
+    (richiesto in chat). Sicura da richiamare più volte: ignora le
+    armature che hanno già uno slot (il nome del PNG non deve mai
+    cambiare una volta assegnato). Restituisce quanti PNG nuovi sono
+    stati generati in questa chiamata."""
+    all_armors = conn.execute("SELECT name FROM armors").fetchall()
+    creati = 0
+    for row in all_armors:
+        if get_roster_entry(conn, row["name"]) is None:
+            npc_name = f"{random.choice(OPPONENT_FIRST_NAMES)} {random.choice(OPPONENT_SURNAMES)}"
+            insert_roster_entry(conn, row["name"], npc_name)
+            creati += 1
+    conn.commit()
+    return creati
 
 
 def get_knight(conn: sqlite3.Connection, knight_id: int) -> dict | None:
