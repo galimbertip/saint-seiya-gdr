@@ -375,6 +375,38 @@ def movement_uses_turn(distance_moved_this_round: float, movement_points: int) -
     return distance_moved_this_round > movement_points * HEAVY_MOVEMENT_RATIO
 
 
+LONG_RANGE = 6.0  # oltre questa distanza, anche un attacco a distanza perde smalto
+LONG_RANGE_DAMAGE_MULTIPLIER = 0.8
+
+
+def range_effect(distance: float, technique_name: str) -> tuple[str, float]:
+    """Come la distanza modifica un attacco A DISTANZA (le tecniche
+    vere - l'Attacco Base ha già il suo vincolo di portata secco, vedi
+    check_attack_range, e non riceve qui nessuna penalità aggiuntiva).
+    Richiesto in chat: la distanza doveva contare anche in modo
+    graduale quando si è comunque a portata, non solo come
+    porta/non-porta. Oltre LONG_RANGE: meno preciso (svantaggio sul
+    tiro) e un po' più debole; entro LONG_RANGE nessun effetto per ora.
+    Restituisce (roll_mode, moltiplicatore_danno)."""
+    if not is_technique_ranged(technique_name):
+        return "normale", 1.0
+    if distance > LONG_RANGE:
+        return "svantaggio", LONG_RANGE_DAMAGE_MULTIPLIER
+    return "normale", 1.0
+
+
+def combine_roll_modes(mode_a: str, mode_b: str) -> str:
+    """Combina due modificatori di tiro (es. un Imprevisto e la
+    distanza) - vantaggio e svantaggio insieme si annullano a vicenda,
+    regola classica D&D, invece di sommarsi o di sceglierne uno a caso."""
+    if mode_a == mode_b:
+        return mode_a
+    modes = {mode_a, mode_b}
+    if "vantaggio" in modes and "svantaggio" in modes:
+        return "normale"
+    return mode_a if mode_a != "normale" else mode_b
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
