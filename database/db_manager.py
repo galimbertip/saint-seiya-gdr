@@ -64,6 +64,21 @@ CREATE TABLE IF NOT EXISTS knights (
     origin TEXT NOT NULL DEFAULT '',
     build TEXT NOT NULL DEFAULT 'Media'
 );
+
+-- Gerarchia dei cavalieri (richiesta in chat): ogni armatura del
+-- catalogo ha un PNG fisso assegnato una volta sola (npc_name, non
+-- cambia mai) - finché nessun giocatore la reclama, è quel PNG a
+-- "occupare" lo slot. claimed_by_knight_id punta al personaggio che
+-- l'ha presa; ON DELETE SET NULL fa "tornare" automaticamente il PNG
+-- quando quel personaggio viene eliminato, senza bisogno di codice
+-- applicativo apposta.
+CREATE TABLE IF NOT EXISTS roster (
+    armor_name TEXT PRIMARY KEY,
+    npc_name TEXT NOT NULL,
+    claimed_by_knight_id INTEGER,
+    FOREIGN KEY (armor_name) REFERENCES armors(name),
+    FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
+);
 """
 
 
@@ -235,6 +250,46 @@ def list_armors_for_player_level(player_level: int, conn: sqlite3.Connection | N
     if own_conn:
         conn.close()
     return rows
+
+
+def get_roster(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """La gerarchia completa: ogni armatura con chi la 'occupa' - il
+    PNG fisso se nessuno l'ha reclamata, o il personaggio giocatore che
+    l'ha presa (richiesto in chat). Ordinata per divinità/fazione/
+    livello, così la pagina può raggrupparle a colpo d'occhio."""
+    return conn.execute(
+        """
+        SELECT r.armor_name, r.npc_name, r.claimed_by_knight_id,
+               a.divinity, a.faction, a.level,
+               k.formal_name AS claimed_by_name, k.player_level AS claimed_by_level
+        FROM roster r
+        JOIN armors a ON a.name = r.armor_name
+        LEFT JOIN knights k ON k.id = r.claimed_by_knight_id
+        ORDER BY a.divinity, a.faction, a.level
+        """
+    ).fetchall()
+
+
+def get_roster_entry(conn: sqlite3.Connection, armor_name: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM roster WHERE armor_name = ?", (armor_name,)).fetchone()
+
+
+def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str) -> None:
+    """Crea lo slot per un'armatura con il suo PNG fisso - ignorata (non
+    sovrascrive) se esiste già, perché il nome del PNG non deve mai
+    cambiare una volta assegnato (richiesto in chat)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO roster (armor_name, npc_name, claimed_by_knight_id) VALUES (?, ?, NULL)",
+        (armor_name, npc_name),
+    )
+
+
+def claim_roster_slot(conn: sqlite3.Connection, armor_name: str, knight_id: int) -> None:
+    """Un personaggio giocatore reclama lo slot della sua armatura - il
+    PNG 'si fa da parte' (resta nel database ma non compare più come
+    occupante finché lo slot è reclamato)."""
+    conn.execute("UPDATE roster SET claimed_by_knight_id = ? WHERE armor_name = ?", (knight_id, armor_name))
+    conn.commit()
 
 
 if __name__ == "__main__":
