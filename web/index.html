@@ -768,7 +768,7 @@ function renderArenaTab() {
     mapCard.append(renderArenaMap());
     const movementHint = state.battle.pending_opponent_technique
       ? "Rispondi all'attacco prima di poterti muovere ancora."
-      : `Punti Movimento: ${k.movement_points} — clicca sulla mappa per spostarti.`;
+      : `Punti Movimento: ${k.movement_points} — clicca sulla mappa per spostarti. L'Attacco Base richiede stare vicini; le tecniche vere colpiscono a distanza. Muoverti molto consuma il turno.`;
     mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
     mapColumn.append(mapCard);
     columns.append(mapColumn);
