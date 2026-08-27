@@ -25,6 +25,7 @@ from core.arena_manager import (
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     status_resisted, calculate_movement_points, try_move, wander_opponent,
     check_attack_range, movement_uses_turn, range_effect, combine_roll_modes, distance_between,
+    origin_affinity_modifier,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
@@ -261,8 +262,13 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                     technique_name, technique_power, roll_mode=combined_mode, cause_phrase=cause_phrase,
                 )
                 dmg = round(dmg * range_power_mult)
+                # Affinità elementale di provenienza (richiesta in chat):
+                # bonus se attacchi con l'elemento di casa tuo, resistenza
+                # se l'avversario incassa un colpo del suo.
+                dmg = round(dmg * origin_affinity_modifier(knight.get("origin", ""), technique_type, as_attacker=True))
+                dmg = round(dmg * origin_affinity_modifier(opponent.get("origin", ""), technique_type, as_attacker=False))
                 dmg = apply_charge(dmg, True, battle_state)
-                msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica/distanza ha cambiato il danno
+                msg = format_damage_message(msg, dmg)  # riallinea il testo se la Carica/distanza/affinità ha cambiato il danno
 
                 if dmg == 0:
                     # Schivata vera (il tiro per colpire ha già fallito): niente
@@ -364,6 +370,8 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         knight["raw_name"], knight["dex"], knight["con"], armor["level"], t["name"], t["power"],
         roll_mode=roll_mode, cause_phrase=cause_phrase,
     )
+    dmg2 = round(dmg2 * origin_affinity_modifier(opponent.get("origin", ""), t.get("tech_type", ""), as_attacker=True))
+    dmg2 = round(dmg2 * origin_affinity_modifier(knight.get("origin", ""), t.get("tech_type", ""), as_attacker=False))
     dmg2 = apply_charge(dmg2, False, battle_state)
     msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
 
