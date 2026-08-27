@@ -344,6 +344,37 @@ def wander_opponent(current_pos: dict) -> dict:
     return clamp_to_grid(current_pos["x"] + dx, current_pos["y"] + dy)
 
 
+# --- Mappa 2D: Fase 2 (portata delle tecniche e vincoli reali) ------------
+# Qui la posizione INIZIA a contare per davvero, non solo per l'occhio
+# (richiesto in chat, sequenziato come gli Imprevisti). Semplificazione
+# dichiarata sulla portata: non modelliamo la portata precisa di ogni
+# singola tecnica del catalogo (centinaia di casi diversi) - solo la
+# distinzione 'ho una tecnica vera' (colpisce a distanza, come ci si
+# aspetta da energia/tecniche Saint Seiya) contro 'sto solo tirando
+# pugni' (l'Attacco Base, che richiede stare vicini).
+MELEE_RANGE = 2.0  # entro questa distanza, anche l'Attacco Base funziona
+HEAVY_MOVEMENT_RATIO = 0.5  # oltre metà dei Punti Movimento spesi in un round, niente attacco quel round
+
+
+def is_technique_ranged(technique_name: str) -> bool:
+    """Le tecniche vere (qualunque nome diverso da 'Attacco Base')
+    colpiscono a distanza. Solo l'Attacco Base richiede stare vicini."""
+    return technique_name != "Attacco Base"
+
+
+def check_attack_range(attacker_pos: dict, defender_pos: dict, technique_name: str) -> bool:
+    """True se l'attacco è a portata da dove ci si trova ora."""
+    if is_technique_ranged(technique_name):
+        return True
+    return distance_between(attacker_pos, defender_pos) <= MELEE_RANGE
+
+
+def movement_uses_turn(distance_moved_this_round: float, movement_points: int) -> bool:
+    """True se ci si è mossi abbastanza da consumare tutto il turno -
+    oltre metà dei propri Punti Movimento in un solo round."""
+    return distance_moved_this_round > movement_points * HEAVY_MOVEMENT_RATIO
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
