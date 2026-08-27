@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS knights (
     weekly_schedule TEXT NOT NULL DEFAULT 'Cosmo,Forza,Destrezza,Costituzione,Tecnica,Volontà,Riposo',
     surname TEXT NOT NULL DEFAULT '',
     gender TEXT NOT NULL DEFAULT '',
-    origin TEXT NOT NULL DEFAULT ''
+    origin TEXT NOT NULL DEFAULT '',
+    build TEXT NOT NULL DEFAULT 'Media'
 );
 """
 
@@ -103,6 +104,14 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN origin TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunte colonne surname/gender/origin a knights (vuote per i salvataggi esistenti).")
+    if "build" not in existing_columns:
+        # Corporatura (richiesta in chat) - sposta la Costituzione di
+        # partenza, ma solo alla CREAZIONE: per i personaggi già
+        # esistenti non tocchiamo le statistiche già in gioco, solo
+        # etichettiamo 'Media' (nessun bonus/malus retroattivo).
+        conn.execute("ALTER TABLE knights ADD COLUMN build TEXT NOT NULL DEFAULT 'Media'")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna build a knights ('Media' per i salvataggi esistenti, nessun effetto retroattivo sulle statistiche).")
 
 
 def get_connection() -> sqlite3.Connection:
