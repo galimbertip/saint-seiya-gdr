@@ -264,9 +264,24 @@ function showError(msg) {
   setTimeout(() => banner.classList.add("hidden"), 6000);
 }
 
-// --- Schermata iniziale ---
+// --- Home e schermata "Carica Partita" ---
+async function loadHomeScreen() {
+  state.screen = "home";
+  try {
+    state.characters = await api("/characters");
+  } catch (e) {
+    showError(e.message);
+    state.characters = [];
+  }
+  render();
+}
+
 async function loadStartScreen() {
-  state.screen = "start";
+  // "Carica Partita": l'elenco dei salvataggi tra cui scegliere -
+  // usata sia dal pulsante omonimo in home, sia per tornare qui dopo
+  // aver lasciato una partita in corso (più naturale che tornare alla
+  // home vera e propria, visto che si era già dentro al gioco).
+  state.screen = "loadGame";
   try {
     state.characters = await api("/characters");
   } catch (e) {
@@ -476,7 +491,8 @@ function applyArenaResult(result) {
 function render() {
   const app = $("#app");
   app.innerHTML = "";
-  if (state.screen === "start") app.append(renderStartScreen());
+  if (state.screen === "home") app.append(renderHomeScreen());
+  else if (state.screen === "loadGame") app.append(renderLoadGameScreen());
   else if (state.screen === "creation") app.append(renderCreationScreen());
   else if (state.screen === "game") app.append(renderGameScreen());
 
@@ -490,9 +506,49 @@ function render() {
   });
 }
 
-function renderStartScreen() {
+function renderEmblem() {
+  // Emblema originale (nessuna grafica ufficiale Saint Seiya): un
+  // cerchio dorato con una stella cosmica a otto punte e qualche
+  // stellina sparsa - un segnaposto elegante finché non c'è una vera
+  // immagine, come richiesto in chat.
+  const holder = document.createElement("div");
+  holder.innerHTML = `
+    <svg width="160" height="160" viewBox="0 0 180 180" style="display:block;margin:0 auto 16px;">
+      <circle cx="90" cy="90" r="82" fill="#141B2E" stroke="#D4AF37" stroke-width="4"/>
+      <circle cx="90" cy="90" r="68" fill="none" stroke="#D4AF37" stroke-width="1" opacity="0.5"/>
+      <circle cx="40" cy="35" r="1.6" fill="#3FA9F5"/>
+      <circle cx="142" cy="48" r="1.3" fill="#3FA9F5"/>
+      <circle cx="150" cy="122" r="1.6" fill="#3FA9F5"/>
+      <circle cx="34" cy="128" r="1.3" fill="#3FA9F5"/>
+      <circle cx="90" cy="18" r="1.1" fill="#EAE6DA"/>
+      <path d="M90,28 L99,74 L142,90 L99,106 L90,152 L81,106 L38,90 L81,74 Z" fill="#3FA9F5" stroke="#D4AF37" stroke-width="2"/>
+      <circle cx="90" cy="90" r="9" fill="#D4AF37"/>
+    </svg>`;
+  return holder.firstElementChild;
+}
+
+function renderHomeScreen() {
+  const wrap = el("div", { style: "max-width:420px;margin:40px auto;text-align:center;" });
+  wrap.append(renderEmblem());
+  wrap.append(el("h1", {}, "SAINT SEIYA"));
+  wrap.append(el("p", { class: "hint" }, "Sacro Imperio" + (state.appVersion ? ` · ${state.appVersion}` : "")));
+
+  const btnWrap = el("div", { style: "margin-top:24px;" });
+  btnWrap.append(el("button", { style: "width:100%;", onClick: loadCreationScreen }, "⚔ Nuova Partita"));
+  const loadLabel = state.characters.length === 0 ? "📂 Carica Partita (nessun salvataggio)" : "📂 Carica Partita";
+  btnWrap.append(el("button", {
+    class: "secondary", style: "width:100%;",
+    onClick: loadStartScreen,
+    ...(state.characters.length === 0 ? { disabled: "disabled" } : {}),
+  }, loadLabel));
+  wrap.append(btnWrap);
+
+  return wrap;
+}
+
+function renderLoadGameScreen() {
   const wrap = el("div");
-  wrap.append(el("h1", {}, "SAINT SEIYA"), el("p", { class: "hint" }, "Sacro Imperio" + (state.appVersion ? ` · ${state.appVersion}` : "")));
+  wrap.append(el("h1", {}, "Carica Partita"));
 
   const card = el("div", { class: "card" });
   card.append(el("h2", {}, "Partite salvate"));
@@ -518,7 +574,7 @@ function renderStartScreen() {
   }
   wrap.append(card);
 
-  wrap.append(el("button", { onClick: loadCreationScreen }, "+ Nuova Partita"));
+  wrap.append(el("button", { class: "secondary", onClick: loadHomeScreen }, "◄ Indietro"));
   return wrap;
 }
 
@@ -560,7 +616,7 @@ function renderCreationScreen() {
     },
   }, "Crea e Seleziona");
   wrap.append(createBtn);
-  wrap.append(el("button", { class: "secondary", onClick: loadStartScreen }, "Annulla"));
+  wrap.append(el("button", { class: "secondary", onClick: loadHomeScreen }, "Annulla"));
   return wrap;
 }
 
@@ -960,7 +1016,7 @@ async function loadAppVersion() {
 }
 
 loadAppVersion();
-loadStartScreen();
+loadHomeScreen();
 </script>
 </body>
 </html>
