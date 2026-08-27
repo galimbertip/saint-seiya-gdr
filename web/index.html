@@ -846,24 +846,18 @@ function elementColor(techType) {
 }
 
 function drawKnightFigure(ctx, x, y, color, label) {
-  // Una figura stilizzata semplice: testa (cerchio) + mantello
-  // (triangolo) - non un pallino, ma non serve un vero disegno
-  // dettagliato per leggersi bene a colpo d'occhio su una mappa piccola.
+  // Tornato al semplice cerchio (la figura testa+mantello "faceva
+  // cacare" - parole tue): l'estetica vera aspetta il 3D, molto più
+  // avanti. Per ora leggibilità sopra tutto.
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(x, y - 13, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(x, y - 8);
-  ctx.lineTo(x - 9, y + 11);
-  ctx.lineTo(x + 9, y + 11);
-  ctx.closePath();
+  ctx.arc(x, y, 11, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = "#EAE6DA";
   ctx.font = "11px Arial";
   ctx.textAlign = "center";
-  ctx.fillText(label, x, y - 22);
+  ctx.fillText(label, x, y - 16);
 }
 
 function renderArenaMap() {
