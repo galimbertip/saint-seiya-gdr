@@ -1123,8 +1123,80 @@ function drawKnightFigure(ctx, x, y, color, label) {
   ctx.fillText(label, x, y - 16);
 }
 
+// Le 5 arene della Fase 4 (puramente estetiche, nessuna nuova
+// meccanica - richiesto in chat): sfondo diverso e una piccola
+// decorazione caratteristica per ciascuna, scelta dal server in base
+// alla provenienza dell'avversario (vedi pick_arena_theme lato
+// backend). Niente immagini vere (nessuno strumento di generazione
+// disponibile, vedi discussione sull'emblema) - solo forme geometriche
+// semplici, sufficienti a dare un'identità visiva diversa a colpo
+// d'occhio.
+const ARENA_THEMES = {
+  atene: { bg: "linear-gradient(#26324a, #0B0F1A)" },
+  siberia: { bg: "linear-gradient(#cfe8f7, #7fa8c9)" },
+  deserto: { bg: "linear-gradient(#f6cf8e, #d98e3a)" },
+  colosseo: { bg: "linear-gradient(#9b9689, #4a453d)" },
+  piramidi: { bg: "linear-gradient(#6b4a7e, #d9a441)" },
+};
+
+function drawArenaDecoration(ctx, theme, size) {
+  ctx.save();
+  if (theme === "atene") {
+    ctx.fillStyle = "rgba(234,230,218,0.45)";
+    for (const x of [size * 0.08, size * 0.22, size * 0.78, size * 0.92]) {
+      ctx.fillRect(x - 3, 0, 6, size * 0.16);
+      ctx.fillRect(x - 3, size * 0.84, 6, size * 0.16);
+    }
+  } else if (theme === "siberia") {
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(0, size);
+    ctx.lineTo(size * 0.15, size * 0.72);
+    ctx.lineTo(size * 0.3, size);
+    ctx.lineTo(size * 0.5, size * 0.68);
+    ctx.lineTo(size * 0.7, size);
+    ctx.lineTo(size * 0.85, size * 0.78);
+    ctx.lineTo(size, size);
+    ctx.closePath();
+    ctx.fill();
+  } else if (theme === "deserto") {
+    ctx.fillStyle = "rgba(255, 224, 140, 0.7)";
+    ctx.beginPath();
+    ctx.arc(size * 0.85, size * 0.14, size * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(160, 100, 40, 0.35)";
+    ctx.beginPath();
+    ctx.moveTo(0, size);
+    ctx.quadraticCurveTo(size * 0.25, size * 0.83, size * 0.5, size * 0.94);
+    ctx.quadraticCurveTo(size * 0.75, size * 1.0, size, size * 0.88);
+    ctx.lineTo(size, size);
+    ctx.closePath();
+    ctx.fill();
+  } else if (theme === "colosseo") {
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 3;
+    for (const x of [size * 0.15, size * 0.35, size * 0.65, size * 0.85]) {
+      ctx.beginPath();
+      ctx.arc(x, size * 0.09, size * 0.07, Math.PI, 0);
+      ctx.stroke();
+    }
+  } else if (theme === "piramidi") {
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(size * 0.5, size * 0.5);
+    ctx.lineTo(size * 0.72, size);
+    ctx.lineTo(size * 0.28, size);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function renderArenaMap() {
   const SIZE = 340;
+  const battle = state.battle;
+  const theme = ARENA_THEMES[battle && battle.arena_theme] || ARENA_THEMES.atene;
+
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
   canvas.height = SIZE;
@@ -1132,15 +1204,17 @@ function renderArenaMap() {
   canvas.style.maxWidth = `${SIZE}px`;
   canvas.style.display = "block";
   canvas.style.margin = "0 auto";
-  canvas.style.background = "#0B0F1A";
+  canvas.style.background = theme.bg;
   canvas.style.border = "1px solid var(--border)";
   canvas.style.borderRadius = "8px";
 
   const ctx = canvas.getContext("2d");
   const scale = SIZE / 10; // la griglia va da 0 a 10 in entrambi gli assi
 
+  if (battle) drawArenaDecoration(ctx, battle.arena_theme, SIZE);
+
   // Sfondo a griglia leggera, solo come riferimento visivo.
-  ctx.strokeStyle = "#1B2438";
+  ctx.strokeStyle = "rgba(120,130,150,0.25)";
   ctx.lineWidth = 1;
   for (let i = 0; i <= 10; i++) {
     ctx.beginPath();
@@ -1153,7 +1227,6 @@ function renderArenaMap() {
     ctx.stroke();
   }
 
-  const battle = state.battle;
   const canMove = battle && !battle.pending_opponent_technique;
 
   // Effetti sul terreno (Fase 3): il ghiaccio come chiazza azzurra
