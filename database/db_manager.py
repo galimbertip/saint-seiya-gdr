@@ -64,7 +64,10 @@ CREATE TABLE IF NOT EXISTS knights (
     origin TEXT NOT NULL DEFAULT '',
     build TEXT NOT NULL DEFAULT 'Media',
     tutorial_seen INTEGER NOT NULL DEFAULT 0,
-    biography TEXT NOT NULL DEFAULT ''
+    biography TEXT NOT NULL DEFAULT '',
+    skin_tone TEXT NOT NULL DEFAULT '',
+    hair_color TEXT NOT NULL DEFAULT '',
+    avatar_path TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -157,6 +160,16 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN biography TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunta colonna biography a knights (vuota per i salvataggi esistenti).")
+    if "avatar_path" not in existing_columns:
+        # Avatar del cavaliere (richiesto in chat): tono pelle/colore
+        # capelli per la sagoma stilizzata, più il percorso di
+        # un'eventuale immagine caricata dal giocatore (vuoto = usa la
+        # sagoma). Tutti vuoti per i salvataggi esistenti.
+        conn.execute("ALTER TABLE knights ADD COLUMN skin_tone TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN hair_color TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne skin_tone/hair_color/avatar_path a knights.")
 
 
 def get_connection() -> sqlite3.Connection:
