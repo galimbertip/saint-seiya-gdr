@@ -654,6 +654,52 @@ def pick_arena_theme(opponent_origin: str) -> str:
     return ARENA_THEMES_BY_ELEMENT.get(element, DEFAULT_ARENA_THEME)
 
 
+# --- Tecniche personalizzate ------------------------------------------
+# Richiesto in chat: i giocatori possono creare nuove tecniche, ma
+# devono essere "correlate" all'armatura o al background del
+# personaggio, e pesate sul livello attuale. Invece di provare a
+# giudicare un testo libero (nessuno strumento di comprensione
+# semantica affidabile per questo), la correlazione è garantita dalla
+# STRUTTURA: l'elemento della nuova tecnica deve essere uno di quelli
+# già presenti nelle tecniche vere dell'armatura, o l'affinità della
+# Provenienza - un elenco chiuso, non testo libero.
+CUSTOM_TECHNIQUE_UNLOCK_LEVELS = [5, 15, 30, 50]  # ogni soglia raggiunta = +1 slot
+
+
+def custom_technique_slots(player_level: int) -> int:
+    """Quanti slot di tecnica personalizzata sono sbloccati al livello
+    dato - una soglia raggiunta, uno slot in più."""
+    return sum(1 for lvl in CUSTOM_TECHNIQUE_UNLOCK_LEVELS if player_level >= lvl)
+
+
+def calculate_custom_technique_power(player_level: int) -> int:
+    """Pesa la potenza di una tecnica personalizzata sul livello
+    attuale del personaggio (richiesto in chat) - PLACEHOLDER come le
+    altre formule di bilanciamento in questo file, mai tarata sul
+    serio: scala da 60 (livello 1) a 95 (livello 50 o oltre), la stessa
+    scala delle tecniche vere del catalogo per le armature più forti.
+    Mai scelta dal giocatore, per evitare abusi."""
+    return 60 + min(player_level, 50) * 35 // 50
+
+
+def allowed_custom_technique_elements(armor_techniques: list[dict], origin: str) -> list[str]:
+    """Gli elementi ammessi per una tecnica personalizzata di questo
+    personaggio: quelli già presenti nel tech_type delle sue tecniche
+    vere (es. 'Cosmico/Fisico' -> 'Cosmico', 'Fisico'), più l'affinità
+    elementale della sua Provenienza, se ne ha una. Elenco chiuso e
+    ordinato, mostrato come scelta - non testo libero."""
+    elements = set()
+    for t in armor_techniques:
+        for word in (t.get("tech_type") or "").split("/"):
+            word = word.strip()
+            if word:
+                elements.add(word)
+    affinity = ORIGIN_ELEMENT_AFFINITY.get(origin)
+    if affinity:
+        elements.add(affinity.capitalize())
+    return sorted(elements)
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
