@@ -182,7 +182,8 @@ def check_fight_over(knight: dict, opponent: dict) -> tuple[bool, Optional[str]]
 
 def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Optional[str],
                      technique_power: Optional[int], battle_state: dict,
-                     technique_type: Optional[str] = None) -> tuple[list[str], bool, Optional[str]]:
+                     technique_type: Optional[str] = None, technique_launch_desc: Optional[str] = None,
+                     technique_effect_desc: Optional[str] = None) -> tuple[list[str], bool, Optional[str]]:
     """Metà 1 del round: il giocatore dichiara (Attacca o Carica). Se
     attacca, l'avversario reagisce d'istinto (automatico); poi
     l'avversario dichiara la SUA mossa - se attacca, il round si ferma
@@ -291,6 +292,9 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                     elif ice_mode == "svantaggio":
                         cause_phrase = "scivola sul ghiaccio, meno preciso"
 
+                if technique_name != "Attacco Base" and technique_launch_desc:
+                    log.append(f"⚡ {technique_name}: {technique_launch_desc}.")
+
                 dmg, msg = resolve_turn(
                     knight["raw_name"], knight["str"], knight["tec"], armor["level"],
                     opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
@@ -323,6 +327,9 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                         log.append(msg)
                         battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
                         final_damage_dealt = dmg
+
+                    if technique_name != "Attacco Base" and technique_effect_desc:
+                        log.append(f"💥 Effetto: {technique_effect_desc}.")
 
                     # Effetti sul terreno (Fase 3): un colpo di Ghiaccio o
                     # abbastanza devastante lascia un segno sulla mappa,
@@ -424,6 +431,9 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
     if roll_mode == "normale" and ice_mode == "svantaggio":
         cause_phrase = "scivola sul ghiaccio, meno preciso"
 
+    if t["name"] != "Attacco Base" and t.get("launch_desc"):
+        log.append(f"⚡ {t['name']}: {t['launch_desc']}.")
+
     dmg2, msg2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["tec"], opponent["armor_level"],
         knight["raw_name"], knight["dex"], knight["con"], armor["level"], t["name"], t["power"],
@@ -453,6 +463,9 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         final_damage_dealt2 = dmg2
 
     if dmg2 > 0:
+        if t["name"] != "Attacco Base" and t.get("effect_desc"):
+            log.append(f"💥 Effetto: {t['effect_desc']}.")
+
         terrain_effect2 = maybe_create_terrain_effect(
             battle_state["player_position"], t.get("tech_type", ""), final_damage_dealt2
         )
