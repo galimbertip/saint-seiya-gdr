@@ -26,7 +26,7 @@ from core.arena_manager import (
     status_resisted, calculate_movement_points, try_move, wander_opponent,
     check_attack_range, movement_uses_turn, range_effect, combine_roll_modes, distance_between,
     origin_affinity_modifier, maybe_create_terrain_effect, tick_terrain_effects, position_in_ice_patch,
-    apply_flame_damage, apply_mud_penalty,
+    apply_flame_damage, apply_mud_penalty, pick_arena_theme,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
@@ -66,6 +66,7 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "last_effect": None,
         "player_moved_this_round": 0.0,
         "terrain_effects": [],
+        "arena_theme": pick_arena_theme(opponent.get("origin", "")),
     }
 
 
