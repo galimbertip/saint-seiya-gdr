@@ -629,6 +629,31 @@ def origin_affinity_modifier(origin: str, tech_type: str, as_attacker: bool) -> 
     return AFFINITY_ATTACK_BONUS if as_attacker else AFFINITY_DEFENSE_RESISTANCE
 
 
+# --- Mappa 2D: Fase 4 (arene multiple) --------------------------------
+# Ultima fase della sequenza mappa, richiesta in chat: puramente
+# estetica, nessuna nuova meccanica. L'arena viene scelta in base
+# all'elemento affine della PROVENIENZA dell'avversario (che già
+# conosciamo, vedi ORIGIN_ELEMENT_AFFINITY) - un rivale del ghiaccio ti
+# sfida in un'arena innevata, uno del fuoco in un deserto, ecc. Più
+# sensato di un tema scelto a caso senza nessun legame con lo scontro.
+ARENA_THEMES_BY_ELEMENT = {
+    "ghiaccio": "siberia",
+    "fuoco": "deserto",
+    "cosmico": "atene",
+    "fisico": "colosseo",
+    "psichico": "piramidi",
+}
+DEFAULT_ARENA_THEME = "atene"
+
+
+def pick_arena_theme(opponent_origin: str) -> str:
+    """Sceglie il tema grafico dell'arena in base alla provenienza
+    dell'avversario. Se la provenienza non ha un'affinità elementale
+    nota (o è vuota), usa Atene come sfondo predefinito."""
+    element = ORIGIN_ELEMENT_AFFINITY.get(opponent_origin)
+    return ARENA_THEMES_BY_ELEMENT.get(element, DEFAULT_ARENA_THEME)
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
