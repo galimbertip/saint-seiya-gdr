@@ -25,7 +25,8 @@ from core.arena_manager import (
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     status_resisted, calculate_movement_points, try_move, wander_opponent,
     check_attack_range, movement_uses_turn, range_effect, combine_roll_modes, distance_between,
-    origin_affinity_modifier,
+    origin_affinity_modifier, maybe_create_terrain_effect, tick_terrain_effects, position_in_ice_patch,
+    apply_flame_damage, apply_mud_penalty,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
@@ -64,6 +65,7 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "opponent_position": dict(OPPONENT_START_POSITION),
         "last_effect": None,
         "player_moved_this_round": 0.0,
+        "terrain_effects": [],
     }
 
 
@@ -86,15 +88,22 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
     log: list[str] = []
     battle_state["last_effect"] = None  # muoversi non è un colpo, niente da disegnare sulla mappa
     movement_points = calculate_movement_points(knight["player_level"], knight["age"])
+    movement_points_prima_del_fango = movement_points
+    movement_points = apply_mud_penalty(movement_points, battle_state["player_position"], battle_state.get("terrain_effects", []))
+    if movement_points < movement_points_prima_del_fango:
+        log.append(f"🟤 {knight['raw_name']} è nel fango: Punti Movimento dimezzati per questo spostamento.")
 
-    moved_fully, new_pos, distance_moved = try_move(
-        battle_state["player_position"], target_x, target_y, movement_points
+    moved_fully, new_pos, distance_moved, blocked_by_crater = try_move(
+        battle_state["player_position"], target_x, target_y, movement_points,
+        terrain_effects=battle_state.get("terrain_effects", []),
     )
     battle_state["player_position"] = new_pos
     battle_state["player_moved_this_round"] = battle_state.get("player_moved_this_round", 0.0) + distance_moved
 
     if moved_fully:
         log.append(f"{knight['raw_name']} si sposta di {distance_moved:.1f} unità.")
+    elif blocked_by_crater:
+        log.append(f"🕳️ Un cratere blocca il passaggio! {knight['raw_name']} si ferma a {distance_moved:.1f} unità.")
     else:
         log.append(
             f"{knight['raw_name']} tenta di raggiungere il punto indicato, ma i suoi Punti "
@@ -184,6 +193,23 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     Restituisce (log, fight_over, winner)."""
     opponent = battle_state["opponent"]
     log: list[str] = []
+    terrain_effects = battle_state.setdefault("terrain_effects", [])
+
+    # Le Fiamme (Fase 3) bruciano chi ci si trova, ogni round - PRIMA di
+    # farle scadere, così una zona al suo ultimo round di vita fa
+    # comunque danno prima di sparire.
+    flame_msg_player = apply_flame_damage(knight["raw_name"], knight, battle_state["player_position"], terrain_effects)
+    if flame_msg_player:
+        log.append(flame_msg_player)
+    flame_msg_opponent = apply_flame_damage(opponent["name"], opponent, battle_state["opponent_position"], terrain_effects)
+    if flame_msg_opponent:
+        log.append(flame_msg_opponent)
+
+    # Il Ghiaccio/Fiamme/Fango (Fase 3) scadono di un round ad ogni
+    # chiamata - i crateri restano per sempre (rounds_left=None), non
+    # toccati qui. Nessun messaggio quando scadono, sarebbe rumore: la
+    # mappa li mostra già sparire da sola.
+    tick_terrain_effects(terrain_effects)
 
     # L'avversario si muove un po' a caso ad ogni round (Fase 1: solo
     # per "sembrare vivo" sulla mappa, nessun effetto tattico - vedi
@@ -252,9 +278,17 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
             else:
                 distance = distance_between(battle_state["player_position"], battle_state["opponent_position"])
                 range_mode, range_power_mult = range_effect(distance, technique_name)
-                combined_mode = combine_roll_modes(roll_mode, range_mode)
-                if range_mode == "svantaggio" and roll_mode == "normale":
-                    cause_phrase = "il colpo arriva da lontano, meno preciso"
+                # Ghiaccio (Fase 3): se sei TU a stare sulla chiazza quando
+                # attacchi, sei meno preciso - scivoloso sotto i piedi.
+                ice_mode = "svantaggio" if position_in_ice_patch(
+                    battle_state["player_position"], battle_state.get("terrain_effects", [])
+                ) else "normale"
+                combined_mode = combine_roll_modes(combine_roll_modes(roll_mode, range_mode), ice_mode)
+                if roll_mode == "normale":
+                    if range_mode == "svantaggio":
+                        cause_phrase = "il colpo arriva da lontano, meno preciso"
+                    elif ice_mode == "svantaggio":
+                        cause_phrase = "scivola sul ghiaccio, meno preciso"
 
                 dmg, msg = resolve_turn(
                     knight["raw_name"], knight["str"], knight["tec"], armor["level"],
@@ -282,10 +316,25 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                         opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
                         log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
                         battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": technique_type}
+                        final_damage_dealt = reduced
                     else:
                         opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
                         log.append(msg)
                         battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
+                        final_damage_dealt = dmg
+
+                    # Effetti sul terreno (Fase 3): un colpo di Ghiaccio o
+                    # abbastanza devastante lascia un segno sulla mappa,
+                    # nel punto d'impatto (la posizione dell'avversario).
+                    terrain_effect = maybe_create_terrain_effect(
+                        battle_state["opponent_position"], technique_type, final_damage_dealt
+                    )
+                    if terrain_effect:
+                        battle_state.setdefault("terrain_effects", []).append(terrain_effect)
+                        if terrain_effect["kind"] == "ghiaccio":
+                            log.append("❄️ Il colpo lascia una chiazza di ghiaccio sul terreno!")
+                        else:
+                            log.append("🕳️ Il colpo apre un cratere nel terreno!")
 
                     status = maybe_apply_status(technique_type, technique_power)
                     if status:
@@ -365,10 +414,19 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         if fight_over:
             return log, True, winner
 
+    # Ghiaccio (Fase 3): se l'AVVERSARIO sta sulla chiazza mentre
+    # attacca lui, è lui a essere meno preciso.
+    ice_mode = "svantaggio" if position_in_ice_patch(
+        battle_state["opponent_position"], battle_state.get("terrain_effects", [])
+    ) else "normale"
+    combined_mode = combine_roll_modes(roll_mode, ice_mode)
+    if roll_mode == "normale" and ice_mode == "svantaggio":
+        cause_phrase = "scivola sul ghiaccio, meno preciso"
+
     dmg2, msg2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["tec"], opponent["armor_level"],
         knight["raw_name"], knight["dex"], knight["con"], armor["level"], t["name"], t["power"],
-        roll_mode=roll_mode, cause_phrase=cause_phrase,
+        roll_mode=combined_mode, cause_phrase=cause_phrase,
     )
     dmg2 = round(dmg2 * origin_affinity_modifier(opponent.get("origin", ""), t.get("tech_type", ""), as_attacker=True))
     dmg2 = round(dmg2 * origin_affinity_modifier(knight.get("origin", ""), t.get("tech_type", ""), as_attacker=False))
@@ -386,12 +444,24 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
         log.append(f"{msg2} — ti difendi con {defense_technique['name']}, il danno scende a {reduced}.")
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "blocked", "tech_type": t.get("tech_type", "")}
+        final_damage_dealt2 = reduced
     else:
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - dmg2)
         log.append(msg2)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "hit", "tech_type": t.get("tech_type", "")}
+        final_damage_dealt2 = dmg2
 
     if dmg2 > 0:
+        terrain_effect2 = maybe_create_terrain_effect(
+            battle_state["player_position"], t.get("tech_type", ""), final_damage_dealt2
+        )
+        if terrain_effect2:
+            battle_state.setdefault("terrain_effects", []).append(terrain_effect2)
+            if terrain_effect2["kind"] == "ghiaccio":
+                log.append("❄️ Il colpo lascia una chiazza di ghiaccio sul terreno!")
+            else:
+                log.append("🕳️ Il colpo apre un cratere nel terreno!")
+
         status = maybe_apply_status(t.get("tech_type", ""), t["power"])
         if status:
             if status_resisted(knight["vol"]):
