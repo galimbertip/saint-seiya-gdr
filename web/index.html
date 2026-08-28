@@ -242,6 +242,7 @@ const state = {
   opponentCandidates: null, // sala d'attesa: 5 avversari tra cui scegliere, o null
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
+  biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -301,6 +302,7 @@ async function loadStartScreen() {
 
 async function selectCharacter(id) {
   state.characterId = id;
+  state.biography = null;  // il diario del personaggio precedente non deve restare in vista
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -460,10 +462,12 @@ async function createCharacter(rawName, armorName, details = {}) {
         raw_name: rawName, armor_name: armorName, player_level: 1,
         surname: details.surname || "", age: details.age || 15,
         gender: details.gender || "", origin: details.origin || "", build: details.build || "Media",
+        biography: details.biography || "",
       }),
     });
     state.characterId = character.id;
     state.character = character;
+    state.biography = null;  // nuovo personaggio, il diario riparte da zero
     state.weeklySchedule = [...character.weekly_schedule_list];
     state.screen = "game";
     state.gameTab = "sheet";
@@ -813,6 +817,16 @@ function renderCreationScreen() {
   row3.append(continentSelect, macrozoneSelect, countrySelect);
   nameCard.append(row3);
   nameCard.append(el("p", { class: "hint" }, "La provenienza dà un piccolo bonus/resistenza con l'elemento della sua macrozona. La corporatura sposta la Costituzione di partenza."));
+
+  // Background (richiesto in chat): l'abbozzo iniziale del diario, da
+  // cui il gioco continua a scrivere da solo (level up, Sensi,
+  // vittorie/sconfitte) man mano che si gioca.
+  const biographyInput = el("textarea", {
+    placeholder: "Background (opzionale) - da dove viene, cosa lo spinge a diventare un cavaliere...",
+    rows: "3", style: "width:100%;resize:vertical;",
+  });
+  nameCard.append(el("p", { class: "hint", style: "margin-top:12px;" }, "Il tuo diario comincia da qui - il gioco continuerà a scriverlo da solo man mano che giochi."));
+  nameCard.append(biographyInput);
   wrap.append(nameCard);
 
   const armorCard = el("div", { class: "card" });
@@ -847,6 +861,7 @@ function renderCreationScreen() {
         gender: genderSelect.value,
         origin: countrySelect.value,
         build: buildSelect.value,
+        biography: biographyInput.value.trim(),
       });
     },
   }, "Crea e Seleziona");
@@ -899,6 +914,16 @@ async function loadRoster() {
   } catch (e) {
     showError(e.message);
     state.roster = [];
+  }
+  render();
+}
+
+async function loadBiography() {
+  try {
+    state.biography = await api(`/characters/${state.characterId}/biography`);
+  } catch (e) {
+    showError(e.message);
+    state.biography = { sketch: "", entries: [] };
   }
   render();
 }
@@ -994,6 +1019,31 @@ function renderSheetTab() {
     techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
   }
   wrap.append(techCard);
+
+  // Il Diario (richiesto in chat): l'abbozzo scritto alla creazione più
+  // le voci che il gioco aggiunge da solo (level up, Sensi, vittorie/
+  // sconfitte) - caricato pigro, come la Gerarchia, solo quando questa
+  // scheda viene davvero aperta.
+  const bioCard = el("div", { class: "card" });
+  bioCard.append(el("h2", {}, "Diario"));
+  if (state.biography === null) {
+    loadBiography();
+    bioCard.append(el("p", { class: "hint" }, "Caricamento del diario..."));
+  } else {
+    if (state.biography.sketch) {
+      bioCard.append(el("p", { style: "font-style:italic;" }, state.biography.sketch));
+    }
+    if (state.biography.entries.length === 0) {
+      bioCard.append(el("p", { class: "hint" }, "Il diario si arricchirà da solo man mano che ti alleni e combatti."));
+    } else {
+      const entriesBox = el("div", { class: "log-box" });
+      for (const entry of state.biography.entries) {
+        entriesBox.append(el("div", { class: "log-line" }, "• " + entry.entry));
+      }
+      bioCard.append(entriesBox);
+    }
+  }
+  wrap.append(bioCard);
 
   return wrap;
 }
