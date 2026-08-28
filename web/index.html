@@ -164,6 +164,28 @@
   .fighter-panel.opponent-panel button { opacity: 0.55; cursor: not-allowed; }
   .arena-map-column { flex: 2 1 340px; min-width: 300px; }
 
+  /* Scheda Cavaliere/Home come "carta d'identità" (richiesta in chat,
+     schizzo fornito): immagine grande a sinistra, a destra impilati
+     Dati Anagrafici / BG Personaggio / Statistiche+Progressione;
+     sotto, Tecniche e Diario affiancati. */
+  .sheet-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "image identity"
+      "image background"
+      "image stats"
+      "techniques diary";
+    gap: 16px;
+    align-items: stretch;
+  }
+  .sheet-image { grid-area: image; }
+  .sheet-identity { grid-area: identity; }
+  .sheet-background { grid-area: background; }
+  .sheet-stats { grid-area: stats; }
+  .sheet-techniques { grid-area: techniques; }
+  .sheet-diary { grid-area: diary; }
+
   /* --- Schermi stretti (smartphone) --- */
   @media (max-width: 640px) {
     body { padding: 12px; }
@@ -189,6 +211,13 @@
        orizzontale con un dito - vedi .table-scroll nel markup. */
     table { font-size: 12px; }
     th, td { padding: 5px 6px; }
+
+    /* La carta d'identità: da due colonne a una sola, impilata
+       nell'ordine naturale di lettura. */
+    .sheet-grid {
+      grid-template-columns: 1fr;
+      grid-template-areas: "image" "identity" "background" "stats" "techniques" "diary";
+    }
   }
 </style>
 </head>
@@ -450,6 +479,8 @@ async function createRandomCharacter() {
     gender: randomFrom(RANDOM_GENDERS),
     origin: randomCountryFromGeo(),
     build: randomFrom(BUILD_OPTIONS),
+    skin_tone: randomFrom(Object.keys(SKIN_TONES)),
+    hair_color: randomFrom(Object.keys(HAIR_COLORS)),
   };
   await createCharacter(randomFrom(RANDOM_NAMES), armor.name, details);
 }
@@ -463,6 +494,7 @@ async function createCharacter(rawName, armorName, details = {}) {
         surname: details.surname || "", age: details.age || 15,
         gender: details.gender || "", origin: details.origin || "", build: details.build || "Media",
         biography: details.biography || "",
+        skin_tone: details.skin_tone || "", hair_color: details.hair_color || "",
       }),
     });
     state.characterId = character.id;
@@ -775,6 +807,19 @@ function renderCreationScreen() {
   row2.append(ageInput, genderSelect, buildSelect);
   nameCard.append(row2);
 
+  // Tono pelle e colore capelli, per la sagoma stilizzata (richiesto
+  // in chat) - un'immagine caricata più tardi ha comunque la
+  // precedenza su queste scelte.
+  const row2b = el("div", { class: "row" });
+  const skinToneSelect = el("select", {});
+  skinToneSelect.append(el("option", { value: "" }, "Tono pelle (opzionale)"));
+  for (const s of Object.keys(SKIN_TONES)) skinToneSelect.append(el("option", { value: s }, s));
+  const hairColorSelect = el("select", {});
+  hairColorSelect.append(el("option", { value: "" }, "Colore capelli (opzionale)"));
+  for (const h of Object.keys(HAIR_COLORS)) hairColorSelect.append(el("option", { value: h }, h));
+  row2b.append(skinToneSelect, hairColorSelect);
+  nameCard.append(row2b);
+
   // Provenienza: menu a cascata Continente -> Macrozona -> Nazione
   // (richiesto in chat: l'elenco piatto di 10 nazioni era troppo
   // scarno). L'albero arriva da GET /geo-origins, la stessa fonte di
@@ -873,6 +918,8 @@ function renderCreationScreen() {
         origin: countrySelect.value,
         build: buildSelect.value,
         biography: biographyInput.value.trim(),
+        skin_tone: skinToneSelect.value,
+        hair_color: hairColorSelect.value,
       });
     },
   }, "Crea e Seleziona");
@@ -1008,17 +1055,27 @@ function armorTintColor(divinity) {
   return DIVINITY_COLORS[divinity] || "#D4AF37";
 }
 
+// Tono pelle e colore capelli personalizzabili (richiesto in chat) -
+// piccole tavolozze fisse, non un vero color-picker: restano sagome
+// semplici, solo un po' più personalizzate.
+const SKIN_TONES = { "Chiaro": "#e8c39e", "Medio": "#c68642", "Scuro": "#8d5524" };
+const HAIR_COLORS = { "Nero": "#1a1a1a", "Castano": "#5c3a21", "Biondo": "#d4af37", "Rosso": "#8b3a1a", "Grigio": "#9e9e9e" };
+
 // Sagoma stilizzata del cavaliere, con o senza armatura (richiesto in
-// chat, sullo stile di Football Manager) - disegno originale, nessuna
-// grafica ufficiale Saint Seiya: solo forme geometriche. "Con
-// armatura" aggiunge spallacci, corazza e un accenno di elmo, tinti
-// del colore della divinità.
-function renderKnightFigure(armed, tintColor) {
+// chat, sullo stile di Football Manager - versione MOLTO più semplice:
+// nessun motore 3D, solo forme geometriche) - disegno originale,
+// nessuna grafica ufficiale Saint Seiya. "Con armatura" aggiunge
+// spallacci, corazza e un accenno di elmo, tinti del colore della
+// divinità.
+function renderKnightFigure(armed, tintColor, skinTone, hairColor) {
   const holder = document.createElement("div");
   const bodyColor = armed ? tintColor : "#7d6e5c";
+  const skinColor = SKIN_TONES[skinTone] || "#c9b8a0";
+  const hairColorVal = HAIR_COLORS[hairColor] || "#4a3c2f";
   holder.innerHTML = `
     <svg width="80" height="150" viewBox="0 0 80 150">
-      <circle cx="40" cy="20" r="13" fill="#c9b8a0"/>
+      <circle cx="40" cy="20" r="13" fill="${skinColor}"/>
+      <path d="M27,15 Q40,1 53,15 L53,9 Q40,-3 27,9 Z" fill="${hairColorVal}"/>
       <rect x="26" y="34" width="28" height="50" rx="7" fill="${bodyColor}"/>
       <rect x="12" y="38" width="11" height="42" rx="5" fill="${bodyColor}"/>
       <rect x="57" y="38" width="11" height="42" rx="5" fill="${bodyColor}"/>
@@ -1040,78 +1097,122 @@ function labeledFigure(label, svgNode) {
   return box;
 }
 
+async function uploadAvatar(file) {
+  if (!state.characterId) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch(`/characters/${state.characterId}/avatar`, { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Errore HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    state.character.avatar_path = data.avatar_path;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 function renderSheetTab() {
   const k = state.character;
   const wrap = el("div");
   wrap.append(el("h1", {}, k.formal_name));
 
-  // --- Carta d'identità (richiesta in chat: molto più "carta
-  // d'identità + diario" che elenco di statistiche) ---
-  const idCard = el("div", { class: "card", style: "text-align:center;" });
-  const figuresRow = el("div", { style: "display:flex;justify-content:center;gap:28px;margin:8px 0;" });
-  figuresRow.append(
-    labeledFigure("Senza armatura", renderKnightFigure(false, null)),
-    labeledFigure("Con armatura", renderKnightFigure(true, armorTintColor(k.armor.divinity))),
-  );
-  idCard.append(figuresRow);
+  const grid = el("div", { class: "sheet-grid" });
+
+  // --- Immagine PG: l'avatar caricato se c'è, altrimenti le sagome
+  // stilizzate (richiesto in chat: entrambe le opzioni insieme) ---
+  const imageCard = el("div", { class: "card sheet-image" });
+  if (k.avatar_path) {
+    imageCard.append(el("img", { src: k.avatar_path, style: "width:100%;border-radius:8px;display:block;" }));
+  } else {
+    const figuresRow = el("div", { style: "display:flex;justify-content:center;gap:20px;margin:8px 0;" });
+    figuresRow.append(
+      labeledFigure("Senza armatura", renderKnightFigure(false, null, k.skin_tone, k.hair_color)),
+      labeledFigure("Con armatura", renderKnightFigure(true, armorTintColor(k.armor.divinity), k.skin_tone, k.hair_color)),
+    );
+    imageCard.append(figuresRow);
+  }
+  const avatarFileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+  avatarFileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadAvatar(e.target.files[0]); });
+  imageCard.append(avatarFileInput);
+  imageCard.append(el("button", {
+    class: "secondary", style: "width:100%;margin-top:8px;",
+    onClick: () => avatarFileInput.click(),
+  }, k.avatar_path ? "📷 Cambia immagine" : "📷 Carica una tua immagine"));
+  grid.append(imageCard);
+
+  // --- Dati anagrafici ---
+  const idCard = el("div", { class: "card sheet-identity" });
+  idCard.append(el("h2", {}, "Dati Anagrafici"));
   const idLine = [
     `${k.armor.divinity} · ${k.armor.faction}`, `Livello armatura ${k.armor.level}`,
     k.age ? `${k.age} anni` : null, k.gender, k.origin,
     k.build && k.build !== "Media" ? `Corporatura ${k.build}` : null,
   ].filter(Boolean).join(" · ");
   idCard.append(el("p", { class: "hint" }, idLine));
-  wrap.append(idCard);
+  grid.append(idCard);
 
-  // Il Diario, subito dopo l'identità - non più in fondo alla scheda
-  // (richiesto in chat). Caricato pigro, come la Gerarchia, solo
-  // quando questa scheda viene davvero aperta.
-  const bioCard = el("div", { class: "card" });
-  bioCard.append(el("h2", {}, "Diario"));
+  // --- BG Personaggio: solo l'abbozzo scritto alla creazione, non le
+  // voci auto-generate (quelle sono nel Diario, più in basso -
+  // separati come richiesto in chat) ---
+  const bgCard = el("div", { class: "card sheet-background" });
+  bgCard.append(el("h2", {}, "Background"));
   if (state.biography === null) {
     loadBiography();
-    bioCard.append(el("p", { class: "hint" }, "Caricamento del diario..."));
+    bgCard.append(el("p", { class: "hint" }, "Caricamento..."));
+  } else if (state.biography.sketch) {
+    bgCard.append(el("p", { style: "font-style:italic;" }, state.biography.sketch));
   } else {
-    if (state.biography.sketch) {
-      bioCard.append(el("p", { style: "font-style:italic;" }, state.biography.sketch));
-    }
-    if (state.biography.entries.length === 0) {
-      bioCard.append(el("p", { class: "hint" }, "Il diario si arricchirà da solo man mano che ti alleni e combatti."));
-    } else {
-      const entriesBox = el("div", { class: "log-box" });
-      for (const entry of state.biography.entries) {
-        entriesBox.append(el("div", { class: "log-line" }, "• " + entry.entry));
-      }
-      bioCard.append(entriesBox);
-    }
+    bgCard.append(el("p", { class: "hint" }, "Nessun background scritto alla creazione."));
   }
-  wrap.append(bioCard);
+  grid.append(bgCard);
 
-  const statsCard = el("div", { class: "card" });
+  // --- Statistiche + Progressione, unite in una card sola ---
+  const statsCard = el("div", { class: "card sheet-stats" });
   statsCard.append(el("h2", {}, "Statistiche"));
-  const grid = el("div", { class: "stats-grid" });
+  const statsGrid = el("div", { class: "stats-grid" });
   for (const [label, val] of [["FORZA", k.str], ["DESTREZZA", k.dex], ["COSTITUZIONE", k.con], ["TECNICA", k.tec], ["VOLONTÀ", k.vol]]) {
-    grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
+    statsGrid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
   }
-  grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(k.movement_points)), el("div", { class: "label" }, "MOVIMENTO")));
-  statsCard.append(grid);
-  wrap.append(statsCard);
-
-  const progCard = el("div", { class: "card" });
-  progCard.append(el("h2", {}, "Progressione"));
-  progCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp}`));
+  statsGrid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(k.movement_points)), el("div", { class: "label" }, "MOVIMENTO")));
+  statsCard.append(statsGrid);
+  statsCard.append(el("h2", { style: "margin-top:14px;" }, "Progressione"));
+  statsCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp}`));
   const senses = k.senses;
   const mark = (b) => (b ? "✓" : "✗");
-  progCard.append(el("p", { class: "hint" },
+  statsCard.append(el("p", { class: "hint" },
     `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
-  wrap.append(progCard);
+  grid.append(statsCard);
 
-  const techCard = el("div", { class: "card" });
-  techCard.append(el("h2", {}, "Tecniche dell'armatura"));
+  // --- Tecniche ---
+  const techCard = el("div", { class: "card sheet-techniques" });
+  techCard.append(el("h2", {}, "Tecniche"));
   for (const t of k.techniques) {
     techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
   }
-  wrap.append(techCard);
+  grid.append(techCard);
 
+  // --- Diario: solo le voci auto-generate (level up, Sensi,
+  // vittorie/sconfitte) - il Background sta ora a parte, sopra ---
+  const diaryCard = el("div", { class: "card sheet-diary" });
+  diaryCard.append(el("h2", {}, "Diario"));
+  if (state.biography === null) {
+    diaryCard.append(el("p", { class: "hint" }, "Caricamento..."));
+  } else if (state.biography.entries.length === 0) {
+    diaryCard.append(el("p", { class: "hint" }, "Il diario si arricchirà da solo man mano che ti alleni e combatti."));
+  } else {
+    const entriesBox = el("div", { class: "log-box" });
+    for (const entry of state.biography.entries) {
+      entriesBox.append(el("div", { class: "log-line" }, "• " + entry.entry));
+    }
+    diaryCard.append(entriesBox);
+  }
+  grid.append(diaryCard);
+
+  wrap.append(grid);
   return wrap;
 }
 
