@@ -163,11 +163,14 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
     conn.execute(
         """
         UPDATE knights SET cosmo_cur=?, cosmo_max=?, str=?, dex=?, con=?, tec=?, vol=?,
-                            player_level=?, xp=?, stamina=?, age=?, game_day=?, game_minutes=?, weekly_schedule=?
+                            player_level=?, xp=?, stamina=?, age=?, game_day=?, game_minutes=?, weekly_schedule=?,
+                            surname=?, gender=?, origin=?, build=?, tutorial_seen=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["str"], knight["dex"], knight["con"],
          knight["tec"], knight["vol"], knight["player_level"], knight["xp"], knight["stamina"],
-         knight["age"], knight["game_day"], knight["game_minutes"], knight["weekly_schedule"], knight["id"]),
+         knight["age"], knight["game_day"], knight["game_minutes"], knight["weekly_schedule"],
+         knight["surname"], knight["gender"], knight["origin"], knight["build"], knight["tutorial_seen"],
+         knight["id"]),
     )
     conn.commit()
