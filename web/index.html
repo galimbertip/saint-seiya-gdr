@@ -997,44 +997,74 @@ function renderMiniBar(label, value, max, kind) {
   return wrap;
 }
 
+// Tinta dell'armatura per le sagome stilizzate, in base alla divinità
+// (sempre disponibile, a differenza della Provenienza) - oro come
+// colore di riserva per divinità non in elenco.
+const DIVINITY_COLORS = {
+  "Athena": "#3FA9F5", "Ade": "#8B2E2E", "Poseidone": "#1E6FA8",
+  "Apollo": "#D4AF37", "Nettuno": "#1E6FA8", "Zeus": "#F5C518",
+};
+function armorTintColor(divinity) {
+  return DIVINITY_COLORS[divinity] || "#D4AF37";
+}
+
+// Sagoma stilizzata del cavaliere, con o senza armatura (richiesto in
+// chat, sullo stile di Football Manager) - disegno originale, nessuna
+// grafica ufficiale Saint Seiya: solo forme geometriche. "Con
+// armatura" aggiunge spallacci, corazza e un accenno di elmo, tinti
+// del colore della divinità.
+function renderKnightFigure(armed, tintColor) {
+  const holder = document.createElement("div");
+  const bodyColor = armed ? tintColor : "#7d6e5c";
+  holder.innerHTML = `
+    <svg width="80" height="150" viewBox="0 0 80 150">
+      <circle cx="40" cy="20" r="13" fill="#c9b8a0"/>
+      <rect x="26" y="34" width="28" height="50" rx="7" fill="${bodyColor}"/>
+      <rect x="12" y="38" width="11" height="42" rx="5" fill="${bodyColor}"/>
+      <rect x="57" y="38" width="11" height="42" rx="5" fill="${bodyColor}"/>
+      <rect x="28" y="84" width="10" height="50" rx="4" fill="#3a332b"/>
+      <rect x="42" y="84" width="10" height="50" rx="4" fill="#3a332b"/>
+      ${armed ? `
+        <circle cx="17" cy="38" r="7" fill="${tintColor}" stroke="#D4AF37" stroke-width="1.5"/>
+        <circle cx="63" cy="38" r="7" fill="${tintColor}" stroke="#D4AF37" stroke-width="1.5"/>
+        <polygon points="40,32 53,46 40,80 27,46" fill="${tintColor}" stroke="#D4AF37" stroke-width="1.5" opacity="0.9"/>
+        <circle cx="40" cy="12" r="14" fill="none" stroke="#D4AF37" stroke-width="1.5" opacity="0.6"/>
+      ` : ""}
+    </svg>`;
+  return holder.firstElementChild;
+}
+
+function labeledFigure(label, svgNode) {
+  const box = el("div", { style: "display:flex;flex-direction:column;align-items:center;gap:4px;" });
+  box.append(svgNode, el("p", { class: "hint", style: "margin:0;font-size:11px;" }, label));
+  return box;
+}
+
 function renderSheetTab() {
   const k = state.character;
   const wrap = el("div");
   wrap.append(el("h1", {}, k.formal_name));
-  wrap.append(el("p", { class: "hint" }, `${k.armor.divinity} · ${k.armor.faction} · Livello armatura ${k.armor.level}`));
 
-  const statsCard = el("div", { class: "card" });
-  statsCard.append(el("h2", {}, "Statistiche"));
-  const grid = el("div", { class: "stats-grid" });
-  for (const [label, val] of [["FORZA", k.str], ["DESTREZZA", k.dex], ["COSTITUZIONE", k.con], ["TECNICA", k.tec], ["VOLONTÀ", k.vol]]) {
-    grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
-  }
-  grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(k.movement_points)), el("div", { class: "label" }, "MOVIMENTO")));
-  statsCard.append(grid);
-  wrap.append(statsCard);
+  // --- Carta d'identità (richiesta in chat: molto più "carta
+  // d'identità + diario" che elenco di statistiche) ---
+  const idCard = el("div", { class: "card", style: "text-align:center;" });
+  const figuresRow = el("div", { style: "display:flex;justify-content:center;gap:28px;margin:8px 0;" });
+  figuresRow.append(
+    labeledFigure("Senza armatura", renderKnightFigure(false, null)),
+    labeledFigure("Con armatura", renderKnightFigure(true, armorTintColor(k.armor.divinity))),
+  );
+  idCard.append(figuresRow);
+  const idLine = [
+    `${k.armor.divinity} · ${k.armor.faction}`, `Livello armatura ${k.armor.level}`,
+    k.age ? `${k.age} anni` : null, k.gender, k.origin,
+    k.build && k.build !== "Media" ? `Corporatura ${k.build}` : null,
+  ].filter(Boolean).join(" · ");
+  idCard.append(el("p", { class: "hint" }, idLine));
+  wrap.append(idCard);
 
-  const progCard = el("div", { class: "card" });
-  progCard.append(el("h2", {}, "Progressione"));
-  progCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp} · Età ${k.age} anni`));
-  const dettagli = [k.gender, k.origin, k.build && k.build !== "Media" ? `Corporatura ${k.build}` : null].filter(Boolean).join(" · ");
-  if (dettagli) progCard.append(el("p", { class: "hint" }, dettagli));
-  const senses = k.senses;
-  const mark = (b) => (b ? "✓" : "✗");
-  progCard.append(el("p", { class: "hint" },
-    `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
-  wrap.append(progCard);
-
-  const techCard = el("div", { class: "card" });
-  techCard.append(el("h2", {}, "Tecniche dell'armatura"));
-  for (const t of k.techniques) {
-    techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
-  }
-  wrap.append(techCard);
-
-  // Il Diario (richiesto in chat): l'abbozzo scritto alla creazione più
-  // le voci che il gioco aggiunge da solo (level up, Sensi, vittorie/
-  // sconfitte) - caricato pigro, come la Gerarchia, solo quando questa
-  // scheda viene davvero aperta.
+  // Il Diario, subito dopo l'identità - non più in fondo alla scheda
+  // (richiesto in chat). Caricato pigro, come la Gerarchia, solo
+  // quando questa scheda viene davvero aperta.
   const bioCard = el("div", { class: "card" });
   bioCard.append(el("h2", {}, "Diario"));
   if (state.biography === null) {
@@ -1055,6 +1085,32 @@ function renderSheetTab() {
     }
   }
   wrap.append(bioCard);
+
+  const statsCard = el("div", { class: "card" });
+  statsCard.append(el("h2", {}, "Statistiche"));
+  const grid = el("div", { class: "stats-grid" });
+  for (const [label, val] of [["FORZA", k.str], ["DESTREZZA", k.dex], ["COSTITUZIONE", k.con], ["TECNICA", k.tec], ["VOLONTÀ", k.vol]]) {
+    grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
+  }
+  grid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(k.movement_points)), el("div", { class: "label" }, "MOVIMENTO")));
+  statsCard.append(grid);
+  wrap.append(statsCard);
+
+  const progCard = el("div", { class: "card" });
+  progCard.append(el("h2", {}, "Progressione"));
+  progCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp}`));
+  const senses = k.senses;
+  const mark = (b) => (b ? "✓" : "✗");
+  progCard.append(el("p", { class: "hint" },
+    `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
+  wrap.append(progCard);
+
+  const techCard = el("div", { class: "card" });
+  techCard.append(el("h2", {}, "Tecniche dell'armatura"));
+  for (const t of k.techniques) {
+    techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+  }
+  wrap.append(techCard);
 
   return wrap;
 }
