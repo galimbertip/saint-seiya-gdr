@@ -243,6 +243,8 @@ const state = {
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
+  showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
+  tutorialStep: 0,           // a che passo del tutorial siamo
   trainingLog: [],
   arenaLog: [],
 };
@@ -302,7 +304,90 @@ async function selectCharacter(id) {
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
+  maybeShowTutorial();
   render();
+}
+
+// --- Tutorial iniziale, saltabile (richiesto in chat) ---
+// Sei passaggi essenziali, non un manuale completo - le meccaniche più
+// fini (affinità elementale, effetti sul terreno nel dettaglio, ecc.)
+// si scoprono giocando. Appare da solo la prima volta che si entra in
+// una partita (knight.tutorial_seen === 0), resta riapribile a
+// piacere dal pulsante "?" nella schermata di gioco.
+const TUTORIAL_STEPS = [
+  {
+    title: "Benvenuto, Cavaliere",
+    body: "Il tuo Cosmo è sia la tua energia per le tecniche sia la tua \"vita\" in combattimento - quando arriva a zero, lo scontro finisce. Il tuo Livello personaggio sale allenandoti e vincendo scontri, e sblocca armature più potenti in una nuova creazione.",
+  },
+  {
+    title: "Centro Allenamento",
+    body: "Imposta un programma settimanale (un obiettivo per giorno: Forza, Costituzione, Riposo, ecc.) e premi Avanza Settimana o Avanza Mese per farlo scorrere. Il tempo passa, il tuo personaggio migliora.",
+  },
+  {
+    title: "Arena: trova un avversario",
+    body: "Scegli una difficoltà, poi ti si presenta una sala d'attesa con 5 rivali tra cui scegliere - ognuno con nome, provenienza e armatura proprie.",
+  },
+  {
+    title: "La mappa",
+    body: "Ti muovi liberamente cliccando sulla mappa, entro i tuoi Punti Movimento. Le tecniche vere colpiscono a distanza; l'Attacco Base richiede stare vicini. Muoverti troppo in un round ti fa perdere l'attacco (ma puoi sempre Caricare).",
+  },
+  {
+    title: "Combattimento",
+    body: "Scegli Attacca o Carica; se l'avversario ti attacca, scegli se Difenditi o Incassa il colpo. Ogni tanto scatta un Imprevisto (un evento casuale dell'arena) - e un colpo forte può lasciare ghiaccio, fiamme, fango o un cratere sul terreno stesso.",
+  },
+  {
+    title: "La Gerarchia",
+    body: "Nella scheda Gerarchia trovi tutte le armature del gioco, ciascuna con un cavaliere assegnato - un PNG (etichettato in giallo) se nessun giocatore l'ha ancora presa, o il personaggio di chi l'ha reclamata.",
+  },
+];
+
+function maybeShowTutorial() {
+  if (state.character && !state.character.tutorial_seen) {
+    state.showTutorial = true;
+    state.tutorialStep = 0;
+  }
+}
+
+async function closeTutorial() {
+  state.showTutorial = false;
+  if (state.character) state.character.tutorial_seen = true;
+  render();
+  if (state.characterId) {
+    try {
+      await api(`/characters/${state.characterId}/tutorial-seen`, { method: "POST" });
+    } catch (e) {
+      // Non blocchiamo l'esperienza per un errore di rete su un flag
+      // puramente informativo - se fallisce, ricomparirà la prossima
+      // volta, non è grave.
+    }
+  }
+}
+
+function renderTutorialOverlay() {
+  if (!state.showTutorial) return null;
+  const step = TUTORIAL_STEPS[state.tutorialStep];
+  const overlay = el("div", {
+    style: "position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;",
+  });
+  const box = el("div", { class: "card", style: "max-width:420px;width:100%;" });
+  box.append(el("p", { class: "hint" }, `Passo ${state.tutorialStep + 1} di ${TUTORIAL_STEPS.length}`));
+  box.append(el("h2", {}, step.title));
+  box.append(el("p", {}, step.body));
+
+  const btnRow = el("div", { class: "row", style: "margin-top:16px;justify-content:space-between;" });
+  if (state.tutorialStep > 0) {
+    btnRow.append(el("button", { class: "secondary", onClick: () => { state.tutorialStep--; render(); } }, "◄ Indietro"));
+  }
+  if (state.tutorialStep < TUTORIAL_STEPS.length - 1) {
+    btnRow.append(el("button", { onClick: () => { state.tutorialStep++; render(); } }, "Avanti ►"));
+  } else {
+    btnRow.append(el("button", { onClick: closeTutorial }, "Ho capito, si comincia!"));
+  }
+  box.append(btnRow);
+  box.append(el("button", { class: "secondary", style: "margin-top:10px;width:100%;", onClick: closeTutorial }, "Salta tutorial"));
+
+  overlay.append(box);
+  return overlay;
 }
 
 async function deleteCharacter(id, name) {
@@ -382,6 +467,7 @@ async function createCharacter(rawName, armorName, details = {}) {
     state.weeklySchedule = [...character.weekly_schedule_list];
     state.screen = "game";
     state.gameTab = "sheet";
+    maybeShowTutorial();
     render();
   } catch (e) {
     showError(e.message);
@@ -548,6 +634,9 @@ function render() {
   else if (state.screen === "loadGame") app.append(renderLoadGameScreen());
   else if (state.screen === "creation") app.append(renderCreationScreen());
   else if (state.screen === "game") app.append(renderGameScreen());
+
+  const tutorialOverlay = renderTutorialOverlay();
+  if (tutorialOverlay) app.append(tutorialOverlay);
 
   // Ogni render ricostruisce la pagina da zero, quindi la cronaca
   // perdeva sempre lo scorrimento e tornava a mostrare i messaggi più
@@ -786,6 +875,13 @@ function renderGameScreen() {
       onClick: () => { state.gameTab = key; render(); },
     }, label));
   }
+  // Riapre il tutorial in ogni momento (richiesto in chat), senza
+  // toccare il flag "già visto" - resta sempre disponibile a chi vuole
+  // rivederlo, anche dopo averlo già chiuso una volta.
+  tabs.append(el("button", {
+    class: "tab-btn", title: "Rivedi il tutorial",
+    onClick: () => { state.showTutorial = true; state.tutorialStep = 0; render(); },
+  }, "❓"));
   wrap.append(tabs);
 
   if (state.gameTab === "sheet") wrap.append(renderSheetTab());
