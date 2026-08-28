@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS knights (
     surname TEXT NOT NULL DEFAULT '',
     gender TEXT NOT NULL DEFAULT '',
     origin TEXT NOT NULL DEFAULT '',
-    build TEXT NOT NULL DEFAULT 'Media'
+    build TEXT NOT NULL DEFAULT 'Media',
+    tutorial_seen INTEGER NOT NULL DEFAULT 0
 );
 
 -- Gerarchia dei cavalieri (richiesta in chat): ogni armatura del
@@ -127,6 +128,14 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN build TEXT NOT NULL DEFAULT 'Media'")
         conn.commit()
         log.info("Migrazione: aggiunta colonna build a knights ('Media' per i salvataggi esistenti, nessun effetto retroattivo sulle statistiche).")
+    if "tutorial_seen" not in existing_columns:
+        # Tutorial iniziale skippabile (richiesto in chat) - i
+        # personaggi già esistenti lo segniamo già visto (1): non ha
+        # senso mostrarlo a chi gioca già da prima che esistesse.
+        conn.execute("ALTER TABLE knights ADD COLUMN tutorial_seen INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE knights SET tutorial_seen = 1")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna tutorial_seen a knights (personaggi esistenti segnati come già visto).")
 
 
 def get_connection() -> sqlite3.Connection:
