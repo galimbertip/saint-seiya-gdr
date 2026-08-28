@@ -210,6 +210,17 @@ def api_delete_character(knight_id: int, conn=Depends(get_db)):
     return {"deleted": True}
 
 
+@app.post("/characters/{knight_id}/tutorial-seen")
+def api_mark_tutorial_seen(knight_id: int, conn=Depends(get_db)):
+    """Segna il tutorial iniziale come già visto per questo personaggio
+    (richiesto in chat) - non ricompare più da solo, ma resta
+    riapribile a piacere dal pulsante '?' nella schermata di gioco."""
+    knight = _get_knight_or_404(conn, knight_id)
+    knight["tutorial_seen"] = 1
+    save_knight(conn, knight)
+    return {"tutorial_seen": True}
+
+
 # --------------------------- Catalogo armature ---------------------------
 
 @app.get("/armors")
