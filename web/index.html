@@ -272,6 +272,7 @@ const state = {
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
+  customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -332,6 +333,7 @@ async function loadStartScreen() {
 async function selectCharacter(id) {
   state.characterId = id;
   state.biography = null;  // il diario del personaggio precedente non deve restare in vista
+  state.customTechniques = null;  // idem per le tecniche personalizzate
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -498,6 +500,7 @@ async function createCharacter(rawName, armorName, details = {}) {
     state.characterId = character.id;
     state.character = character;
     state.biography = null;  // nuovo personaggio, il diario riparte da zero
+    state.customTechniques = null;
     state.weeklySchedule = [...character.weekly_schedule_list];
     state.screen = "game";
     state.gameTab = "sheet";
@@ -529,6 +532,9 @@ async function doTrain(mode) {
     // volta che si apre la Scheda Cavaliere (corretto in chat: prima
     // restava "vecchio" finché non si tornava alla Sala dei Cavalieri).
     state.biography = null;
+    // Un level up può anche sbloccare un nuovo slot di tecnica
+    // personalizzata - stesso motivo, si ricarica da sola.
+    state.customTechniques = null;
     render();
   } catch (e) {
     showError(e.message);
@@ -969,6 +975,29 @@ async function loadBiography() {
   render();
 }
 
+async function loadCustomTechniques() {
+  try {
+    state.customTechniques = await api(`/characters/${state.characterId}/custom-techniques`);
+  } catch (e) {
+    showError(e.message);
+    state.customTechniques = { techniques: [], slots_total: 0, slots_used: 0, allowed_elements: [] };
+  }
+  render();
+}
+
+async function createCustomTechnique(name, techType, launchDesc, effectDesc) {
+  try {
+    await api(`/characters/${state.characterId}/custom-techniques`, {
+      method: "POST",
+      body: JSON.stringify({ name, tech_type: techType, launch_desc: launchDesc, effect_desc: effectDesc }),
+    });
+    state.customTechniques = null;  // si ricarica da sola con la nuova tecnica dentro
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 // La Gerarchia (richiesta in chat): tutte le 224 armature, raggruppate
 // per divinità e fazione, ciascuna con chi la occupa - un PNG fisso
 // (etichettato chiaramente, per far capire che è ancora selezionabile
@@ -1118,11 +1147,48 @@ function renderSheetTab() {
     `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
   grid.append(statsCard);
 
-  // --- Tecniche ---
+  // --- Tecniche (catalogo + personalizzate) ---
   const techCard = el("div", { class: "card sheet-techniques" });
   techCard.append(el("h2", {}, "Tecniche"));
   for (const t of k.techniques) {
     techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+  }
+
+  // Tecniche personalizzate (richiesto in chat) - caricate pigre, come
+  // il Diario e la Gerarchia.
+  if (state.customTechniques === null) {
+    loadCustomTechniques();
+    techCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Caricamento delle tecniche personalizzate..."));
+  } else {
+    const ct = state.customTechniques;
+    if (ct.techniques.length > 0) {
+      techCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, "Personalizzate:"));
+      for (const t of ct.techniques) {
+        techCard.append(el("p", {}, `✨ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+      }
+    }
+    techCard.append(el("p", { class: "hint", style: "margin-top:8px;" }, `Slot tecnica personalizzata: ${ct.slots_used}/${ct.slots_total}`));
+
+    if (ct.slots_used < ct.slots_total) {
+      if (ct.allowed_elements.length === 0) {
+        techCard.append(el("p", { class: "hint" }, "Nessun elemento ammesso al momento (serve un'armatura con tecniche riconosciute, o una Provenienza con affinità)."));
+      } else {
+        const nameInput = el("input", { placeholder: "Nome della tecnica" });
+        const elementSelect = el("select", {});
+        for (const el_ of ct.allowed_elements) elementSelect.append(el("option", { value: el_ }, el_));
+        const launchInput = el("textarea", { placeholder: "Come si manifesta (opzionale)", rows: "2", style: "width:100%;resize:vertical;" });
+        const effectInput = el("textarea", { placeholder: "Che effetto ha (opzionale)", rows: "2", style: "width:100%;resize:vertical;" });
+        techCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Crea una nuova tecnica personalizzata:"));
+        techCard.append(nameInput, elementSelect, launchInput, effectInput);
+        techCard.append(el("button", {
+          style: "margin-top:6px;",
+          onClick: () => {
+            if (!nameInput.value.trim()) return showError("Dai un nome alla tecnica.");
+            createCustomTechnique(nameInput.value.trim(), elementSelect.value, launchInput.value.trim(), effectInput.value.trim());
+          },
+        }, "✨ Crea tecnica"));
+      }
+    }
   }
   grid.append(techCard);
 
@@ -1253,8 +1319,14 @@ function renderArenaTab() {
       leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack(false) }, "😤 Incassa il colpo"));
     } else {
       const senses = k.senses;
+      // Tecniche personalizzate (richiesto in chat): caricate pigre
+      // anche qui, non solo nella Scheda Cavaliere - si può arrivare
+      // in Arena senza mai aver aperto quella scheda prima.
+      if (state.customTechniques === null) loadCustomTechniques();
+      const customTechs = state.customTechniques ? state.customTechniques.techniques : [];
       const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
-        k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"))
+        k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv")),
+        customTechs,
       );
       leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
       for (const t of attackOptions) {
