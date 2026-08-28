@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
     get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster,
-    add_biography_entry, get_biography_entries,
+    add_biography_entry, get_biography_entries, get_custom_techniques, add_custom_technique,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -40,7 +40,10 @@ from core.fm_manager import (
     RosterManager, get_calendar_display, parse_weekly_schedule,
     serialize_weekly_schedule, TRAINING_FOCUS_OPTIONS,
 )
-from core.arena_manager import find_defensive_technique, get_unlocked_senses, calculate_movement_points, GEO_ORIGINS
+from core.arena_manager import (
+    find_defensive_technique, get_unlocked_senses, calculate_movement_points, GEO_ORIGINS,
+    custom_technique_slots, calculate_custom_technique_power, allowed_custom_technique_elements,
+)
 from core.version import APP_VERSION
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
@@ -109,6 +112,13 @@ class CreateCharacterRequest(BaseModel):
     biography: Optional[str] = ""
     skin_tone: Optional[str] = ""
     hair_color: Optional[str] = ""
+
+
+class CreateCustomTechniqueRequest(BaseModel):
+    name: str
+    tech_type: str
+    launch_desc: Optional[str] = ""
+    effect_desc: Optional[str] = ""
 
 
 class TrainRequest(BaseModel):
@@ -252,10 +262,9 @@ def api_mark_tutorial_seen(knight_id: int, conn=Depends(get_db)):
 @app.post("/characters/{knight_id}/avatar")
 async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=Depends(get_db)):
     """Carica un'immagine come ritratto del personaggio (richiesto in
-    chat) - sostituisce la sagoma stilizzata quando presente. Salvata
-    su disco (cartella avatars/, servita come file statico), il
-    percorso va nel database. Un'immagine per cavaliere: caricarne
-    una nuova sovrascrive quella precedente."""
+    chat). Salvata su disco (cartella avatars/, servita come file
+    statico), il percorso va nel database. Un'immagine per cavaliere:
+    caricarne una nuova sovrascrive quella precedente."""
     knight = _get_knight_or_404(conn, knight_id)
 
     ext = Path(file.filename or "").suffix.lower()
@@ -270,6 +279,58 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
     knight["avatar_path"] = f"/avatars/{filename}"
     save_knight(conn, knight)
     return {"avatar_path": knight["avatar_path"]}
+
+
+@app.get("/characters/{knight_id}/custom-techniques")
+def api_get_custom_techniques(knight_id: int, conn=Depends(get_db)):
+    """Le tecniche personalizzate del personaggio, quanti slot ha
+    sbloccato/usato, e quali elementi può scegliere per una nuova
+    (richiesto in chat: correlati alla sua armatura o Provenienza)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    armor_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    existing = get_custom_techniques(conn, knight_id)
+    return {
+        "techniques": [dict(t) for t in existing],
+        "slots_total": custom_technique_slots(knight["player_level"]),
+        "slots_used": len(existing),
+        "allowed_elements": allowed_custom_technique_elements(armor_techniques, knight["origin"]),
+    }
+
+
+@app.post("/characters/{knight_id}/custom-techniques")
+def api_create_custom_technique(knight_id: int, req: CreateCustomTechniqueRequest, conn=Depends(get_db)):
+    """Crea una nuova tecnica personalizzata - la potenza viene
+    calcolata dal gioco in base al livello (mai scelta dal giocatore),
+    e l'elemento deve essere uno di quelli ammessi (correlato
+    all'armatura o alla Provenienza)."""
+    knight = _get_knight_or_404(conn, knight_id)
+
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="La tecnica deve avere un nome.")
+
+    armor_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    existing = get_custom_techniques(conn, knight_id)
+
+    slots = custom_technique_slots(knight["player_level"])
+    if len(existing) >= slots:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Nessuno slot disponibile per una nuova tecnica personalizzata ({len(existing)}/{slots} già usati).",
+        )
+
+    allowed = allowed_custom_technique_elements(armor_techniques, knight["origin"])
+    if req.tech_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"L'elemento scelto deve essere correlato alla tua armatura o provenienza: {', '.join(allowed) or 'nessuno disponibile'}.",
+        )
+
+    power = calculate_custom_technique_power(knight["player_level"])
+    add_custom_technique(
+        conn, knight_id, req.name.strip(), req.tech_type,
+        (req.launch_desc or "").strip(), (req.effect_desc or "").strip(), power,
+    )
+    return {"created": True, "power": power}
 
 
 # --------------------------- Catalogo armature ---------------------------
