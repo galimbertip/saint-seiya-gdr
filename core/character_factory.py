@@ -66,7 +66,7 @@ def list_available_armors(conn: sqlite3.Connection, player_level: int) -> list[s
 def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
                    player_level: int = 1, surname: str = "", age: int = 15,
                    gender: str = "", origin: str = "", build: str = "Media",
-                   biography: str = "") -> dict:
+                   biography: str = "", skin_tone: str = "", hair_color: str = "") -> dict:
     """Crea un nuovo cavaliere, validando armatura e livello. Solleva
     ArmorNotFoundError / ArmorLevelTooHighError se la scelta non è valida,
     invece di salvare comunque come faceva la versione di Gemini.
@@ -83,7 +83,11 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     biography: l'abbozzo iniziale del diario (richiesto in chat) - da
     qui in poi il gioco stesso aggiunge voci (level up, Sensi,
     vittorie/sconfitte) in biography_entries, vedi
-    database.db_manager.add_biography_entry."""
+    database.db_manager.add_biography_entry.
+    skin_tone/hair_color: personalizzano la sagoma stilizzata
+    (richiesto in chat) - l'avatar caricato (vedi avatar_path,
+    impostato a parte via l'endpoint di upload) ha sempre la
+    precedenza quando presente."""
 
     armor = get_armor(armor_name, conn)
     if armor is None:
@@ -112,12 +116,12 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
         """
         INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
                               str, dex, con, tec, vol, player_level, xp, stamina, age,
-                              surname, gender, origin, build, biography)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?)
+                              surname, gender, origin, build, biography, skin_tone, hair_color)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (formal_name, raw_name, armor_name, cosmo, cosmo,
          stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
-         age, surname, gender, origin, build, biography),
+         age, surname, gender, origin, build, biography, skin_tone, hair_color),
     )
     conn.commit()
 
@@ -169,13 +173,15 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
         """
         UPDATE knights SET cosmo_cur=?, cosmo_max=?, str=?, dex=?, con=?, tec=?, vol=?,
                             player_level=?, xp=?, stamina=?, age=?, game_day=?, game_minutes=?, weekly_schedule=?,
-                            surname=?, gender=?, origin=?, build=?, tutorial_seen=?, biography=?
+                            surname=?, gender=?, origin=?, build=?, tutorial_seen=?, biography=?,
+                            skin_tone=?, hair_color=?, avatar_path=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["str"], knight["dex"], knight["con"],
          knight["tec"], knight["vol"], knight["player_level"], knight["xp"], knight["stamina"],
          knight["age"], knight["game_day"], knight["game_minutes"], knight["weekly_schedule"],
          knight["surname"], knight["gender"], knight["origin"], knight["build"], knight["tutorial_seen"],
-         knight["biography"], knight["id"]),
+         knight["biography"], knight["skin_tone"], knight["hair_color"], knight["avatar_path"],
+         knight["id"]),
     )
     conn.commit()
