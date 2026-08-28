@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
     get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster,
+    add_biography_entry, get_biography_entries,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -97,6 +98,7 @@ class CreateCharacterRequest(BaseModel):
     gender: Optional[str] = ""
     origin: Optional[str] = ""
     build: Optional[str] = "Media"
+    biography: Optional[str] = ""
 
 
 class TrainRequest(BaseModel):
@@ -128,6 +130,19 @@ class ArenaReactRequest(BaseModel):
 
 
 # --------------------------- Serializzazione ---------------------------
+
+def _record_fight_outcome(conn, knight: dict, opponent_name: str, winner: str) -> None:
+    """Aggiunge una voce al diario per la vittoria/sconfitta appena
+    conclusa (richiesto in chat) - chiamata da entrambi i punti in cui
+    uno scontro può finire (declare e react), invece di duplicare la
+    stessa logica due volte."""
+    cal = get_calendar_display(knight["game_minutes"])
+    if winner == "player":
+        entry = f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} sconfigge {opponent_name} nell'Arena."
+    else:
+        entry = f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene sconfitto da {opponent_name} nell'Arena."
+    add_biography_entry(conn, knight["id"], knight["game_minutes"], entry)
+
 
 def _knight_payload(conn, knight: dict) -> dict:
     """Impacchetta un knight con tutto il contesto che il frontend
@@ -190,7 +205,7 @@ def api_create_character(req: CreateCharacterRequest, conn=Depends(get_db)):
         knight = create_knight(
             conn, req.raw_name, req.armor_name, req.player_level,
             surname=req.surname or "", age=req.age or 15, gender=req.gender or "", origin=req.origin or "",
-            build=req.build or "Media",
+            build=req.build or "Media", biography=req.biography or "",
         )
     except (ArmorNotFoundError, ArmorLevelTooHighError, ArmorAlreadyClaimedError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -226,6 +241,18 @@ def api_mark_tutorial_seen(knight_id: int, conn=Depends(get_db)):
 @app.get("/armors")
 def api_list_armors(player_level: int = 1, conn=Depends(get_db)):
     return [dict(a) for a in list_armors_for_player_level(player_level, conn)]
+
+
+@app.get("/characters/{knight_id}/biography")
+def api_get_biography(knight_id: int, conn=Depends(get_db)):
+    """Il diario del personaggio (richiesto in chat): l'abbozzo scritto
+    alla creazione più le voci che il gioco aggiunge da solo (level up,
+    Sensi, vittorie/sconfitte in Arena). Servito a parte (non dentro
+    _knight_payload) perché può crescere molto in una partita lunga -
+    va richiesto solo quando si apre davvero la scheda del diario."""
+    knight = _get_knight_or_404(conn, knight_id)
+    entries = get_biography_entries(conn, knight_id)
+    return {"sketch": knight["biography"], "entries": [dict(e) for e in entries]}
 
 
 @app.get("/roster")
@@ -292,6 +319,25 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
                 "message": f"🗡️ Livello raggiunto! In una nuova creazione potresti scegliere: {names}",
             })
 
+        # Diario auto-scritto (richiesto in chat): il level up e ogni
+        # nuovo Senso risvegliato diventano una voce del diario, non
+        # solo un messaggio nel log dell'allenamento che sparisce alla
+        # sessione successiva.
+        cal = get_calendar_display(knight["game_minutes"])
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} raggiunge il livello {new_level}.",
+        )
+        old_senses = get_unlocked_senses(old_level)
+        new_senses = get_unlocked_senses(new_level)
+        sense_labels = {"sesto": "Sesto Senso", "settimo": "Settimo Senso", "ottavo": "Ottavo Senso", "nono": "Nono Senso"}
+        for key, label in sense_labels.items():
+            if new_senses[key] and not old_senses[key]:
+                add_biography_entry(
+                    conn, knight["id"], knight["game_minutes"],
+                    f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} risveglia il {label}.",
+                )
+
     return {
         "log": log_entries,
         "character": _knight_payload(conn, knight),
@@ -356,7 +402,9 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
     )
 
     if fight_over:
+        opponent_name = req.battle_state["opponent"]["name"]
         finalize_fight(knight)
+        _record_fight_outcome(conn, knight, opponent_name, winner)
         save_knight(conn, knight)
         return {
             "log": log, "fight_over": True, "won": winner == "player",
@@ -386,7 +434,9 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
     log, fight_over, winner = resolve_react(knight, armor, req.defend, my_defense, req.battle_state)
 
     if fight_over:
+        opponent_name = req.battle_state["opponent"]["name"]
         finalize_fight(knight)
+        _record_fight_outcome(conn, knight, opponent_name, winner)
         save_knight(conn, knight)
         return {
             "log": log, "fight_over": True, "won": winner == "player",
