@@ -312,19 +312,23 @@ def clamp_to_grid(x: float, y: float) -> dict:
 
 
 def try_move(current_pos: dict, target_x: float, target_y: float,
-             movement_points: int) -> tuple[bool, dict, float]:
+             movement_points: int, terrain_effects: list[dict] | None = None) -> tuple[bool, dict, float, bool]:
     """Verifica e risolve uno spostamento verso (target_x, target_y).
     Se la distanza richiesta supera i Punti Movimento disponibili, il
     personaggio si ferma al massimo raggiungibile in quella direzione
     invece di fallire lo spostamento (più comodo da giocare: cliccare
     'un po' troppo lontano' ti porta comunque il più vicino possibile
     a dove volevi, non ti nega il movimento).
+    terrain_effects (Fase 3): se il percorso attraversa un cratere, ci
+    si ferma appena prima - vedi clip_path_for_craters.
     Nessun costo in tempo qui (tolto in chat: era ridondante con la
     perdita del turno per movimento eccessivo della Fase 2 - pagare
     minuti EXTRA in più, oltre a perdere l'attacco del round, era un
     doppio conto per la stessa causa). Il tempo passa comunque tramite
     il costo normale del round quando si dichiara un'azione.
-    Restituisce (mosso_per_intero, nuova_posizione, distanza_percorsa)."""
+    Restituisce (mosso_per_intero, nuova_posizione, distanza_percorsa,
+    bloccato_da_cratere) - l'ultimo serve al chiamante per dare un
+    messaggio giusto (non è colpa dei Punti Movimento, stavolta)."""
     target = clamp_to_grid(target_x, target_y)
     requested_distance = distance_between(current_pos, target)
 
@@ -342,7 +346,16 @@ def try_move(current_pos: dict, target_x: float, target_y: float,
         moved_fully = False
         distance_moved = movement_points
 
-    return moved_fully, new_pos, distance_moved
+    blocked_by_crater = False
+    if terrain_effects:
+        clipped = clip_path_for_craters(current_pos, new_pos, terrain_effects)
+        if clipped != new_pos:
+            new_pos = clipped
+            moved_fully = False
+            blocked_by_crater = True
+            distance_moved = distance_between(current_pos, new_pos)
+
+    return moved_fully, new_pos, distance_moved, blocked_by_crater
 
 
 def wander_opponent(current_pos: dict) -> dict:
@@ -418,6 +431,131 @@ def combine_roll_modes(mode_a: str, mode_b: str) -> str:
     if "vantaggio" in modes and "svantaggio" in modes:
         return "normale"
     return mode_a if mode_a != "normale" else mode_b
+
+
+# --- Mappa 2D: Fase 3 (effetti sul terreno) --------------------------
+# Richiesto in chat, ultimo pezzo della sequenza mappa: il terreno
+# stesso diventa parte della battaglia, non solo i combattenti. Quattro
+# effetti, ciascuno con una firma meccanica DIVERSA (non varianti
+# estetiche dello stesso effetto - richiesto in chat):
+#   Ghiaccio  -> chiazza TEMPORANEA, svantaggio sul proprio tiro
+#   Fuoco     -> zona di Fiamme TEMPORANEA, danno continuo a chi ci sta sopra
+#   Acqua     -> Fango TEMPORANEO, dimezza i Punti Movimento di chi ci si trova
+#   (danno alto, qualunque elemento) -> cratere PERMANENTE, blocca il passaggio
+# La griglia resta continua (non a caselle, deciso nella Fase 1) - gli
+# effetti sono zone circolari con un centro e un raggio, non celle
+# colorate.
+ICE_PATCH_RADIUS = 1.3
+ICE_PATCH_DURATION_ROUNDS = 4
+
+FLAME_ZONE_RADIUS = 1.2
+FLAME_ZONE_DURATION_ROUNDS = 3
+FLAME_ZONE_DAMAGE_PER_ROUND = 3
+
+MUD_ZONE_RADIUS = 1.3
+MUD_ZONE_DURATION_ROUNDS = 4
+MUD_MOVEMENT_PENALTY_RATIO = 0.5  # dimezza i Punti Movimento di chi ci si trova
+
+CRATER_RADIUS = 0.9
+CRATER_DAMAGE_THRESHOLD = 15  # un colpo che fa almeno questo danno lascia un cratere
+
+
+def maybe_create_terrain_effect(position: dict, tech_type: str, damage: int) -> dict | None:
+    """Se il colpo appena andato a segno lascia un effetto sul terreno,
+    lo restituisce (None altrimenti) - il chiamante lo aggiunge a
+    battle_state['terrain_effects']. Gli elementi naturali (Ghiaccio,
+    Fuoco, Acqua) hanno priorità sul cratere: un colpo abbastanza forte
+    da fare da cratere ma con un elemento riconosciuto lascia comunque
+    il segno del suo elemento, non un buco nel terreno (più coerente
+    narrativamente - il ghiaccio non scava, il fuoco non incrina)."""
+    tech_type_lower = (tech_type or "").lower()
+    if "ghiaccio" in tech_type_lower:
+        return {"kind": "ghiaccio", "x": position["x"], "y": position["y"],
+                "radius": ICE_PATCH_RADIUS, "rounds_left": ICE_PATCH_DURATION_ROUNDS}
+    if "fuoco" in tech_type_lower:
+        return {"kind": "fiamme", "x": position["x"], "y": position["y"],
+                "radius": FLAME_ZONE_RADIUS, "rounds_left": FLAME_ZONE_DURATION_ROUNDS}
+    if "acqua" in tech_type_lower:
+        return {"kind": "fango", "x": position["x"], "y": position["y"],
+                "radius": MUD_ZONE_RADIUS, "rounds_left": MUD_ZONE_DURATION_ROUNDS}
+    if damage >= CRATER_DAMAGE_THRESHOLD:
+        return {"kind": "cratere", "x": position["x"], "y": position["y"],
+                "radius": CRATER_RADIUS, "rounds_left": None}  # None = permanente per lo scontro
+    return None
+
+
+def tick_terrain_effects(effects: list[dict]) -> None:
+    """Fa scadere gli effetti temporanei (Ghiaccio/Fiamme/Fango) di un
+    round; i crateri (rounds_left=None) restano per sempre, come da
+    specifica. Muta `effects` in place (rimuove quelli scaduti)."""
+    still_active = []
+    for e in effects:
+        if e["rounds_left"] is None:
+            still_active.append(e)
+            continue
+        e["rounds_left"] -= 1
+        if e["rounds_left"] > 0:
+            still_active.append(e)
+    effects[:] = still_active
+
+
+def position_in_ice_patch(position: dict, effects: list[dict]) -> bool:
+    """True se la posizione data è dentro una chiazza di Ghiaccio ancora
+    attiva - chi ci sta sopra è meno preciso (svantaggio sul suo tiro)."""
+    return any(
+        e["kind"] == "ghiaccio" and distance_between(position, e) <= e["radius"]
+        for e in effects
+    )
+
+
+def apply_flame_damage(fighter_name: str, fighter: dict, position: dict, effects: list[dict]) -> str | None:
+    """Se la posizione è dentro una zona di Fiamme ancora attiva,
+    infligge il danno continuo e restituisce il messaggio di log (None
+    se non ci si trova dentro nessuna). Chiamata una volta a testa ad
+    ogni round, come il Veleno - ma qui è il TERRENO a bruciare, non un
+    effetto legato al combattente."""
+    for e in effects:
+        if e["kind"] == "fiamme" and distance_between(position, e) <= e["radius"]:
+            fighter["cosmo_cur"] = max(0, fighter["cosmo_cur"] - FLAME_ZONE_DAMAGE_PER_ROUND)
+            return f"🔥 {fighter_name} è nelle fiamme! -{FLAME_ZONE_DAMAGE_PER_ROUND} Cosmo."
+    return None
+
+
+def apply_mud_penalty(movement_points: int, position: dict, effects: list[dict]) -> int:
+    """Se ci si trova nel Fango, i Punti Movimento disponibili per
+    questo spostamento sono dimezzati - il terreno viscido rallenta
+    fisicamente, un effetto diverso dal Ghiaccio (che tocca la
+    precisione, non la velocità)."""
+    in_mud = any(
+        e["kind"] == "fango" and distance_between(position, e) <= e["radius"]
+        for e in effects
+    )
+    if in_mud:
+        return max(1, round(movement_points * MUD_MOVEMENT_PENALTY_RATIO))
+    return movement_points
+
+
+def clip_path_for_craters(current_pos: dict, target_pos: dict, effects: list[dict]) -> dict:
+    """Se il percorso in linea retta verso target_pos attraversa un
+    cratere, ci si ferma appena prima di entrarci - i crateri bloccano
+    il passaggio (richiesto in chat). Approssimato campionando il
+    segmento a piccoli passi (sufficiente alla scala della mappa,
+    non serve una vera intersezione geometrica cerchio-retta)."""
+    craters = [e for e in effects if e["kind"] == "cratere"]
+    if not craters:
+        return target_pos
+    steps = 24
+    last_safe = dict(current_pos)
+    for i in range(1, steps + 1):
+        t = i / steps
+        candidate = {
+            "x": current_pos["x"] + (target_pos["x"] - current_pos["x"]) * t,
+            "y": current_pos["y"] + (target_pos["y"] - current_pos["y"]) * t,
+        }
+        if any(distance_between(candidate, c) <= c["radius"] for c in craters):
+            return last_safe
+        last_safe = candidate
+    return target_pos
 
 
 # --- Provenienza: gerarchia geografica e affinità elementale ---------------
