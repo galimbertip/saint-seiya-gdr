@@ -1156,6 +1156,37 @@ function renderArenaMap() {
   const battle = state.battle;
   const canMove = battle && !battle.pending_opponent_technique;
 
+  // Effetti sul terreno (Fase 3): il ghiaccio come chiazza azzurra
+  // semi-trasparente, i crateri come cerchio scuro, le fiamme come
+  // cerchio arancione, il fango come cerchio marrone opaco -
+  // disegnati PRIMA dei combattenti, così restano "sotto" di loro,
+  // come lo sfondo.
+  if (battle && battle.terrain_effects) {
+    for (const eff of battle.terrain_effects) {
+      const px = eff.x * scale;
+      const py = eff.y * scale;
+      const r = eff.radius * scale;
+      if (eff.kind === "ghiaccio") {
+        ctx.fillStyle = "rgba(174, 230, 255, 0.35)";
+        ctx.strokeStyle = "rgba(174, 230, 255, 0.7)";
+      } else if (eff.kind === "fiamme") {
+        ctx.fillStyle = "rgba(255, 112, 67, 0.4)";
+        ctx.strokeStyle = "rgba(255, 87, 34, 0.8)";
+      } else if (eff.kind === "fango") {
+        ctx.fillStyle = "rgba(93, 64, 55, 0.5)";
+        ctx.strokeStyle = "rgba(62, 39, 35, 0.85)";
+      } else {
+        ctx.fillStyle = "rgba(20, 20, 20, 0.85)";
+        ctx.strokeStyle = "#5a3a1a";
+      }
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
   if (battle) {
     const effect = battle.last_effect;
 
