@@ -121,6 +121,8 @@ class ArenaDeclareRequest(BaseModel):
     technique_name: Optional[str] = None
     technique_power: Optional[int] = None
     technique_type: Optional[str] = None
+    technique_launch_desc: Optional[str] = None
+    technique_effect_desc: Optional[str] = None
     battle_state: dict
 
 
@@ -138,9 +140,9 @@ def _record_fight_outcome(conn, knight: dict, opponent_name: str, winner: str) -
     stessa logica due volte."""
     cal = get_calendar_display(knight["game_minutes"])
     if winner == "player":
-        entry = f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} sconfigge {opponent_name} nell'Arena."
+        entry = f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} sconfigge {opponent_name} nell'Arena."
     else:
-        entry = f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene sconfitto da {opponent_name} nell'Arena."
+        entry = f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene sconfitto da {opponent_name} nell'Arena."
     add_biography_entry(conn, knight["id"], knight["game_minutes"], entry)
 
 
@@ -326,7 +328,7 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
         cal = get_calendar_display(knight["game_minutes"])
         add_biography_entry(
             conn, knight["id"], knight["game_minutes"],
-            f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} raggiunge il livello {new_level}.",
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} raggiunge il livello {new_level}.",
         )
         old_senses = get_unlocked_senses(old_level)
         new_senses = get_unlocked_senses(new_level)
@@ -335,7 +337,7 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
             if new_senses[key] and not old_senses[key]:
                 add_biography_entry(
                     conn, knight["id"], knight["game_minutes"],
-                    f"{cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} risveglia il {label}.",
+                    f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} risveglia il {label}.",
                 )
 
     return {
@@ -399,6 +401,7 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
     log, fight_over, winner = resolve_declare(
         knight, armor, req.action, req.technique_name, req.technique_power, req.battle_state,
         technique_type=req.technique_type,
+        technique_launch_desc=req.technique_launch_desc, technique_effect_desc=req.technique_effect_desc,
     )
 
     if fight_over:
