@@ -494,6 +494,11 @@ async function doTrain(mode) {
     state.character = result.character;
     state.weeklySchedule = [...state.character.weekly_schedule_list];
     state.trainingLog = result.log.map((l) => (l.day ? `${l.day} (${l.focus}): ${l.message}` : l.message));
+    // Un level up durante l'allenamento può aggiungere una voce nuova al
+    // diario - lo invalido sempre qui, si ricarica da solo la prossima
+    // volta che si apre la Scheda Cavaliere (corretto in chat: prima
+    // restava "vecchio" finché non si tornava alla Sala dei Cavalieri).
+    state.biography = null;
     render();
   } catch (e) {
     showError(e.message);
@@ -544,7 +549,7 @@ async function movePlayerTo(x, y) {
   }
 }
 
-async function declareAttack(techniqueName, techniquePower, techniqueType) {
+async function declareAttack(techniqueName, techniquePower, techniqueType, techniqueLaunchDesc, techniqueEffectDesc) {
   try {
     const result = await api(`/characters/${state.characterId}/arena/declare`, {
       method: "POST",
@@ -553,6 +558,8 @@ async function declareAttack(techniqueName, techniquePower, techniqueType) {
         technique_name: techniqueName,
         technique_power: techniquePower,
         technique_type: techniqueType || null,
+        technique_launch_desc: techniqueLaunchDesc || null,
+        technique_effect_desc: techniqueEffectDesc || null,
         battle_state: state.battle,
       }),
     });
@@ -626,6 +633,10 @@ function applyArenaResult(result) {
   state.battle = result.fight_over ? null : result.battle_state;
   if (result.fight_over) {
     state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
+    // Uno scontro concluso aggiunge sempre una voce al diario - stesso
+    // fix di doTrain, invalido la cache per ricaricarla alla prossima
+    // apertura della Scheda Cavaliere.
+    state.biography = null;
   }
   render();
 }
@@ -1159,7 +1170,7 @@ function renderArenaTab() {
       );
       leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
       for (const t of attackOptions) {
-        leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type) }, `⚔ ${t.name} (${t.power})`));
+        leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
       }
       leftPanel.append(el("button", {
         onClick: declareCharge,
