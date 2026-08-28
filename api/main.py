@@ -20,7 +20,9 @@ la rete c'è.
 from typing import Literal, Optional
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi.staticfiles import StaticFiles
+import shutil
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -54,6 +56,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Cartella per gli avatar caricati dai giocatori (richiesto in chat) -
+# servita direttamente come file statici su /avatars/<nome-file>.
+AVATARS_DIR = Path(__file__).resolve().parent.parent / "avatars"
+AVATARS_DIR.mkdir(exist_ok=True)
+app.mount("/avatars", StaticFiles(directory=str(AVATARS_DIR)), name="avatars")
 
 
 def _init_schema_once() -> None:
@@ -99,6 +107,8 @@ class CreateCharacterRequest(BaseModel):
     origin: Optional[str] = ""
     build: Optional[str] = "Media"
     biography: Optional[str] = ""
+    skin_tone: Optional[str] = ""
+    hair_color: Optional[str] = ""
 
 
 class TrainRequest(BaseModel):
@@ -208,6 +218,7 @@ def api_create_character(req: CreateCharacterRequest, conn=Depends(get_db)):
             conn, req.raw_name, req.armor_name, req.player_level,
             surname=req.surname or "", age=req.age or 15, gender=req.gender or "", origin=req.origin or "",
             build=req.build or "Media", biography=req.biography or "",
+            skin_tone=req.skin_tone or "", hair_color=req.hair_color or "",
         )
     except (ArmorNotFoundError, ArmorLevelTooHighError, ArmorAlreadyClaimedError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -236,6 +247,29 @@ def api_mark_tutorial_seen(knight_id: int, conn=Depends(get_db)):
     knight["tutorial_seen"] = 1
     save_knight(conn, knight)
     return {"tutorial_seen": True}
+
+
+@app.post("/characters/{knight_id}/avatar")
+async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=Depends(get_db)):
+    """Carica un'immagine come ritratto del personaggio (richiesto in
+    chat) - sostituisce la sagoma stilizzata quando presente. Salvata
+    su disco (cartella avatars/, servita come file statico), il
+    percorso va nel database. Un'immagine per cavaliere: caricarne
+    una nuova sovrascrive quella precedente."""
+    knight = _get_knight_or_404(conn, knight_id)
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+        raise HTTPException(status_code=400, detail="Formato immagine non supportato (usa PNG, JPG, WEBP o GIF).")
+
+    filename = f"knight_{knight_id}{ext}"
+    dest = AVATARS_DIR / filename
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    knight["avatar_path"] = f"/avatars/{filename}"
+    save_knight(conn, knight)
+    return {"avatar_path": knight["avatar_path"]}
 
 
 # --------------------------- Catalogo armature ---------------------------
