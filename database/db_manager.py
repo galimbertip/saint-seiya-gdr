@@ -63,7 +63,22 @@ CREATE TABLE IF NOT EXISTS knights (
     gender TEXT NOT NULL DEFAULT '',
     origin TEXT NOT NULL DEFAULT '',
     build TEXT NOT NULL DEFAULT 'Media',
-    tutorial_seen INTEGER NOT NULL DEFAULT 0
+    tutorial_seen INTEGER NOT NULL DEFAULT 0,
+    biography TEXT NOT NULL DEFAULT ''
+);
+
+-- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
+-- giocatore alla creazione vive nella colonna biography di knights;
+-- qui invece le voci che il gioco stesso aggiunge nel tempo (level up,
+-- Sensi sbloccati, vittorie/sconfitte in Arena) - una riga per evento,
+-- non un unico blob di testo, così restano ordinabili e non c'è mai
+-- il rischio di sovrascrivere quello che è già stato scritto.
+CREATE TABLE IF NOT EXISTS biography_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    knight_id INTEGER NOT NULL,
+    game_minutes INTEGER NOT NULL,
+    entry TEXT NOT NULL,
+    FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
 );
 
 -- Gerarchia dei cavalieri (richiesta in chat): ogni armatura del
@@ -136,6 +151,12 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE knights SET tutorial_seen = 1")
         conn.commit()
         log.info("Migrazione: aggiunta colonna tutorial_seen a knights (personaggi esistenti segnati come già visto).")
+    if "biography" not in existing_columns:
+        # Diario del cavaliere (richiesto in chat) - l'abbozzo iniziale;
+        # vuoto per i personaggi già esistenti, nessuno lo aveva scritto.
+        conn.execute("ALTER TABLE knights ADD COLUMN biography TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna biography a knights (vuota per i salvataggi esistenti).")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -300,6 +321,25 @@ def claim_roster_slot(conn: sqlite3.Connection, armor_name: str, knight_id: int)
     occupante finché lo slot è reclamato)."""
     conn.execute("UPDATE roster SET claimed_by_knight_id = ? WHERE armor_name = ?", (knight_id, armor_name))
     conn.commit()
+
+
+def add_biography_entry(conn: sqlite3.Connection, knight_id: int, game_minutes: int, entry: str) -> None:
+    """Aggiunge una voce al diario auto-scritto del personaggio
+    (richiesto in chat) - una riga per evento (level up, Senso
+    sbloccato, vittoria/sconfitta in Arena), non un unico testo
+    riscritto ogni volta."""
+    conn.execute(
+        "INSERT INTO biography_entries (knight_id, game_minutes, entry) VALUES (?, ?, ?)",
+        (knight_id, game_minutes, entry),
+    )
+    conn.commit()
+
+
+def get_biography_entries(conn: sqlite3.Connection, knight_id: int) -> list[sqlite3.Row]:
+    """Tutte le voci del diario di un personaggio, in ordine cronologico."""
+    return conn.execute(
+        "SELECT * FROM biography_entries WHERE knight_id = ? ORDER BY id ASC", (knight_id,)
+    ).fetchall()
 
 
 if __name__ == "__main__":
