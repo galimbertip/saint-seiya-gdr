@@ -84,6 +84,23 @@ CREATE TABLE IF NOT EXISTS biography_entries (
     FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
 );
 
+-- Tecniche personalizzate (richiesta in chat): create dal giocatore,
+-- legate a UN cavaliere specifico (non al catalogo armature come le
+-- tecniche vere) - nome/elemento/descrizioni a scelta del giocatore,
+-- potenza calcolata dal gioco in base al livello (mai scelta a mano,
+-- per evitare abusi). ON DELETE CASCADE: se il personaggio viene
+-- eliminato, le sue tecniche personalizzate vanno via con lui.
+CREATE TABLE IF NOT EXISTS custom_techniques (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    knight_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    tech_type TEXT NOT NULL,
+    launch_desc TEXT NOT NULL DEFAULT '',
+    effect_desc TEXT NOT NULL DEFAULT '',
+    power INTEGER NOT NULL,
+    FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
+);
+
 -- Gerarchia dei cavalieri (richiesta in chat): ogni armatura del
 -- catalogo ha un PNG fisso assegnato una volta sola (npc_name, non
 -- cambia mai) - finché nessun giocatore la reclama, è quel PNG a
@@ -353,6 +370,27 @@ def get_biography_entries(conn: sqlite3.Connection, knight_id: int) -> list[sqli
     return conn.execute(
         "SELECT * FROM biography_entries WHERE knight_id = ? ORDER BY id ASC", (knight_id,)
     ).fetchall()
+
+
+def get_custom_techniques(conn: sqlite3.Connection, knight_id: int) -> list[sqlite3.Row]:
+    """Le tecniche personalizzate di un personaggio, in ordine di
+    creazione."""
+    return conn.execute(
+        "SELECT * FROM custom_techniques WHERE knight_id = ? ORDER BY id ASC", (knight_id,)
+    ).fetchall()
+
+
+def add_custom_technique(conn: sqlite3.Connection, knight_id: int, name: str, tech_type: str,
+                          launch_desc: str, effect_desc: str, power: int) -> None:
+    """Registra una nuova tecnica personalizzata - la potenza arriva già
+    calcolata dal chiamante (vedi core.arena_manager.
+    calculate_custom_technique_power), mai scelta dal giocatore."""
+    conn.execute(
+        "INSERT INTO custom_techniques (knight_id, name, tech_type, launch_desc, effect_desc, power) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (knight_id, name, tech_type, launch_desc, effect_desc, power),
+    )
+    conn.commit()
 
 
 if __name__ == "__main__":
