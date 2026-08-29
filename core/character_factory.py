@@ -21,6 +21,7 @@ from database.db_manager import (
     get_armor, list_armors_for_player_level, get_roster_entry, insert_roster_entry, claim_roster_slot,
 )
 from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
+from core.training_path import select_master, generate_companions
 
 STARTING_COSMO_BASE = 100
 STARTING_STAT_BASE = 10
@@ -116,17 +117,31 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     # da qui, non da un "Anno 1" fittizio.
     created_at = datetime.now().isoformat()
 
+    # Apprendistato (richiesto in chat): un personaggio che nasce a
+    # livello 1 è un vero esordiente - deve completare l'addestramento
+    # prima di poter mettere piede in Arena. Chi dichiara già un
+    # livello più alto in creazione (un "veterano") salta l'apprendistato
+    # per intero, esattamente come oggi - non ha senso rimandarlo a
+    # scuola se si dichiara già affermato.
+    is_knight = 1 if player_level > 1 else 0
+    master_name = master_armor_name = companion1_name = companion2_name = ""
+    if not is_knight:
+        master_name, master_armor_name = select_master(conn, armor["divinity"], armor["faction"])
+        companion1_name, companion2_name = generate_companions(exclude_name=master_name)
+
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
                               str, dex, con, tec, vol, player_level, xp, stamina, age,
-                              surname, gender, origin, build, biography, skin_tone, hair_color, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              surname, gender, origin, build, biography, skin_tone, hair_color, created_at,
+                              is_knight, master_name, master_armor_name, companion1_name, companion2_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (formal_name, raw_name, armor_name, cosmo, cosmo,
          stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
-         age, surname, gender, origin, build, biography, skin_tone, hair_color, created_at),
+         age, surname, gender, origin, build, biography, skin_tone, hair_color, created_at,
+         is_knight, master_name, master_armor_name, companion1_name, companion2_name),
     )
     conn.commit()
 
@@ -179,7 +194,9 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
         UPDATE knights SET cosmo_cur=?, cosmo_max=?, str=?, dex=?, con=?, tec=?, vol=?,
                             player_level=?, xp=?, stamina=?, age=?, game_day=?, game_minutes=?, weekly_schedule=?,
                             surname=?, gender=?, origin=?, build=?, tutorial_seen=?, biography=?,
-                            skin_tone=?, hair_color=?, avatar_path=?, created_at=?
+                            skin_tone=?, hair_color=?, avatar_path=?, created_at=?,
+                            is_knight=?, training_stage=?, master_name=?, master_armor_name=?,
+                            companion1_name=?, companion2_name=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["str"], knight["dex"], knight["con"],
@@ -187,6 +204,8 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
          knight["age"], knight["game_day"], knight["game_minutes"], knight["weekly_schedule"],
          knight["surname"], knight["gender"], knight["origin"], knight["build"], knight["tutorial_seen"],
          knight["biography"], knight["skin_tone"], knight["hair_color"], knight["avatar_path"],
-         knight["created_at"], knight["id"]),
+         knight["created_at"], knight["is_knight"], knight["training_stage"], knight["master_name"],
+         knight["master_armor_name"], knight["companion1_name"], knight["companion2_name"],
+         knight["id"]),
     )
     conn.commit()
