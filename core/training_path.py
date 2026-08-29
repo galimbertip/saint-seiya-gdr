@@ -49,6 +49,19 @@ KNIGHTHOOD_LEVEL = 5
 # invece di poter ritentare all'infinito senza conseguenze.
 RETRY_STAGE_ON_FAILURE = 18
 
+# Soglia fissa per le prove a dado delle tappe (richiesto in chat:
+# tutto l'addestramento dev'essere interattivo) - PLACEHOLDER come le
+# altre formule di bilanciamento in questo file, mai tarata sul serio.
+SKILL_CHECK_THRESHOLD = 14
+
+
+def resolve_skill_check(knight: dict, stat: str) -> bool:
+    """Un vero tiro di dado sulla statistica indicata di una tappa -
+    d20 + metà della statistica, contro una soglia fissa. Si può
+    fallire (richiesto in chat), non è un successo garantito."""
+    roll = random.randint(1, 20) + knight[stat] // 2
+    return roll >= SKILL_CHECK_THRESHOLD
+
 
 def select_master(conn: sqlite3.Connection, divinity: str, faction: str) -> tuple[str, str]:
     """Sceglie il Maestro per un apprendista di questa divinità/fazione
@@ -102,14 +115,29 @@ def generate_companions(exclude_name: str = "") -> tuple[str, str]:
     return c1, c2  # non dovrebbe mai arrivarci, ma non blocchiamo la creazione per questo
 
 
-# Le 20 tappe. {master}/{companion1}/{companion2}/{tech1}/{tech2} sono
-# sostituiti con i dati veri del personaggio quando la tappa viene
-# mostrata (vedi render_stage). Numerate da 1 (non 0) per parlare
-# meglio con chi legge il codice - training_stage=0 vuol dire "non
-# ancora iniziato", training_stage=N vuol dire "ha completato la
-# tappa N".
+# Le 20 tappe (richiesto in chat: tutto l'addestramento dev'essere
+# interattivo, non solo la Prova Finale) - ogni tappa ha un "type":
+#   narrative  -> solo testo, un pulsante Continua (i momenti di puro
+#                 racconto: arrivo, annuncio, ecc. - non ogni singolo
+#                 istante ha bisogno di un meccanismo)
+#   skill_check -> un vero tiro di dado sulla statistica indicata,
+#                 dietro un pulsante "Prova" - si può fallire e
+#                 riprovare, o accettare il fallimento e andare avanti
+#                 comunque (vedi resolve_skill_check)
+#   choice     -> 2-3 scelte reali, ciascuna con un esito narrativo
+#                 diverso e un piccolo premio permanente ad una
+#                 statistica
+#   spar       -> un vero scontro leggero contro un compagno (stesso
+#                 motore della Prova Finale, ma "di prova": non conta
+#                 ai fini della sconfitta, si avanza comunque)
+# {master}/{companion1}/{companion2}/{tech1}/{tech2} sono sostituiti
+# con i dati veri del personaggio quando la tappa viene mostrata (vedi
+# render_stage). Numerate da 1 (non 0) per parlare meglio con chi legge
+# il codice - training_stage=0 vuol dire "non ancora iniziato",
+# training_stage=N vuol dire "ha completato la tappa N".
 TRAINING_STAGES = [
     {
+        "type": "narrative",
         "title": "Il primo giorno",
         "text": ("{master}, che porta {master_armor}, ti accoglie senza troppe cerimonie: sarà lui a "
                   "guidarti nell'addestramento che ti porterà, se lo supererai, a indossare {your_armor}. "
@@ -118,112 +146,166 @@ TRAINING_STAGES = [
                   "\"non siete più chi eravate prima di arrivare qui.\""),
     },
     {
+        "type": "skill_check", "stat": "con",
         "title": "Le prime fatiche",
         "text": ("Corsa, flessioni, ore a reggere pesi che sembrano non finire mai. {companion1} crolla "
-                  "a terra due volte prima di mezzogiorno; tu non stai molto meglio. {master} osserva in "
-                  "silenzio, senza mai intervenire - lascia che sia la fatica stessa a insegnare."),
+                  "a terra due volte prima di mezzogiorno; tu non stai molto meglio."),
+        "success_text": ("Il tuo corpo regge più di quanto pensassi - {master} annuisce appena, il segno "
+                          "più vicino a un complimento che concede."),
+        "failure_text": ("Non ce la fai a reggere il ritmo fino in fondo - ti fermi prima degli altri, le "
+                          "gambe che tremano. {master} non dice nulla, ma non serve."),
     },
     {
+        "type": "narrative",
         "title": "Cos'è il Cosmo",
         "text": ("\"Tutto ciò che esiste\", spiega {master}, \"è fatto delle stesse particelle "
                   "infinitesimali - e dentro ognuno di voi arde un piccolo universo. Quello è il vostro "
                   "Cosmo. Il vostro compito, da qui in avanti, è imparare ad accenderlo.\""),
     },
     {
+        "type": "skill_check", "stat": "vol",
         "title": "Il primo tentativo",
-        "text": ("Ti concentri, stringi i pugni, cerchi quella scintilla di cui parla {master} - e non "
-                  "succede nulla. Niente aura, niente calore, solo la frustrazione di {companion2} che "
-                  "ride della propria stessa goffaggine, e la tua che non fa altrettanto ridere."),
+        "text": "Ti concentri, stringi i pugni, cerchi quella scintilla di cui parla {master}.",
+        "success_text": ("Per un istante brevissimo, qualcosa si muove dentro di te - non è ancora la "
+                          "vera scintilla, ma è la prima volta che la senti passare."),
+        "failure_text": ("Niente aura, niente calore. Solo la frustrazione di {companion2} che ride della "
+                          "propria stessa goffaggine, e la tua che non fa altrettanto ridere."),
     },
     {
+        "type": "skill_check", "stat": "con",
         "title": "La prova dei limiti",
-        "text": ("{master} vi porta al limite del corpo - non un allenamento, una prova di resistenza "
-                  "vera, il tipo che si supera solo quando la mente smette di dire al corpo di fermarsi. "
-                  "{companion1} ce la fa per un soffio. Tu stringi i denti e resisti."),
+        "text": "{master} vi porta al limite del corpo - non un allenamento, una prova di resistenza vera.",
+        "success_text": ("Stringi i denti e resisti oltre il punto in cui il corpo chiedeva di fermarsi. "
+                          "{companion1} ce la fa per un soffio, proprio come te."),
+        "failure_text": ("Il corpo cede prima della mente - crolli a terra, sconfitto dalla fatica più che "
+                          "da un avversario. Ci riproverai."),
     },
     {
+        "type": "narrative",
         "title": "La scintilla",
         "text": ("Succede quando meno te lo aspetti: una fitta al petto, un calore che sale, e per un "
                   "istante l'aria intorno a te vibra visibilmente. \"Ecco\", dice {master}, quasi senza "
                   "sorpresa. \"Ora sai cosa cercare.\""),
     },
     {
+        "type": "narrative",
         "title": "Lo studio della prima tecnica",
         "text": ("{master} ti mostra, con calma, i princìpi di {tech1} - non ancora come eseguirla, solo "
                   "perché funziona: dove nasce il movimento, dove va incanalato il Cosmo, cosa deve "
                   "succedere perché il colpo non sia solo un pugno con un nome altisonante."),
     },
     {
+        "type": "skill_check", "stat": "tec",
         "title": "I primi fallimenti",
-        "text": ("Provi {tech1} decine di volte. Le prime non succede nulla. Poi qualcosa, ma sbagliato "
-                  "- troppo debole, o nella direzione sbagliata, o senza la scintilla del Cosmo dietro. "
-                  "{companion2} osserva e prova a darti consigli che, sospetti, non capisce nemmeno lui."),
+        "text": "Provi {tech1} decine di volte, cercando la sensazione giusta.",
+        "success_text": ("Qualcosa comincia a funzionare - non ancora perfetto, ma abbastanza vicino da "
+                          "farti capire che sei sulla strada giusta."),
+        "failure_text": ("Niente. Troppo debole, o nella direzione sbagliata, o senza la scintilla del "
+                          "Cosmo dietro. {companion2} osserva e prova a darti consigli che, sospetti, non "
+                          "capisce nemmeno lui."),
     },
     {
+        "type": "skill_check", "stat": "tec",
         "title": "La padronanza",
-        "text": ("Poi, di colpo, il movimento è giusto - il corpo, il Cosmo, l'intenzione, tutto insieme "
-                  "nello stesso istante. {tech1} lascia il segno che deve lasciare. {master} annuisce: "
-                  "\"Cominci a vedere quello che c'è oltre la superficie delle cose, adesso.\""),
+        "text": "È il momento di dimostrare di aver davvero imparato {tech1}.",
+        "success_text": ("Il movimento è giusto - il corpo, il Cosmo, l'intenzione, tutto insieme nello "
+                          "stesso istante. {tech1} lascia il segno che deve lasciare. {master} annuisce: "
+                          "\"Cominci a vedere quello che c'è oltre la superficie delle cose, adesso.\""),
+        "failure_text": ("Ancora no - manca quel qualcosa che rende {tech1} una tecnica vera, e non solo "
+                          "un gesto vuoto. Ci riproverai."),
     },
     {
+        "type": "narrative",
         "title": "Lo studio della seconda tecnica",
         "text": ("Con la prima tecnica ormai nelle mani, {master} introduce {tech2} - più sottile della "
                   "prima, dice, e per questo più difficile da controllare davvero, non solo da eseguire."),
     },
     {
+        "type": "skill_check", "stat": "tec",
         "title": "La pratica",
-        "text": ("{tech2} si rifiuta di venire naturale quanto la prima. {companion1} la impara più in "
-                  "fretta di te, e per un momento è difficile non lasciarsi mordere dall'invidia - finché "
-                  "non ricordi che nessuno qui sta gareggiando con nessun altro, se non con se stesso."),
+        "text": "{tech2} si rifiuta di venire naturale quanto la prima.",
+        "success_text": ("Qualcosa si sblocca - {tech2} comincia ad avere senso, anche se resta più "
+                          "sottile e difficile da controllare della prima."),
+        "failure_text": ("{companion1} la impara più in fretta di te, e per un momento è difficile non "
+                          "lasciarsi mordere dall'invidia."),
     },
     {
+        "type": "skill_check", "stat": "tec",
         "title": "La seconda padronanza",
-        "text": ("Arriva anche questa, alla fine - {tech2} eseguita come deve essere, senza più doverci "
-                  "pensare ad ogni singolo passaggio. Due tecniche vere, ora, non più solo teoria "
-                  "raccontata da {master}."),
+        "text": "L'ultimo passo prima di poter dire di conoscere davvero {tech2}.",
+        "success_text": ("Arriva anche questa - {tech2} eseguita come deve essere, senza più doverci "
+                          "pensare ad ogni singolo passaggio. Due tecniche vere, ora, non più solo teoria "
+                          "raccontata da {master}."),
+        "failure_text": "{tech2} resta ostinata, un passo oltre la tua portata per oggi. Domani sarà un altro giorno.",
     },
     {
+        "type": "skill_check", "stat": "vol",
         "title": "Il Sesto Senso",
-        "text": ("\"C'è un modo di percepire il Cosmo altrui\", spiega {master}, \"prima ancora che un "
-                  "colpo arrivi.\" Non è qualcosa che si impara di colpo - è un affinamento lento di "
-                  "un'attenzione che, ti accorgi, hai già cominciato ad avere."),
+        "text": "\"C'è un modo di percepire il Cosmo altrui\", spiega {master}, \"prima ancora che un colpo arrivi.\"",
+        "success_text": ("Per un istante, senti qualcosa muoversi nell'aria prima ancora di vederlo - un "
+                          "affinamento dell'attenzione che, ti accorgi, avevi già cominciato ad avere."),
+        "failure_text": "Non senti nulla, per ora - solo il vuoto silenzio di un'attenzione non ancora abbastanza affinata.",
     },
     {
+        "type": "skill_check", "stat": "vol",
         "title": "La prova del dolore",
         "text": ("{master} non risparmia nessuno, in questa prova - il corpo che chiede di fermarsi, la "
-                  "mente che deve imparare a non ascoltarlo senza per questo smettere di proteggerlo. "
-                  "{companion2} non la supera al primo tentativo. Tu, forse, nemmeno."),
+                  "mente che deve imparare a non ascoltarlo senza per questo smettere di proteggerlo."),
+        "success_text": ("Resisti, oltre il punto in cui avresti voluto arrenderti. {companion2} non ce "
+                          "la fa al primo tentativo - tu sì."),
+        "failure_text": ("Il dolore vince, questa volta - ti fermi prima del necessario. Non è una "
+                          "sconfitta, solo un limite da spostare un po' più in là."),
     },
     {
+        "type": "spar",
         "title": "Fianco a fianco",
         "text": ("Il primo vero allenamento a due contro uno, tu e {companion1} contro {companion2} a "
-                  "turno, poi invertiti. Non c'è vittoria o sconfitta che conti davvero - solo il modo "
-                  "in cui, senza accorgervene, avete cominciato a coprirvi le spalle a vicenda."),
+                  "turno. Non è la Prova Finale - è solo pratica vera, con un avversario vero."),
     },
     {
+        "type": "choice",
         "title": "Il momento di dubbio",
         "text": ("C'è un giorno, verso la fine, in cui ti chiedi seriamente se sei tagliato per questo. "
-                  "{master} se ne accorge - non ti consola, non ti dice che è tutto a posto. Ti dice solo: "
-                  "\"Il dubbio non è debolezza. È debolezza smettere per colpa sua.\""),
+                  "{master} se ne accorge, e ti lascia scegliere come affrontarlo."),
+        "options": [
+            {"label": "Parlarne apertamente con {master}", "bonus_stat": "vol",
+             "outcome_text": ("{master} ti ascolta senza interromperti, poi dice solo: \"Il dubbio non è "
+                               "debolezza. È debolezza smettere per colpa sua.\" Qualcosa dentro di te si assesta.")},
+            {"label": "Sfogarti allenandoti ancora più duramente", "bonus_stat": "con",
+             "outcome_text": "Non parli con nessuno - ti alleni finché il dubbio non ha più fiato per farsi sentire. Funziona, più o meno."},
+            {"label": "Confidarti con {companion1}", "bonus_stat": None,
+             "outcome_text": "Scopri che anche {companion1} ha avuto lo stesso pensiero, la stessa notte. Non risolve nulla, ma pesa meno portato in due."},
+        ],
     },
     {
+        "type": "choice",
         "title": "Lo stile personale",
         "text": ("Le ultime settimane non aggiungono più nulla di nuovo da imparare - rifiniscono quello "
-                  "che c'è già. Il modo in cui ti muovi, in cui carichi un colpo, in cui reagisci quando "
-                  "sei messo alle strette: comincia ad assomigliare a te, non più solo a {master}."),
+                  "che c'è già. Come vuoi affinare il tuo modo di combattere?"),
+        "options": [
+            {"label": "Colpire più forte, rischiare di più", "bonus_stat": "str",
+             "outcome_text": "Il tuo stile si fa più aggressivo, meno prudente - ogni colpo cerca di essere quello decisivo."},
+            {"label": "Restare in piedi più a lungo di chiunque altro", "bonus_stat": "con",
+             "outcome_text": "Impari a incassare, a resistere, a logorare l'avversario più che abbatterlo di colpo."},
+            {"label": "Anticipare invece di reagire", "bonus_stat": "dex",
+             "outcome_text": "Affini l'istinto, il tempismo - il modo in cui senti un colpo arrivare prima ancora che parta davvero."},
+        ],
     },
     {
+        "type": "narrative",
         "title": "L'annuncio",
         "text": ("\"È tempo\", dice {master} una mattina, senza preamboli. \"L'addestramento non prova "
                   "nulla finché non viene messo alla prova. Preparati: la Prova Finale è vicina.\""),
     },
     {
+        "type": "narrative",
         "title": "L'ultima notte",
         "text": ("La notte prima della Prova Finale non dorme quasi nessuno. Ripassi ogni tecnica nella "
                   "testa, ripensi ad ogni fatica delle ultime settimane, e ti chiedi se basterà. "
                   "{companion1} e {companion2}, in silenzio, sembrano chiedersi la stessa cosa."),
     },
     {
+        "type": "narrative",
         "title": "La Prova Finale",
         "text": ("È il momento della verità: tutto quello che hai imparato messo alla prova in un solo "
                   "scontro, senza reti di sicurezza."),
@@ -231,24 +313,53 @@ TRAINING_STAGES = [
 ]
 
 
+def _fill_placeholders(text: str, ctx: dict) -> str:
+    """Applica i segnaposto {master}/{companion1}/ecc. a una stringa
+    qualunque - usata per il testo principale di una tappa, ma anche
+    per i testi di successo/fallimento e le opzioni di scelta, che
+    hanno la stessa esigenza."""
+    return text.format(**ctx)
+
+
+def build_stage_context(master_name: str, master_armor_name: str, companion1: str,
+                         companion2: str, techniques: list[dict], your_armor_name: str = "") -> dict:
+    """Costruisce il dizionario dei segnaposto per una tappa - condiviso
+    tra render_stage e i nuovi endpoint di prova/scelta (richiesto in
+    chat: tutto l'addestramento dev'essere interattivo), così non si
+    duplica la stessa logica in più punti."""
+    tech1_name = techniques[0]["name"] if len(techniques) > 0 else "la prima tecnica"
+    tech2_name = techniques[1]["name"] if len(techniques) > 1 else "la seconda tecnica"
+    return {
+        "master": master_name, "master_armor": master_armor_name, "companion1": companion1,
+        "companion2": companion2, "tech1": tech1_name, "tech2": tech2_name, "your_armor": your_armor_name,
+    }
+
+
 def render_stage(stage_number: int, master_name: str, master_armor_name: str,
                   companion1: str, companion2: str, techniques: list[dict],
                   your_armor_name: str = "") -> dict:
-    """Restituisce il titolo e il testo della tappa `stage_number`
-    (1-indicizzata), con i nomi veri del personaggio al posto dei
-    segnaposto."""
+    """Restituisce il contenuto della tappa `stage_number` (1-indicizzata),
+    con i nomi veri del personaggio al posto dei segnaposto - la forma
+    del contenuto dipende dal 'type' della tappa (narrative/skill_check/
+    choice/spar, richiesto in chat: tutto l'addestramento dev'essere
+    interattivo, non solo testo da leggere)."""
     stage = TRAINING_STAGES[stage_number - 1]
-    tech1_name = techniques[0]["name"] if len(techniques) > 0 else "la prima tecnica"
-    tech2_name = techniques[1]["name"] if len(techniques) > 1 else "la seconda tecnica"
-    text = stage["text"].format(
-        master=master_name, master_armor=master_armor_name, companion1=companion1, companion2=companion2,
-        tech1=tech1_name, tech2=tech2_name, your_armor=your_armor_name,
-    )
-    return {
-        "stage_number": stage_number, "total_stages": TOTAL_STAGES, "title": stage["title"], "text": text,
+    ctx = build_stage_context(master_name, master_armor_name, companion1, companion2, techniques, your_armor_name)
+
+    result = {
+        "stage_number": stage_number, "total_stages": TOTAL_STAGES, "type": stage["type"],
+        "title": stage["title"], "text": _fill_placeholders(stage["text"], ctx),
         "master_name": master_name, "master_armor_name": master_armor_name,
         "companion1_name": companion1, "companion2_name": companion2, "your_armor_name": your_armor_name,
     }
+    if stage["type"] == "skill_check":
+        result["stat"] = stage["stat"]
+    elif stage["type"] == "choice":
+        result["options"] = [
+            {"label": _fill_placeholders(opt["label"], ctx), "index": i}
+            for i, opt in enumerate(stage["options"])
+        ]
+    return result
 
 
 def generate_trial_opponent(conn: sqlite3.Connection, opponent_is_master: bool, opponent_name: str,
