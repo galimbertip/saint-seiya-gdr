@@ -156,7 +156,7 @@ class GameScreen(QWidget):
         knight = get_knight(self.conn, self.knight_id)
         if knight is None:
             return
-        calendar = get_calendar_display(knight["game_minutes"])
+        calendar = get_calendar_display(knight["created_at"], knight["game_minutes"])
         self.calendar_label.setText(calendar["label"])
 
         self.cosmo_bar.setRange(0, max(knight["cosmo_max"], 1))
