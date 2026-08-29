@@ -15,6 +15,7 @@ la struttura (che ci sia una dipendenza reale statistiche<->armatura)
 """
 import random
 import sqlite3
+from datetime import datetime
 
 from database.db_manager import (
     get_armor, list_armors_for_player_level, get_roster_entry, insert_roster_entry, claim_roster_slot,
@@ -110,18 +111,22 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     cosmo = STARTING_COSMO_BASE + armor["level"]
     full_display_name = f"{raw_name} {surname}".strip()
     formal_name = f"{full_display_name} di {armor_name}"
+    # Calendario reale (richiesto in chat): il personaggio "nasce" nel
+    # momento vero in cui viene creato - il calendario di gioco parte
+    # da qui, non da un "Anno 1" fittizio.
+    created_at = datetime.now().isoformat()
 
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
                               str, dex, con, tec, vol, player_level, xp, stamina, age,
-                              surname, gender, origin, build, biography, skin_tone, hair_color)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?)
+                              surname, gender, origin, build, biography, skin_tone, hair_color, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (formal_name, raw_name, armor_name, cosmo, cosmo,
          stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
-         age, surname, gender, origin, build, biography, skin_tone, hair_color),
+         age, surname, gender, origin, build, biography, skin_tone, hair_color, created_at),
     )
     conn.commit()
 
@@ -174,7 +179,7 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
         UPDATE knights SET cosmo_cur=?, cosmo_max=?, str=?, dex=?, con=?, tec=?, vol=?,
                             player_level=?, xp=?, stamina=?, age=?, game_day=?, game_minutes=?, weekly_schedule=?,
                             surname=?, gender=?, origin=?, build=?, tutorial_seen=?, biography=?,
-                            skin_tone=?, hair_color=?, avatar_path=?
+                            skin_tone=?, hair_color=?, avatar_path=?, created_at=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["str"], knight["dex"], knight["con"],
@@ -182,6 +187,6 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
          knight["age"], knight["game_day"], knight["game_minutes"], knight["weekly_schedule"],
          knight["surname"], knight["gender"], knight["origin"], knight["build"], knight["tutorial_seen"],
          knight["biography"], knight["skin_tone"], knight["hair_color"], knight["avatar_path"],
-         knight["id"]),
+         knight["created_at"], knight["id"]),
     )
     conn.commit()
