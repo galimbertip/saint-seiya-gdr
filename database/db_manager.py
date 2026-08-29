@@ -13,6 +13,7 @@ mano. knights invece è persistente e non viene mai toccata dall'import.
 """
 import sqlite3
 from pathlib import Path
+from datetime import datetime
 
 from core.data_loader import load_armors_database
 from core.app_logger import get_logger
@@ -67,7 +68,8 @@ CREATE TABLE IF NOT EXISTS knights (
     biography TEXT NOT NULL DEFAULT '',
     skin_tone TEXT NOT NULL DEFAULT '',
     hair_color TEXT NOT NULL DEFAULT '',
-    avatar_path TEXT NOT NULL DEFAULT ''
+    avatar_path TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -178,15 +180,30 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.commit()
         log.info("Migrazione: aggiunta colonna biography a knights (vuota per i salvataggi esistenti).")
     if "avatar_path" not in existing_columns:
-        # Avatar del cavaliere (richiesto in chat): tono pelle/colore
-        # capelli per la sagoma stilizzata, più il percorso di
-        # un'eventuale immagine caricata dal giocatore (vuoto = usa la
-        # sagoma). Tutti vuoti per i salvataggi esistenti.
+        # Avatar del cavaliere (richiesto in chat): il percorso di
+        # un'eventuale immagine caricata dal giocatore (vuoto = nessuna
+        # immagine, mostra solo un segnaposto). skin_tone/hair_color
+        # restano nello schema per compatibilità ma non sono più usati
+        # da quando le sagome geometriche sono state tolte (non
+        # reggevano il confronto, segnalato in chat).
         conn.execute("ALTER TABLE knights ADD COLUMN skin_tone TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE knights ADD COLUMN hair_color TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE knights ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunte colonne skin_tone/hair_color/avatar_path a knights.")
+    if "created_at" not in existing_columns:
+        # Calendario reale (richiesto in chat, stile Football Manager):
+        # il personaggio "nasce" nel momento vero in cui viene creato,
+        # non più in un "Anno 1" fittizio - da qui in poi il calendario
+        # somma i minuti di gioco a questo timestamp reale. Per i
+        # salvataggi già esistenti non abbiamo un vero momento di
+        # creazione registrato: usiamo "adesso" come miglior
+        # approssimazione disponibile.
+        now_iso = datetime.now().isoformat()
+        conn.execute("ALTER TABLE knights ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
+        conn.execute("UPDATE knights SET created_at = ? WHERE created_at = ''", (now_iso,))
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna created_at a knights (approssimata a 'adesso' per i salvataggi esistenti).")
 
 
 def get_connection() -> sqlite3.Connection:
