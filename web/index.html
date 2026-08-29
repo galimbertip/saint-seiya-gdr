@@ -1146,6 +1146,17 @@ async function uploadAvatar(file) {
   }
 }
 
+// Riga di descrizione di una tecnica, con l'etichetta Offensiva/
+// Difensiva ben visibile (richiesto in chat: prima si capiva solo
+// leggendo "Difensivo" dentro il tech_type, poco a colpo d'occhio) -
+// usata sia per le tecniche del catalogo sia per quelle personalizzate.
+function techniqueLine(icon, t) {
+  const isDefensive = (t.tech_type || "").toLowerCase().includes("difensiv");
+  const roleLabel = isDefensive ? "🛡 Difensiva" : "⚔ Offensiva";
+  const cleanType = (t.tech_type || "").replace(/\/?difensiv[oa]/i, "").replace(/^\/|\/$/g, "");
+  return `${icon} ${t.name} — ${cleanType || "—"} · ${roleLabel} (potenza ${t.power})`;
+}
+
 function renderSheetTab() {
   const k = state.character;
   const wrap = el("div");
@@ -1238,7 +1249,7 @@ function renderSheetTab() {
   const techCard = el("div", { class: "card sheet-techniques" });
   techCard.append(el("h2", {}, "Tecniche"));
   for (const t of k.techniques) {
-    techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+    techCard.append(el("p", {}, techniqueLine("⚡", t)));
   }
 
   // Tecniche personalizzate (richiesto in chat) - caricate pigre, come
@@ -1251,7 +1262,7 @@ function renderSheetTab() {
     if (ct.techniques.length > 0) {
       techCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, "Personalizzate:"));
       for (const t of ct.techniques) {
-        techCard.append(el("p", {}, `✨ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+        techCard.append(el("p", {}, techniqueLine("✨", t)));
       }
     }
     techCard.append(el("p", { class: "hint", style: "margin-top:8px;" }, `Slot tecnica personalizzata: ${ct.slots_used}/${ct.slots_total}`));
