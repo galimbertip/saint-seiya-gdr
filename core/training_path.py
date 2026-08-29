@@ -29,7 +29,7 @@ specifico dell'opera originale.
 import random
 import sqlite3
 
-from database.db_manager import get_roster_entry
+from database.db_manager import get_roster_entry, get_armor, get_techniques_for_armor
 from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
 
 TOTAL_STAGES = 20
@@ -111,10 +111,11 @@ def generate_companions(exclude_name: str = "") -> tuple[str, str]:
 TRAINING_STAGES = [
     {
         "title": "Il primo giorno",
-        "text": ("{master} ti accoglie senza troppe cerimonie. Al suo fianco, due facce nuove "
-                  "quanto la tua: {companion1} e {companion2}, altri due aspiranti che affronteranno "
-                  "lo stesso cammino. \"Da oggi in poi\", dice {master}, \"non siete più chi eravate "
-                  "prima di arrivare qui.\""),
+        "text": ("{master}, che porta {master_armor}, ti accoglie senza troppe cerimonie: sarà lui a "
+                  "guidarti nell'addestramento che ti porterà, se lo supererai, a indossare {your_armor}. "
+                  "Al suo fianco, due facce nuove quanto la tua: {companion1} e {companion2}, altri due "
+                  "aspiranti che affronteranno lo stesso cammino. \"Da oggi in poi\", dice {master}, "
+                  "\"non siete più chi eravate prima di arrivare qui.\""),
     },
     {
         "title": "Le prime fatiche",
@@ -231,7 +232,8 @@ TRAINING_STAGES = [
 
 
 def render_stage(stage_number: int, master_name: str, master_armor_name: str,
-                  companion1: str, companion2: str, techniques: list[dict]) -> dict:
+                  companion1: str, companion2: str, techniques: list[dict],
+                  your_armor_name: str = "") -> dict:
     """Restituisce il titolo e il testo della tappa `stage_number`
     (1-indicizzata), con i nomi veri del personaggio al posto dei
     segnaposto."""
@@ -239,42 +241,52 @@ def render_stage(stage_number: int, master_name: str, master_armor_name: str,
     tech1_name = techniques[0]["name"] if len(techniques) > 0 else "la prima tecnica"
     tech2_name = techniques[1]["name"] if len(techniques) > 1 else "la seconda tecnica"
     text = stage["text"].format(
-        master=master_name, companion1=companion1, companion2=companion2,
-        tech1=tech1_name, tech2=tech2_name,
+        master=master_name, master_armor=master_armor_name, companion1=companion1, companion2=companion2,
+        tech1=tech1_name, tech2=tech2_name, your_armor=your_armor_name,
     )
-    return {"stage_number": stage_number, "total_stages": TOTAL_STAGES, "title": stage["title"], "text": text}
+    return {
+        "stage_number": stage_number, "total_stages": TOTAL_STAGES, "title": stage["title"], "text": text,
+        "master_name": master_name, "master_armor_name": master_armor_name,
+        "companion1_name": companion1, "companion2_name": companion2, "your_armor_name": your_armor_name,
+    }
 
 
-def resolve_final_trial(knight: dict, opponent_is_master: bool, opponent_name: str) -> tuple[bool, str]:
-    """Risolve la Prova Finale con un tiro di dado sulle statistiche del
-    personaggio (richiesto in chat: dev'essere possibile fallire) -
-    contro un compagno d'addestramento è alla pari (tiro semplice),
-    contro il Maestro "al 100%" è molto più difficile (ma non
-    impossibile, un colpo di fortuna resta un colpo di fortuna).
-    Restituisce (superata, narrazione)."""
-    apprentice_roll = random.randint(1, 20) + (knight["str"] + knight["tec"]) // 10
-
+def generate_trial_opponent(conn: sqlite3.Connection, opponent_is_master: bool, opponent_name: str,
+                             master_armor_name: str, player_armor: dict) -> dict:
+    """Costruisce un avversario VERO per il motore di combattimento
+    (richiesto in chat: "fammi combattere davvero", non un tiro di
+    dado narrato) - stessa forma di arena_manager.generate_opponent,
+    così la Prova Finale usa esattamente lo stesso motore di battaglia
+    di un normale scontro in Arena (movimento, tecniche, Contrattacco,
+    tutto).
+    Contro il Maestro: la SUA armatura vera, molto più forte.
+    Contro un compagno: un'armatura a caso della TUA stessa
+    divinità/fazione - un pari, un altro aspirante alla tua fascia."""
     if opponent_is_master:
-        # Il Maestro che si impegna sul serio schiaccia quasi sempre un
-        # allievo - richiesto in chat ("gli fa il culo") - ma non è un
-        # muro invalicabile, un tiro fortunato può bastare.
-        opponent_roll = random.randint(1, 20) + 15
-        contesto = f"{opponent_name}, il tuo Maestro, si impegna al massimo - non ti risparmia nulla."
+        armor_name = master_armor_name
     else:
-        # Contro un compagno alla pari, uno scontro vero, alla pari.
-        opponent_roll = random.randint(1, 20) + (knight["str"] + knight["tec"]) // 10
-        contesto = f"{opponent_name}, il tuo compagno d'addestramento, è il tuo avversario di oggi."
+        pari = conn.execute(
+            "SELECT name FROM armors WHERE divinity = ? AND faction = ? AND name != ?",
+            (player_armor["divinity"], player_armor["faction"], player_armor["name"]),
+        ).fetchall()
+        armor_name = random.choice(pari)["name"] if pari else player_armor["name"]
 
-    passed = apprentice_roll > opponent_roll
-
-    if passed:
-        narrazione = (
-            f"{contesto} Lo scontro è durissimo, punto per punto - ma alla fine sei tu a reggerti in "
-            f"piedi. Hai superato la Prova Finale."
-        )
-    else:
-        narrazione = (
-            f"{contesto} Combatti con tutto quello che hai, ma non basta - non oggi. La Prova Finale "
-            f"va rimandata: c'è ancora lavoro da fare prima di riprovare."
-        )
-    return passed, narrazione
+    armor = get_armor(armor_name, conn)
+    techniques = [dict(t) for t in get_techniques_for_armor(armor_name, conn)]
+    cosmo = 100 + armor["level"]
+    return {
+        "name": f"{opponent_name} di {armor_name}",
+        "armor_name": armor_name,
+        "divinity": armor["divinity"],
+        "faction": armor["faction"],
+        "armor_level": armor["level"],
+        "cosmo_cur": cosmo,
+        "cosmo_max": cosmo,
+        "str": 10 + armor["level"] // 10,
+        "dex": 10 + armor["level"] // 10,
+        "con": 10 + armor["level"] // 10,
+        "tec": 10 + armor["level"] // 10,
+        "vol": 10 + armor["level"] // 10,
+        "origin": "",
+        "techniques": techniques,
+    }
