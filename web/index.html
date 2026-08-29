@@ -269,12 +269,14 @@ const state = {
   weeklySchedule: [],
   battle: null,             // battle_state, o null fuori combattimento
   opponentCandidates: null, // sala d'attesa: 5 avversari tra cui scegliere, o null
+  lastDifficulty: null,     // l'ultima difficoltà cercata, per "Cerca altri avversari" senza rifare la scelta
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
   institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
+  editingBackground: false,  // sta modificando il background nella Scheda Cavaliere?
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -336,6 +338,7 @@ async function selectCharacter(id) {
   state.characterId = id;
   state.biography = null;  // il diario del personaggio precedente non deve restare in vista
   state.customTechniques = null;  // idem per le tecniche personalizzate
+  state.editingBackground = false;  // idem per una modifica del background lasciata a metà
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -546,6 +549,7 @@ async function doTrain(mode) {
 // --- Arena ---
 async function searchOpponent(difficulty) {
   try {
+    state.lastDifficulty = difficulty;  // per il pulsante "Cerca altri avversari", richiesto in chat
     const result = await api(`/characters/${state.characterId}/arena/candidates?difficulty=${difficulty}`, { method: "POST" });
     state.opponentCandidates = result.candidates;
     render();
@@ -987,6 +991,20 @@ async function loadInstitutionalNpcs() {
   render();
 }
 
+async function updateBackground(newText) {
+  try {
+    const result = await api(`/characters/${state.characterId}/background`, {
+      method: "POST",
+      body: JSON.stringify({ biography: newText }),
+    });
+    if (state.biography) state.biography.sketch = result.biography;
+    state.editingBackground = false;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 async function loadBiography() {
   try {
     state.biography = await api(`/characters/${state.characterId}/biography`);
@@ -1007,11 +1025,11 @@ async function loadCustomTechniques() {
   render();
 }
 
-async function createCustomTechnique(name, techType, launchDesc, effectDesc) {
+async function createCustomTechnique(name, techType, isDefensive, launchDesc, effectDesc) {
   try {
     await api(`/characters/${state.characterId}/custom-techniques`, {
       method: "POST",
-      body: JSON.stringify({ name, tech_type: techType, launch_desc: launchDesc, effect_desc: effectDesc }),
+      body: JSON.stringify({ name, tech_type: techType, is_defensive: isDefensive, launch_desc: launchDesc, effect_desc: effectDesc }),
     });
     state.customTechniques = null;  // si ricarica da sola con la nuova tecnica dentro
     render();
@@ -1174,10 +1192,28 @@ function renderSheetTab() {
   if (state.biography === null) {
     loadBiography();
     bgCard.append(el("p", { class: "hint" }, "Caricamento..."));
-  } else if (state.biography.sketch) {
-    bgCard.append(el("p", { style: "font-style:italic;" }, state.biography.sketch));
+  } else if (state.editingBackground) {
+    // Modifica del background dopo la creazione (richiesto in chat:
+    // prima si poteva scrivere solo alla creazione, mai più dopo).
+    const editInput = el("textarea", {
+      rows: "4", style: "width:100%;resize:vertical;",
+    });
+    editInput.value = state.biography.sketch || "";
+    bgCard.append(editInput);
+    const btnRow = el("div", { class: "row", style: "margin-top:6px;" });
+    btnRow.append(el("button", { onClick: () => updateBackground(editInput.value.trim()) }, "💾 Salva"));
+    btnRow.append(el("button", { class: "secondary", onClick: () => { state.editingBackground = false; render(); } }, "Annulla"));
+    bgCard.append(btnRow);
   } else {
-    bgCard.append(el("p", { class: "hint" }, "Nessun background scritto alla creazione."));
+    if (state.biography.sketch) {
+      bgCard.append(el("p", { style: "font-style:italic;" }, state.biography.sketch));
+    } else {
+      bgCard.append(el("p", { class: "hint" }, "Nessun background scritto alla creazione."));
+    }
+    bgCard.append(el("button", {
+      class: "secondary", style: "margin-top:8px;",
+      onClick: () => { state.editingBackground = true; render(); },
+    }, "✏️ Modifica"));
   }
   grid.append(bgCard);
 
@@ -1227,15 +1263,18 @@ function renderSheetTab() {
         const nameInput = el("input", { placeholder: "Nome della tecnica" });
         const elementSelect = el("select", {});
         for (const el_ of ct.allowed_elements) elementSelect.append(el("option", { value: el_ }, el_));
+        const roleSelect = el("select", {});
+        roleSelect.append(el("option", { value: "no" }, "Offensiva (per attaccare)"));
+        roleSelect.append(el("option", { value: "yes" }, "Difensiva (per parare)"));
         const launchInput = el("textarea", { placeholder: "Come si manifesta (opzionale)", rows: "2", style: "width:100%;resize:vertical;" });
         const effectInput = el("textarea", { placeholder: "Che effetto ha (opzionale)", rows: "2", style: "width:100%;resize:vertical;" });
         techCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Crea una nuova tecnica personalizzata:"));
-        techCard.append(nameInput, elementSelect, launchInput, effectInput);
+        techCard.append(nameInput, elementSelect, roleSelect, launchInput, effectInput);
         techCard.append(el("button", {
           style: "margin-top:6px;",
           onClick: () => {
             if (!nameInput.value.trim()) return showError("Dai un nome alla tecnica.");
-            createCustomTechnique(nameInput.value.trim(), elementSelect.value, launchInput.value.trim(), effectInput.value.trim());
+            createCustomTechnique(nameInput.value.trim(), elementSelect.value, roleSelect.value === "yes", launchInput.value.trim(), effectInput.value.trim());
           },
         }, "✨ Crea tecnica"));
       }
@@ -1344,6 +1383,10 @@ function renderArenaTab() {
         onClick: () => challengeOpponent(candidate),
       }, `⚔ ${candidate.name} (${candidate.divinity} / ${candidate.faction}, livello ${candidate.armor_level})`));
     }
+    waitingCard.append(el("button", {
+      class: "secondary",
+      onClick: () => searchOpponent(state.lastDifficulty),
+    }, "🔄 Cerca altri avversari"));
     waitingCard.append(el("button", { class: "secondary", onClick: () => { state.opponentCandidates = null; render(); } }, "◄ Cambia difficoltà"));
     wrap.append(waitingCard);
   } else {
@@ -1376,7 +1419,8 @@ function renderArenaTab() {
         // pieno, non ridotto per niente - in cambio, scegli TU con
         // quale delle tue tecniche rispondere, come un vero attacco.
         if (state.customTechniques === null) loadCustomTechniques();
-        const customTechs = state.customTechniques ? state.customTechniques.techniques : [];
+        const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
+          .filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv"));
         const counterOptions = [{ name: "Attacco Base", power: 20 }].concat(
           k.techniques.filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv")),
           customTechs,
@@ -1393,7 +1437,8 @@ function renderArenaTab() {
       // anche qui, non solo nella Scheda Cavaliere - si può arrivare
       // in Arena senza mai aver aperto quella scheda prima.
       if (state.customTechniques === null) loadCustomTechniques();
-      const customTechs = state.customTechniques ? state.customTechniques.techniques : [];
+      const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
+        .filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"));
       const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
         k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv")),
         customTechs,
