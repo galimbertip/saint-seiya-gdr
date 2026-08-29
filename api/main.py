@@ -163,7 +163,7 @@ def _record_fight_outcome(conn, knight: dict, opponent_name: str, winner: str) -
     conclusa (richiesto in chat) - chiamata da entrambi i punti in cui
     uno scontro può finire (declare e react), invece di duplicare la
     stessa logica due volte."""
-    cal = get_calendar_display(knight["game_minutes"])
+    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
     if winner == "player":
         entry = f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} sconfigge {opponent_name} nell'Arena."
     else:
@@ -178,7 +178,7 @@ def _knight_payload(conn, knight: dict) -> dict:
     cinque."""
     armor = get_armor(knight["armor_name"], conn)
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
-    calendar = get_calendar_display(knight["game_minutes"])
+    calendar = get_calendar_display(knight["created_at"], knight["game_minutes"])
     senses = get_unlocked_senses(knight["player_level"])
     movement_points = calculate_movement_points(knight["player_level"], knight["age"])
     return {
@@ -425,7 +425,7 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
         # nuovo Senso risvegliato diventano una voce del diario, non
         # solo un messaggio nel log dell'allenamento che sparisce alla
         # sessione successiva.
-        cal = get_calendar_display(knight["game_minutes"])
+        cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
         add_biography_entry(
             conn, knight["id"], knight["game_minutes"],
             f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} raggiunge il livello {new_level}.",
