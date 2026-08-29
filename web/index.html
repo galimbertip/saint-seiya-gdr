@@ -462,7 +462,8 @@ async function loadCreationScreen() {
   render();
 }
 
-const RANDOM_NAMES = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri", "Amara", "Sofia", "Yuki", "Elena", "Priya"];
+const RANDOM_NAMES_MALE = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri"];
+const RANDOM_NAMES_FEMALE = ["Amara", "Sofia", "Yuki", "Elena", "Priya"];
 const RANDOM_SURNAMES = ["Takeda", "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau", "Petrova"];
 const RANDOM_GENDERS = ["Maschio", "Femmina"];
 const BUILD_OPTIONS = ["Minuta", "Media", "Robusta"];
@@ -483,14 +484,19 @@ function randomFrom(arr) {
 async function createRandomCharacter() {
   if (state.armors.length === 0) return showError("Nessuna armatura disponibile.");
   const armor = randomFrom(state.armors);
+  // Il sesso si sceglie PRIMA del nome (corretto in chat: prima erano
+  // indipendenti, capitava un "Sofia" con sesso "Maschio") - il nome
+  // arriva da un elenco coerente con il sesso appena scelto.
+  const gender = randomFrom(RANDOM_GENDERS);
+  const namePool = gender === "Femmina" ? RANDOM_NAMES_FEMALE : RANDOM_NAMES_MALE;
   const details = {
     surname: randomFrom(RANDOM_SURNAMES),
     age: 14 + Math.floor(Math.random() * 9),  // 14-22, l'età tipica di un cavaliere
-    gender: randomFrom(RANDOM_GENDERS),
+    gender,
     origin: randomCountryFromGeo(),
     build: randomFrom(BUILD_OPTIONS),
   };
-  await createCharacter(randomFrom(RANDOM_NAMES), armor.name, details);
+  await createCharacter(randomFrom(namePool), armor.name, details);
 }
 
 async function createCharacter(rawName, armorName, details = {}) {
@@ -683,16 +689,27 @@ async function goToKnightsHall() {
 }
 
 function applyArenaResult(result) {
+  // Riconosce se lo scontro appena concluso era la Prova Finale
+  // (richiesto in chat: ora è un vero combattimento, non un tiro di
+  // dado - va gestito diversamente da una normale vittoria/sconfitta
+  // in Arena) guardando il flag is_trial PRIMA che state.battle venga
+  // sovrascritto.
+  const wasTrial = state.battle && state.battle.is_trial;
   state.character = result.character;
   state.arenaLog = [...state.arenaLog, ...result.log];
   state.battle = result.fight_over ? null : result.battle_state;
   state.showCounterPicker = false;  // ogni round risolto riparte pulito
   if (result.fight_over) {
-    state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
     // Uno scontro concluso aggiunge sempre una voce al diario - stesso
     // fix di doTrain, invalido la cache per ricaricarla alla prossima
     // apertura della Scheda Cavaliere.
     state.biography = null;
+    if (wasTrial) {
+      state.trialResult = { passed: result.won };
+      state.trainingPath = null;  // si ricarica da sola (tappa di ripreparazione, o nulla se ora è Cavaliere)
+    } else {
+      state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
+    }
   }
   render();
 }
@@ -1058,13 +1075,15 @@ async function advanceTraining() {
   }
 }
 
-async function attemptFinalTrial() {
+async function startFinalTrial() {
+  // La Prova Finale ora è un vero combattimento (richiesto in chat) -
+  // stesso motore dell'Arena, avviato da un endpoint apposito che
+  // sceglie l'avversario (Maestro o compagno) e marca lo scontro come
+  // "is_trial" nel battle_state.
   try {
-    const result = await api(`/characters/${state.characterId}/training-path/trial`, { method: "POST" });
-    state.trialResult = result;  // mostrato come messaggio a parte prima di procedere
-    if (result.is_knight) {
-      await refreshCharacter();  // le schede Allenamento/Arena si sbloccano da qui in poi
-    }
+    const result = await api(`/characters/${state.characterId}/training-path/trial/start`, { method: "POST" });
+    state.battle = result.battle_state;
+    state.arenaLog = [];
     render();
   } catch (e) {
     showError(e.message);
@@ -1072,7 +1091,7 @@ async function attemptFinalTrial() {
 }
 
 function closeTrialResult() {
-  const eraCavaliere = state.trialResult && state.trialResult.is_knight;
+  const eraCavaliere = state.character.is_knight;
   state.trialResult = null;
   state.trainingPath = null;  // si ricarica da sola (tappa di ripreparazione, o nulla se ora è Cavaliere)
   if (eraCavaliere) state.gameTab = "sheet";
@@ -1247,6 +1266,12 @@ function renderSheetTab() {
     k.build && k.build !== "Media" ? `Corporatura ${k.build}` : null,
   ].filter(Boolean).join(" · ");
   idCard.append(el("p", { class: "hint" }, idLine));
+  // Stato esplicito Apprendista/Cavaliere (richiesto in chat: prima non
+  // si capiva subito se si stesse già indossando l'armatura o se ci si
+  // stesse ancora addestrando per ottenerla).
+  idCard.append(el("p", {}, k.is_knight
+    ? "🎖️ Cavaliere"
+    : el("span", {}, "🎓 Apprendista - in addestramento per diventare portatore di ", el("strong", {}, k.armor_name))));
   grid.append(idCard);
 
   // --- BG Personaggio: solo l'abbozzo scritto alla creazione, non le
@@ -1372,13 +1397,35 @@ function renderTrainingPathTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Percorso di Apprendistato"));
 
-  // Il risultato della Prova Finale, se è appena arrivato - mostrato a
+  // La Prova Finale è in corso (richiesto in chat: un vero
+  // combattimento, non un tiro di dado) - stessa interfaccia
+  // dell'Arena, mostrata qui invece che nella scheda Arena (che gli
+  // Apprendisti non hanno).
+  if (state.battle) {
+    wrap.append(el("h2", {}, "⚔ La Prova Finale"));
+    appendBattleColumns(wrap);
+    const logCard = el("div", { class: "card" });
+    logCard.append(el("h2", {}, "Cronaca dello scontro"));
+    const logBox = el("div", { class: "log-box" });
+    for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+    logCard.append(logBox);
+    wrap.append(logCard);
+    return wrap;
+  }
+
+  // Il risultato della Prova Finale, appena conclusa - mostrato a
   // parte prima di procedere (richiesto in chat: dev'essere possibile
-  // fallire, e il fallimento va raccontato, non solo un numero che cambia).
+  // fallire, e il fallimento va raccontato, non solo un numero che
+  // cambia) - la cronaca dello scontro appena finito resta in vista.
   if (state.trialResult) {
     const resultCard = el("div", { class: "card" });
     resultCard.append(el("h2", {}, state.trialResult.passed ? "🏆 Prova Finale superata!" : "Prova Finale non superata"));
-    resultCard.append(el("p", {}, state.trialResult.narrative));
+    resultCard.append(el("p", { class: "hint" }, state.trialResult.passed
+      ? "Sei ora un Cavaliere a tutti gli effetti - Allenamento e Arena sono sbloccati."
+      : "Non oggi. Torna a prepararti: potrai riprovare quando vuoi."));
+    const logBox = el("div", { class: "log-box" });
+    for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+    resultCard.append(logBox);
     resultCard.append(el("button", { onClick: closeTrialResult }, state.trialResult.passed ? "Continua come Cavaliere" : "Torna a prepararti"));
     wrap.append(resultCard);
     return wrap;
@@ -1392,12 +1439,23 @@ function renderTrainingPathTab() {
 
   const tp = state.trainingPath;
 
+  // Intestazione sempre visibile (richiesto in chat: prima l'armatura
+  // del Maestro e per chi ti stai addestrando non si vedevano mai
+  // esplicitamente, solo dentro il testo della prima tappa).
+  const infoLine = tp.ready_for_trial
+    ? { master: tp.master_name, masterArmor: tp.master_armor_name, yourArmor: tp.your_armor_name, c1: tp.companion1_name, c2: tp.companion2_name }
+    : { master: tp.stage.master_name, masterArmor: tp.stage.master_armor_name, yourArmor: tp.stage.your_armor_name, c1: tp.stage.companion1_name, c2: tp.stage.companion2_name };
+  const infoCard = el("div", { class: "card" });
+  infoCard.append(el("p", {}, `🎓 Ti stai addestrando per diventare portatore di `, el("strong", {}, infoLine.yourArmor)));
+  infoCard.append(el("p", { class: "hint" }, `Maestro: ${infoLine.master} (${infoLine.masterArmor}) · Compagni: ${infoLine.c1}, ${infoLine.c2}`));
+  wrap.append(infoCard);
+
   if (tp.ready_for_trial) {
     const trialCard = el("div", { class: "card" });
     trialCard.append(el("h2", {}, "La Prova Finale"));
-    trialCard.append(el("p", {}, `Hai completato l'addestramento sotto la guida di ${tp.master_name}, fianco a fianco con ${tp.companion1_name} e ${tp.companion2_name}. Non resta che una cosa: la Prova Finale, uno scontro vero contro chi ti ha accompagnato fin qui - a volte contro un compagno, a volte (raramente) contro il Maestro stesso, impegnato al massimo.`));
+    trialCard.append(el("p", {}, "Hai completato l'addestramento. Non resta che una cosa: uno scontro vero contro chi ti ha accompagnato fin qui - a volte contro un compagno, a volte (raramente) contro il Maestro stesso, impegnato al massimo."));
     trialCard.append(el("p", { class: "hint" }, "Puoi fallire - in tal caso tornerai a prepararti e potrai riprovare."));
-    trialCard.append(el("button", { onClick: attemptFinalTrial }, "⚔ Affronta la Prova Finale"));
+    trialCard.append(el("button", { onClick: startFinalTrial }, "⚔ Affronta la Prova Finale"));
     wrap.append(trialCard);
     return wrap;
   }
@@ -1499,101 +1557,7 @@ function renderArenaTab() {
     waitingCard.append(el("button", { class: "secondary", onClick: () => { state.opponentCandidates = null; render(); } }, "◄ Cambia difficoltà"));
     wrap.append(waitingCard);
   } else {
-    const k = state.character;
-    const o = state.battle.opponent;
-    // Scala condivisa: chi ha più Cosmo massimo ha la barra fisicamente
-    // più "grossa", non solo la percentuale - prima le due barre
-    // avevano sempre la stessa lunghezza anche con Cosmo massimo
-    // molto diverso tra i due combattenti.
-    const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
-
-    const columns = el("div", { class: "arena-columns" });
-
-    // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
-    const leftPanel = el("div", { class: "fighter-panel" });
-    leftPanel.append(el("h2", {}, k.formal_name));
-    leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
-    leftPanel.append(renderFullBar(k.cosmo_cur, k.cosmo_max, sharedMaxCosmo));
-
-    if (state.battle.pending_opponent_technique) {
-      const t = state.battle.pending_opponent_technique;
-      leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
-
-      if (!state.showCounterPicker) {
-        leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
-        leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
-        leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
-      } else {
-        // Contrattacco (richiesto in chat): il colpo avversario arriva
-        // pieno, non ridotto per niente - in cambio, scegli TU con
-        // quale delle tue tecniche rispondere, come un vero attacco.
-        if (state.customTechniques === null) loadCustomTechniques();
-        const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
-          .filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv"));
-        const counterOptions = [{ name: "Attacco Base", power: 20 }].concat(
-          k.techniques.filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv")),
-          customTechs,
-        );
-        leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Il colpo avversario arriva pieno, senza riduzione - scegli con cosa rispondere:"));
-        for (const ct of counterOptions) {
-          leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
-        }
-        leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
-      }
-    } else {
-      const senses = k.senses;
-      // Tecniche personalizzate (richiesto in chat): caricate pigre
-      // anche qui, non solo nella Scheda Cavaliere - si può arrivare
-      // in Arena senza mai aver aperto quella scheda prima.
-      if (state.customTechniques === null) loadCustomTechniques();
-      const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
-        .filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"));
-      const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
-        k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv")),
-        customTechs,
-      );
-      leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
-      for (const t of attackOptions) {
-        leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
-      }
-      leftPanel.append(el("button", {
-        onClick: declareCharge,
-        class: "secondary",
-        ...(senses.sesto ? {} : { disabled: "disabled" }),
-      }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica (richiede Sesto Senso)"));
-      leftPanel.append(el("button", { class: "secondary", onClick: retreat }, "Ritirati"));
-    }
-    columns.append(leftPanel);
-
-    // --- Colonna centrale: la mappa ---
-    const mapColumn = el("div", { class: "arena-map-column" });
-    const mapCard = el("div", { class: "card" });
-    mapCard.append(el("h2", {}, "Arena"));
-    mapCard.append(renderArenaMap());
-    const movementHint = state.battle.pending_opponent_technique
-      ? "Rispondi all'attacco prima di poterti muovere ancora."
-      : `Punti Movimento: ${k.movement_points} — clicca sulla mappa per spostarti. L'Attacco Base richiede stare vicini; le tecniche vere colpiscono a distanza. Muoverti molto consuma il turno.`;
-    mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
-    mapColumn.append(mapCard);
-    columns.append(mapColumn);
-
-    // --- Pannello destro: L'AVVERSARIO ---
-    // Le sue tecniche sono mostrate ma NON cliccabili - oggi lo
-    // controlla l'IA, ma la disposizione è pronta per un domani in cui
-    // due cavalieri diversi (magari due giocatori) potrebbero
-    // scegliere ciascuno le proprie tecniche dalla stessa schermata
-    // (richiesto in chat).
-    const rightPanel = el("div", { class: "fighter-panel opponent-panel" });
-    rightPanel.append(el("h2", {}, o.name));
-    rightPanel.append(el("p", { class: "hint" }, `${o.divinity} / ${o.faction} · Livello armatura ${o.armor_level}`));
-    rightPanel.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
-    rightPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le sue tecniche:"));
-    for (const t of o.techniques) {
-      rightPanel.append(el("button", { disabled: "disabled" }, `⚔ ${t.name} (${t.power})`));
-    }
-    columns.append(rightPanel);
-
-    wrap.append(columns);
+    appendBattleColumns(wrap);
   }
 
   const logCard = el("div", { class: "card" });
@@ -1605,6 +1569,115 @@ function renderArenaTab() {
   wrap.append(logCard);
 
   return wrap;
+}
+
+// Il pannello di combattimento vero e proprio (mappa, tecniche,
+// reazioni) - estratto in una funzione a sé (richiesto in chat: la
+// Prova Finale ora è un vero combattimento, non un tiro di dado
+// narrato, e riusa esattamente questa stessa interfaccia dell'Arena,
+// invece di duplicarla) - riceve il contenitore a cui aggiungere le
+// colonne.
+function appendBattleColumns(wrap) {
+  const k = state.character;
+  const o = state.battle.opponent;
+  // Scala condivisa: chi ha più Cosmo massimo ha la barra fisicamente
+  // più "grossa", non solo la percentuale - prima le due barre
+  // avevano sempre la stessa lunghezza anche con Cosmo massimo
+  // molto diverso tra i due combattenti.
+  const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
+
+  const columns = el("div", { class: "arena-columns" });
+
+  // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
+  const leftPanel = el("div", { class: "fighter-panel" });
+  leftPanel.append(el("h2", {}, k.formal_name));
+  leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
+  leftPanel.append(renderFullBar(k.cosmo_cur, k.cosmo_max, sharedMaxCosmo));
+
+  if (state.battle.pending_opponent_technique) {
+    const t = state.battle.pending_opponent_technique;
+    leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
+
+    if (!state.showCounterPicker) {
+      leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
+      leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
+      leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
+    } else {
+      // Contrattacco (richiesto in chat): il colpo avversario arriva
+      // pieno, non ridotto per niente - in cambio, scegli TU con
+      // quale delle tue tecniche rispondere, come un vero attacco.
+      if (state.customTechniques === null) loadCustomTechniques();
+      const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
+        .filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv"));
+      const counterOptions = [{ name: "Attacco Base", power: 20 }].concat(
+        k.techniques.filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv")),
+        customTechs,
+      );
+      leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Il colpo avversario arriva pieno, senza riduzione - scegli con cosa rispondere:"));
+      for (const ct of counterOptions) {
+        leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
+      }
+      leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
+    }
+  } else {
+    const senses = k.senses;
+    // Tecniche personalizzate (richiesto in chat): caricate pigre
+    // anche qui, non solo nella Scheda Cavaliere - si può arrivare
+    // in Arena senza mai aver aperto quella scheda prima.
+    if (state.customTechniques === null) loadCustomTechniques();
+    const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
+      .filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"));
+    const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
+      k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv")),
+      customTechs,
+    );
+    leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
+    for (const t of attackOptions) {
+      leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
+    }
+    leftPanel.append(el("button", {
+      onClick: declareCharge,
+      class: "secondary",
+      ...(senses.sesto ? {} : { disabled: "disabled" }),
+    }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica (richiede Sesto Senso)"));
+    // Ritirarsi non ha senso durante la Prova Finale (richiesto in
+    // chat: è il momento decisivo dell'addestramento) - solo in un
+    // vero scontro d'Arena.
+    if (!state.battle.is_trial) {
+      leftPanel.append(el("button", { class: "secondary", onClick: retreat }, "Ritirati"));
+    }
+  }
+  columns.append(leftPanel);
+
+  // --- Colonna centrale: la mappa ---
+  const mapColumn = el("div", { class: "arena-map-column" });
+  const mapCard = el("div", { class: "card" });
+  mapCard.append(el("h2", {}, "Arena"));
+  mapCard.append(renderArenaMap());
+  const movementHint = state.battle.pending_opponent_technique
+    ? "Rispondi all'attacco prima di poterti muovere ancora."
+    : `Punti Movimento: ${k.movement_points} — clicca sulla mappa per spostarti. L'Attacco Base richiede stare vicini; le tecniche vere colpiscono a distanza. Muoverti molto consuma il turno.`;
+  mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
+  mapColumn.append(mapCard);
+  columns.append(mapColumn);
+
+  // --- Pannello destro: L'AVVERSARIO ---
+  // Le sue tecniche sono mostrate ma NON cliccabili - oggi lo
+  // controlla l'IA, ma la disposizione è pronta per un domani in cui
+  // due cavalieri diversi (magari due giocatori) potrebbero
+  // scegliere ciascuno le proprie tecniche dalla stessa schermata
+  // (richiesto in chat).
+  const rightPanel = el("div", { class: "fighter-panel opponent-panel" });
+  rightPanel.append(el("h2", {}, o.name));
+  rightPanel.append(el("p", { class: "hint" }, `${o.divinity} / ${o.faction} · Livello armatura ${o.armor_level}`));
+  rightPanel.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
+  rightPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le sue tecniche:"));
+  for (const t of o.techniques) {
+    rightPanel.append(el("button", { disabled: "disabled" }, `⚔ ${t.name} (${t.power})`));
+  }
+  columns.append(rightPanel);
+
+  wrap.append(columns);
 }
 
 function renderFullBar(value, max, scaleMax) {
