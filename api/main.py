@@ -49,7 +49,8 @@ from core.version import APP_VERSION
 from core.institutional_npcs import get_institutional_npcs
 from core.training_path import (
     render_stage, generate_trial_opponent, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
-    KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE,
+    KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE, TRAINING_STAGES, resolve_skill_check,
+    build_stage_context,
 )
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
@@ -208,6 +209,11 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
                 f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
                 f"non supera la Prova Finale contro {opponent_name} - dovrà prepararsi meglio prima di riprovare.",
             )
+    elif battle_state.get("is_spar"):
+        # Lo scontro leggero della tappa "Fianco a fianco" (richiesto
+        # in chat) - si avanza comunque, vinca o perda: qui si fa
+        # pratica, non si rischia l'addestramento.
+        knight["training_stage"] += 1
     else:
         _record_fight_outcome(conn, knight, opponent_name, winner)
 
@@ -408,6 +414,102 @@ def api_advance_training(knight_id: int, conn=Depends(get_db)):
 
     save_knight(conn, knight)
     return {"training_stage": knight["training_stage"], "leveled_up_to": leveled_up_to}
+
+
+@app.post("/characters/{knight_id}/training-path/attempt")
+def api_training_attempt(knight_id: int, conn=Depends(get_db)):
+    """Un vero tiro di dado per una tappa 'skill_check' (richiesto in
+    chat: tutto l'addestramento dev'essere interattivo) - NON avanza
+    la tappa da solo: sul successo dà un piccolo premio permanente alla
+    statistica in gioco, poi il chiamante userà .../advance per
+    proseguire; sul fallimento, il chiamante può richiamare di nuovo
+    questo stesso endpoint (riprova) o comunque .../advance (accetta il
+    fallimento e va avanti senza premio)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+    if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
+        raise HTTPException(status_code=400, detail="Non c'è nessuna tappa da tentare in questo momento.")
+
+    stage_def = TRAINING_STAGES[knight["training_stage"]]
+    if stage_def["type"] != "skill_check":
+        raise HTTPException(status_code=400, detail="Questa tappa non richiede una prova a dado.")
+
+    techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    ctx = build_stage_context(
+        knight["master_name"], knight["master_armor_name"], knight["companion1_name"],
+        knight["companion2_name"], techniques, knight["armor_name"],
+    )
+    success = resolve_skill_check(knight, stage_def["stat"])
+    if success:
+        knight[stage_def["stat"]] += 1  # piccolo premio permanente, PLACEHOLDER come le altre formule
+        save_knight(conn, knight)
+
+    text = (stage_def["success_text"] if success else stage_def["failure_text"]).format(**ctx)
+    return {"success": success, "text": text, "stat": stage_def["stat"]}
+
+
+class TrainingChoiceRequest(BaseModel):
+    option_index: int
+
+
+@app.post("/characters/{knight_id}/training-path/choose")
+def api_training_choose(knight_id: int, req: TrainingChoiceRequest, conn=Depends(get_db)):
+    """Risolve una scelta per una tappa 'choice' (richiesto in chat) -
+    applica l'eventuale premio permanente alla statistica dell'opzione
+    scelta, restituisce l'esito narrativo. Non avanza la tappa da solo
+    (il chiamante userà .../advance dopo, come per uno skill_check
+    riuscito) - una scelta non si "fallisce", ma restare coerenti con
+    lo stesso schema di avanzamento evita due percorsi diversi nel
+    frontend."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+    if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
+        raise HTTPException(status_code=400, detail="Non c'è nessuna tappa da scegliere in questo momento.")
+
+    stage_def = TRAINING_STAGES[knight["training_stage"]]
+    if stage_def["type"] != "choice":
+        raise HTTPException(status_code=400, detail="Questa tappa non prevede una scelta.")
+    if not (0 <= req.option_index < len(stage_def["options"])):
+        raise HTTPException(status_code=400, detail="Scelta non valida.")
+
+    option = stage_def["options"][req.option_index]
+    if option.get("bonus_stat"):
+        knight[option["bonus_stat"]] += 1
+        save_knight(conn, knight)
+
+    techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    ctx = build_stage_context(
+        knight["master_name"], knight["master_armor_name"], knight["companion1_name"],
+        knight["companion2_name"], techniques, knight["armor_name"],
+    )
+    return {"text": option["outcome_text"].format(**ctx)}
+
+
+@app.post("/characters/{knight_id}/training-path/spar/start")
+def api_start_spar(knight_id: int, conn=Depends(get_db)):
+    """Avvia lo scontro leggero della tappa 'Fianco a fianco' (richiesto
+    in chat) - stesso motore della Prova Finale, ma contro il secondo
+    compagno (il primo resta riservato alla Prova Finale) e marcato
+    is_spar invece di is_trial: la conclusione (vedi
+    _handle_fight_conclusion) fa avanzare la tappa comunque, vinca o
+    perda - qui si fa pratica, non si rischia l'addestramento."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+    if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
+        raise HTTPException(status_code=400, detail="Non c'è nessuno scontro di prova in questo momento.")
+
+    stage_def = TRAINING_STAGES[knight["training_stage"]]
+    if stage_def["type"] != "spar":
+        raise HTTPException(status_code=400, detail="Questa tappa non prevede uno scontro.")
+
+    armor = get_armor(knight["armor_name"], conn)
+    spar_opponent = generate_trial_opponent(conn, False, knight["companion2_name"], "", armor)
+    battle_state = start_battle(conn, knight, armor, opponent=spar_opponent)
+    battle_state["is_spar"] = True
+    return {"battle_state": battle_state}
 
 
 @app.post("/characters/{knight_id}/training-path/trial/start")
