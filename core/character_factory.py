@@ -19,9 +19,11 @@ from datetime import datetime
 
 from database.db_manager import (
     get_armor, list_armors_for_player_level, get_roster_entry, insert_roster_entry, claim_roster_slot,
+    add_biography_entry,
 )
 from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
 from core.training_path import select_master, generate_companions
+from core.fm_manager import get_calendar_display
 
 STARTING_COSMO_BASE = 100
 STARTING_STAT_BASE = 10
@@ -146,6 +148,18 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     conn.commit()
 
     claim_roster_slot(conn, armor_name, cur.lastrowid)
+
+    if not is_knight:
+        # Diario auto-scritto (richiesto in chat): il momento in cui
+        # inizia l'addestramento merita una voce, con Maestro/armatura e
+        # compagni - prima non c'era traccia di questo nel Diario.
+        cal = get_calendar_display(created_at, 0)
+        add_biography_entry(
+            conn, cur.lastrowid, 0,
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {raw_name} inizia il proprio "
+            f"addestramento sotto la guida di {master_name} ({master_armor_name}), "
+            f"insieme a {companion1_name} e {companion2_name}.",
+        )
 
     return get_knight(conn, cur.lastrowid)
 
