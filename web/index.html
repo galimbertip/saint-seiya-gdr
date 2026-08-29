@@ -274,6 +274,7 @@ const state = {
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
+  institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -976,6 +977,16 @@ async function loadRoster() {
   render();
 }
 
+async function loadInstitutionalNpcs() {
+  try {
+    state.institutionalNpcs = await api("/institutional-npcs");
+  } catch (e) {
+    showError(e.message);
+    state.institutionalNpcs = [];
+  }
+  render();
+}
+
 async function loadBiography() {
   try {
     state.biography = await api(`/characters/${state.characterId}/biography`);
@@ -1016,6 +1027,25 @@ async function createCustomTechnique(name, techType, launchDesc, effectDesc) {
 // reclamata.
 function renderHierarchyTab() {
   const wrap = el("div");
+
+  // Le Figure Istituzionali (richiesto in chat): un minimo di gdr,
+  // statiche e non giocabili - Il Grande Sacerdote, Pandora, ecc.
+  // Mostrate in cima, prima dell'elenco delle armature.
+  if (state.institutionalNpcs === null) {
+    loadInstitutionalNpcs();
+  } else if (state.institutionalNpcs.length > 0) {
+    const npcCard = el("div", { class: "card" });
+    npcCard.append(el("h2", {}, "Le Figure del Sacro Imperio"));
+    for (const npc of state.institutionalNpcs) {
+      const block = el("div", { style: "margin-top:12px;" });
+      block.append(el("p", {}, el("strong", {}, `${npc.name}`), ` — ${npc.divinity}`));
+      block.append(el("p", { class: "hint" }, npc.role));
+      block.append(el("p", {}, npc.description));
+      block.append(el("p", { style: "font-style:italic;" }, `"${npc.quote}"`));
+      npcCard.append(block);
+    }
+    wrap.append(npcCard);
+  }
 
   if (state.roster === null) {
     loadRoster();
