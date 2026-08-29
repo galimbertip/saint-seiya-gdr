@@ -69,7 +69,13 @@ CREATE TABLE IF NOT EXISTS knights (
     skin_tone TEXT NOT NULL DEFAULT '',
     hair_color TEXT NOT NULL DEFAULT '',
     avatar_path TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT ''
+    created_at TEXT NOT NULL DEFAULT '',
+    is_knight INTEGER NOT NULL DEFAULT 1,
+    training_stage INTEGER NOT NULL DEFAULT 0,
+    master_name TEXT NOT NULL DEFAULT '',
+    master_armor_name TEXT NOT NULL DEFAULT '',
+    companion1_name TEXT NOT NULL DEFAULT '',
+    companion2_name TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -204,6 +210,19 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE knights SET created_at = ? WHERE created_at = ''", (now_iso,))
         conn.commit()
         log.info("Migrazione: aggiunta colonna created_at a knights (approssimata a 'adesso' per i salvataggi esistenti).")
+    if "is_knight" not in existing_columns:
+        # Apprendistato (richiesto in chat): i personaggi già esistenti
+        # nascono già "Cavalieri" (is_knight=1) - nessuno resta bloccato
+        # retroattivamente da un percorso che non esisteva quando sono
+        # stati creati.
+        conn.execute("ALTER TABLE knights ADD COLUMN is_knight INTEGER NOT NULL DEFAULT 1")
+        conn.execute("ALTER TABLE knights ADD COLUMN training_stage INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE knights ADD COLUMN master_name TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN master_armor_name TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN companion1_name TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN companion2_name TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne dell'apprendistato a knights (salvataggi esistenti già 'Cavalieri').")
 
 
 def get_connection() -> sqlite3.Connection:
