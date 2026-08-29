@@ -1060,10 +1060,20 @@ function renderHierarchyTab() {
     groups[r.divinity][r.faction].push(r);
   }
 
+  // Le fazioni si ordinano dal livello medio delle proprie armature,
+  // più debole a più forte (corretto in chat: l'ordine alfabetico
+  // mescolava Bronze/Gold/Silver a caso, senza nessuna gerarchia
+  // vera). Il criterio si ricava dai dati stessi, niente elenco
+  // scritto a mano per ciascuna delle 13 divinità.
+  const averageFactionLevel = (entries) => entries.reduce((sum, e) => sum + e.level, 0) / entries.length;
+
   for (const divinity of Object.keys(groups).sort()) {
     const divCard = el("div", { class: "card" });
     divCard.append(el("h2", {}, divinity));
-    for (const faction of Object.keys(groups[divinity]).sort()) {
+    const factionsByPower = Object.keys(groups[divinity]).sort(
+      (a, b) => averageFactionLevel(groups[divinity][a]) - averageFactionLevel(groups[divinity][b])
+    );
+    for (const faction of factionsByPower) {
       divCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, faction));
       const table = el("table");
       table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Livello"), el("th", {}, "Occupante")));
