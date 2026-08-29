@@ -217,7 +217,18 @@ _FRONTEND_PATH = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 @app.get("/app", response_class=HTMLResponse)
 def serve_frontend():
-    return _FRONTEND_PATH.read_text(encoding="utf-8")
+    # Niente cache per questa pagina (diagnosticato in chat: un proxy
+    # intermedio - probabile l'inoltro delle porte di Codespaces -
+    # continuava a servire una versione vecchia anche dopo refresh
+    # forzato e riavvio del Codespace). Intestazioni esplicite per
+    # impedire a QUALSIASI livello (browser o proxy) di mettere in
+    # cache questa risposta.
+    headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return HTMLResponse(content=_FRONTEND_PATH.read_text(encoding="utf-8"), headers=headers)
 
 
 # --------------------------- Personaggi ---------------------------
