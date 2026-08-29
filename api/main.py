@@ -118,6 +118,7 @@ class CreateCharacterRequest(BaseModel):
 class CreateCustomTechniqueRequest(BaseModel):
     name: str
     tech_type: str
+    is_defensive: bool = False
     launch_desc: Optional[str] = ""
     effect_desc: Optional[str] = ""
 
@@ -276,6 +277,22 @@ def api_mark_tutorial_seen(knight_id: int, conn=Depends(get_db)):
     return {"tutorial_seen": True}
 
 
+class UpdateBackgroundRequest(BaseModel):
+    biography: str
+
+
+@app.post("/characters/{knight_id}/background")
+def api_update_background(knight_id: int, req: UpdateBackgroundRequest, conn=Depends(get_db)):
+    """Modifica l'abbozzo del background dopo la creazione (richiesto
+    in chat: prima si poteva scrivere solo alla creazione, mai più
+    dopo). Tocca solo l'abbozzo iniziale, non le voci auto-generate del
+    Diario (quelle restano una cronaca, non modificabile)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    knight["biography"] = req.biography.strip()
+    save_knight(conn, knight)
+    return {"biography": knight["biography"]}
+
+
 @app.post("/characters/{knight_id}/avatar")
 async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=Depends(get_db)):
     """Carica un'immagine come ritratto del personaggio (richiesto in
@@ -343,8 +360,14 @@ def api_create_custom_technique(knight_id: int, req: CreateCustomTechniqueReques
         )
 
     power = calculate_custom_technique_power(knight["player_level"])
+    # Offensiva o difensiva (richiesto in chat - mancava del tutto):
+    # stessa convenzione delle tecniche del catalogo, un suffisso
+    # '/Difensivo' nel tech_type, riconosciuto ovunque nel motore
+    # cerca "difensiv" per escludere una tecnica dalle opzioni
+    # d'attacco o includerla come difesa automatica.
+    stored_tech_type = f"{req.tech_type}/Difensivo" if req.is_defensive else req.tech_type
     add_custom_technique(
-        conn, knight_id, req.name.strip(), req.tech_type,
+        conn, knight_id, req.name.strip(), stored_tech_type,
         (req.launch_desc or "").strip(), (req.effect_desc or "").strip(), power,
     )
     return {"created": True, "power": power}
@@ -553,6 +576,10 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
         raise HTTPException(status_code=400, detail="Nessun attacco in sospeso a cui reagire")
 
     my_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    # Le tecniche difensive personalizzate (richiesto in chat) contano
+    # anche loro per la scelta automatica di "Difenditi" - prima
+    # venivano ignorate, solo quelle del catalogo erano considerate.
+    my_techniques += [dict(t) for t in get_custom_techniques(conn, knight_id)]
     my_defense = find_defensive_technique(my_techniques)
 
     log, fight_over, winner = resolve_react(
