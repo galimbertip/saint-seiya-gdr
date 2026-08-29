@@ -26,7 +26,7 @@ from core.arena_manager import (
     status_resisted, calculate_movement_points, try_move, wander_opponent,
     check_attack_range, movement_uses_turn, range_effect, combine_roll_modes, distance_between,
     origin_affinity_modifier, maybe_create_terrain_effect, tick_terrain_effects, position_in_ice_patch,
-    apply_flame_damage, apply_mud_penalty, pick_arena_theme,
+    apply_flame_damage, apply_mud_penalty, pick_arena_theme, cycle_modifier, cycle_narrative,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
     CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
@@ -467,8 +467,19 @@ def resolve_react(knight: dict, armor: dict, action: str,
     elif action == "difenditi":
         defense_technique = my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
         reduced = resolve_defense(dmg2, defense_technique["power"])
+        # Ciclo elementale (richiesto in chat): se la tua tecnica
+        # difensiva ha un elemento del ciclo, viene confrontata con
+        # l'elemento dell'attacco - più efficace se lo batte, meno se
+        # ne è battuta. La Parata generica non ha un elemento proprio
+        # (nessun tech_type), quindi resta sempre neutra (moltiplicatore
+        # 1.0, invariata).
+        cycle_mod = cycle_modifier(defense_technique.get("tech_type", ""), t.get("tech_type", ""))
+        reduced = max(0, round(reduced / cycle_mod))
+        cycle_msg = cycle_narrative(defense_technique.get("tech_type", ""), t.get("tech_type", ""))
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
         log.append(f"{msg2} — ti difendi con {defense_technique['name']}, il danno scende a {reduced}.")
+        if cycle_msg:
+            log.append(cycle_msg)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "blocked", "tech_type": t.get("tech_type", "")}
         final_damage_dealt2 = reduced
     else:
@@ -557,8 +568,15 @@ def resolve_react(knight: dict, armor: dict, action: str,
             dmg3 = round(dmg3 * range_power_mult3)
             dmg3 = round(dmg3 * origin_affinity_modifier(knight.get("origin", ""), counter_technique_type, as_attacker=True))
             dmg3 = round(dmg3 * origin_affinity_modifier(opponent.get("origin", ""), counter_technique_type, as_attacker=False))
+            # Ciclo elementale (richiesto in chat): la TUA tecnica di
+            # contrattacco contro l'elemento dell'attacco che ti ha
+            # appena colpito - un vero scontro diretto tra due tecniche.
+            dmg3 = round(dmg3 * cycle_modifier(counter_technique_type, t.get("tech_type", "")))
             dmg3 = apply_charge(dmg3, True, battle_state)
             msg3 = format_damage_message(msg3, dmg3)
+            cycle_msg3 = cycle_narrative(counter_technique_type, t.get("tech_type", ""))
+            if cycle_msg3:
+                log.append(cycle_msg3)
 
             if dmg3 == 0:
                 log.append(msg3)
