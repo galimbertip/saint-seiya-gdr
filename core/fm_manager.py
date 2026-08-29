@@ -30,6 +30,7 @@ valori definitivi - li tariamo insieme quando affrontiamo il
 bilanciamento vero e proprio. La struttura è quella buona.
 """
 import random
+from datetime import datetime, timedelta
 
 from core.arena_manager import get_unlocked_senses
 
@@ -74,9 +75,10 @@ DEFAULT_WEEKLY_SCHEDULE_STR = ",".join(DEFAULT_WEEKLY_SCHEDULE)
 # --- Calendario (a minuti) -------------------------------------------------
 MINUTES_PER_HOUR = 60
 MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR
-DAYS_PER_MONTH = 30  # placeholder, calendario semplificato
-MONTHS_PER_YEAR = 12
-DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS_PER_YEAR  # 360
+# DAYS_PER_MONTH ora serve SOLO per "Avanza Mese" nell'allenamento
+# (quante sessioni di fila = un mese di training) - non più per il
+# calendario, che è reale (vedi get_calendar_display più sotto).
+DAYS_PER_MONTH = 30
 
 MONTH_NAMES = [
     "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
@@ -128,28 +130,26 @@ def serialize_weekly_schedule(days: list[str]) -> str:
     return ",".join(days[:7])
 
 
-def get_calendar_display(game_minutes: int) -> dict:
-    """Converte il contatore grezzo game_minutes in Anno/Mese/Giorno/Ora
-    leggibili. Calendario semplificato apposta (12 mesi x 30 giorni x
-    24 ore = 360 giorni/anno): non è un calendario reale, è solo il
-    ritmo del gioco."""
-    total_days, minute_of_day = divmod(game_minutes, MINUTES_PER_DAY)
-    hour, minute = divmod(minute_of_day, MINUTES_PER_HOUR)
-
-    year = total_days // DAYS_PER_YEAR + 1
-    day_in_year = total_days % DAYS_PER_YEAR
-    month_index = day_in_year // DAYS_PER_MONTH  # 0-11
-    day_of_month = day_in_year % DAYS_PER_MONTH + 1  # 1-30
+def get_calendar_display(created_at: str, game_minutes: int) -> dict:
+    """Calendario REALE (richiesto in chat, stile Football Manager): il
+    personaggio nasce nel momento vero in cui è stato creato
+    (created_at, timestamp salvato alla creazione - vedi
+    core.character_factory.create_knight), e game_minutes vengono
+    sommati a quello con l'aritmetica reale di datetime - niente più
+    calendario fittizio a 360 giorni: mesi di lunghezza vera, anni
+    bisestili compresi, gratis grazie a datetime. I nomi dei mesi
+    restano quelli scritti a mano in MONTH_NAMES (in italiano) invece
+    di strftime('%B'), che dipenderebbe dalla lingua del sistema."""
+    current = datetime.fromisoformat(created_at) + timedelta(minutes=game_minutes)
 
     return {
-        "year": year,
-        "month_index": month_index,
-        "month_name": MONTH_NAMES[month_index],
-        "day_of_month": day_of_month,
-        "hour": hour,
-        "minute": minute,
-        "label": (f"Anno {year} — {MONTH_NAMES[month_index]}, giorno {day_of_month}, "
-                  f"ore {hour:02d}:{minute:02d}"),
+        "year": current.year,
+        "month_index": current.month - 1,
+        "month_name": MONTH_NAMES[current.month - 1],
+        "day_of_month": current.day,
+        "hour": current.hour,
+        "minute": current.minute,
+        "label": f"{current.day} {MONTH_NAMES[current.month - 1]} {current.year} — ore {current.hour:02d}:{current.minute:02d}",
     }
 
 
@@ -164,9 +164,9 @@ class RosterManager:
         Gestisce l'invecchiamento quando si supera un anno. Restituisce
         un messaggio SOLO se scatta un compleanno, stringa vuota
         altrimenti. Muta `knight` in place."""
-        previous_year = get_calendar_display(knight["game_minutes"])["year"]
+        previous_year = get_calendar_display(knight["created_at"], knight["game_minutes"])["year"]
         knight["game_minutes"] += minutes
-        new_year = get_calendar_display(knight["game_minutes"])["year"]
+        new_year = get_calendar_display(knight["created_at"], knight["game_minutes"])["year"]
 
         if new_year > previous_year:
             knight["age"] += (new_year - previous_year)
