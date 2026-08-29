@@ -45,6 +45,7 @@ from core.arena_manager import (
     custom_technique_slots, calculate_custom_technique_power, allowed_custom_technique_elements,
 )
 from core.version import APP_VERSION
+from core.institutional_npcs import get_institutional_npcs
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
 )
@@ -363,6 +364,15 @@ def api_get_roster(conn=Depends(get_db)):
     con chi le occupa - il PNG fisso se libere, il personaggio
     giocatore se reclamate. Ordinata per divinità/fazione/livello."""
     return [dict(r) for r in get_roster(conn)]
+
+
+@app.get("/institutional-npcs")
+def api_get_institutional_npcs():
+    """Le figure istituzionali del mondo di gioco (richiesto in chat):
+    non giocabili, statiche, un minimo di ambientazione/gdr - Il
+    Grande Sacerdote, Pandora, ecc. Nessun accesso al DB, sono dati
+    fissi del gioco, non legati a nessun personaggio."""
+    return get_institutional_npcs()
 
 
 @app.get("/geo-origins")
