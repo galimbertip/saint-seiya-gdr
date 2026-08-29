@@ -48,7 +48,7 @@ from core.arena_manager import (
 from core.version import APP_VERSION
 from core.institutional_npcs import get_institutional_npcs
 from core.training_path import (
-    render_stage, resolve_final_trial, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
+    render_stage, generate_trial_opponent, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
     KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE,
 )
 from api.arena_session import (
@@ -176,6 +176,42 @@ def _record_fight_outcome(conn, knight: dict, opponent_name: str, winner: str) -
     else:
         entry = f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene sconfitto da {opponent_name} nell'Arena."
     add_biography_entry(conn, knight["id"], knight["game_minutes"], entry)
+
+
+def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str) -> None:
+    """Gestisce la conclusione di uno scontro - normale (Arena) o la
+    Prova Finale (riconosciuta dal flag is_trial nel battle_state,
+    impostato da .../training-path/trial/start) in modo diverso
+    (richiesto in chat: la Prova Finale ora è un vero combattimento,
+    non un tiro di dado narrato - la sua conclusione va gestita qui,
+    non più in un endpoint a parte). Chiama finalize_fight e
+    save_knight al posto del chiamante, non serve richiamarli anche
+    fuori da qui."""
+    opponent_name = battle_state["opponent"]["name"]
+    finalize_fight(knight)
+
+    if battle_state.get("is_trial"):
+        cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+        if winner == "player":
+            knight["training_stage"] = FINAL_TRIAL_STAGE
+            knight["is_knight"] = 1
+            knight["player_level"] = max(knight["player_level"], KNIGHTHOOD_LEVEL)
+            add_biography_entry(
+                conn, knight["id"], knight["game_minutes"],
+                f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
+                f"supera la Prova Finale contro {opponent_name} e diventa Cavaliere.",
+            )
+        else:
+            knight["training_stage"] = RETRY_STAGE_ON_FAILURE
+            add_biography_entry(
+                conn, knight["id"], knight["game_minutes"],
+                f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
+                f"non supera la Prova Finale contro {opponent_name} - dovrà prepararsi meglio prima di riprovare.",
+            )
+    else:
+        _record_fight_outcome(conn, knight, opponent_name, winner)
+
+    save_knight(conn, knight)
 
 
 def _knight_payload(conn, knight: dict) -> dict:
@@ -335,12 +371,14 @@ def api_get_training_path(knight_id: int, conn=Depends(get_db)):
             "is_knight": False, "ready_for_trial": True,
             "master_name": knight["master_name"], "master_armor_name": knight["master_armor_name"],
             "companion1_name": knight["companion1_name"], "companion2_name": knight["companion2_name"],
+            "your_armor_name": knight["armor_name"],
         }
 
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     stage = render_stage(
         knight["training_stage"] + 1, knight["master_name"], knight["master_armor_name"],
         knight["companion1_name"], knight["companion2_name"], techniques,
+        your_armor_name=knight["armor_name"],
     )
     return {"is_knight": False, "ready_for_trial": False, "stage": stage}
 
@@ -372,46 +410,30 @@ def api_advance_training(knight_id: int, conn=Depends(get_db)):
     return {"training_stage": knight["training_stage"], "leveled_up_to": leveled_up_to}
 
 
-@app.post("/characters/{knight_id}/training-path/trial")
-def api_training_trial(knight_id: int, conn=Depends(get_db)):
-    """Risolve la Prova Finale (richiesto in chat: dev'essere possibile
-    fallire) - contro un compagno d'addestramento nella maggior parte
-    dei casi, ma con una possibilità che sia il Maestro stesso a
-    metterti alla prova "al 100%". Sul successo, diventa Cavaliere per
-    sempre; sul fallimento, torna a prepararsi e può riprovare."""
+@app.post("/characters/{knight_id}/training-path/trial/start")
+def api_start_trial(knight_id: int, conn=Depends(get_db)):
+    """Avvia la Prova Finale come un VERO combattimento (richiesto in
+    chat: "fammi combattere davvero", non un tiro di dado narrato) -
+    stesso motore di battaglia dell'Arena (POST .../arena/opponent),
+    solo con un avversario apposito (il Maestro con la sua armatura
+    vera, o un compagno di pari fascia) e un flag is_trial nel
+    battle_state, così .../arena/declare e .../arena/react sanno di
+    dover gestire la conclusione in modo diverso (vedi
+    _handle_fight_conclusion)."""
     knight = _get_knight_or_404(conn, knight_id)
     if knight["is_knight"]:
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
     if knight["training_stage"] < FINAL_TRIAL_STAGE - 1:
         raise HTTPException(status_code=400, detail="Non sei ancora pronto per la Prova Finale.")
 
+    armor = get_armor(knight["armor_name"], conn)
     opponent_is_master = random.random() < 0.2  # per lo più contro un compagno, a volte contro il Maestro
     opponent_name = knight["master_name"] if opponent_is_master else knight["companion1_name"]
-    passed, narrative = resolve_final_trial(knight, opponent_is_master, opponent_name)
+    trial_opponent = generate_trial_opponent(conn, opponent_is_master, opponent_name, knight["master_armor_name"], armor)
 
-    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
-    if passed:
-        knight["training_stage"] = FINAL_TRIAL_STAGE
-        knight["is_knight"] = 1
-        knight["player_level"] = max(knight["player_level"], KNIGHTHOOD_LEVEL)
-        add_biography_entry(
-            conn, knight["id"], knight["game_minutes"],
-            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
-            f"supera la Prova Finale e diventa Cavaliere.",
-        )
-    else:
-        knight["training_stage"] = RETRY_STAGE_ON_FAILURE
-        add_biography_entry(
-            conn, knight["id"], knight["game_minutes"],
-            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
-            f"non supera la Prova Finale - dovrà prepararsi meglio prima di riprovare.",
-        )
-
-    save_knight(conn, knight)
-    return {
-        "passed": passed, "narrative": narrative,
-        "is_knight": bool(knight["is_knight"]), "player_level": knight["player_level"],
-    }
+    battle_state = start_battle(conn, knight, armor, opponent=trial_opponent)
+    battle_state["is_trial"] = True
+    return {"battle_state": battle_state}
 
 
 @app.get("/characters/{knight_id}/custom-techniques")
@@ -657,10 +679,7 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
     )
 
     if fight_over:
-        opponent_name = req.battle_state["opponent"]["name"]
-        finalize_fight(knight)
-        _record_fight_outcome(conn, knight, opponent_name, winner)
-        save_knight(conn, knight)
+        _handle_fight_conclusion(conn, knight, req.battle_state, winner)
         return {
             "log": log, "fight_over": True, "won": winner == "player",
             "character": _knight_payload(conn, knight), "battle_state": None,
@@ -698,10 +717,7 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
     )
 
     if fight_over:
-        opponent_name = req.battle_state["opponent"]["name"]
-        finalize_fight(knight)
-        _record_fight_outcome(conn, knight, opponent_name, winner)
-        save_knight(conn, knight)
+        _handle_fight_conclusion(conn, knight, req.battle_state, winner)
         return {
             "log": log, "fight_over": True, "won": winner == "player",
             "character": _knight_payload(conn, knight), "battle_state": None,
