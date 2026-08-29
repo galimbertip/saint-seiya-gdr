@@ -700,6 +700,67 @@ def allowed_custom_technique_elements(armor_techniques: list[dict], origin: str)
     return sorted(elements)
 
 
+# --- Ciclo elementale circolare -----------------------------------------
+# Richiesto in chat: gli stessi 5 elementi già usati per l'affinità di
+# Provenienza, ma qui in un cerchio - ognuno forte contro il successivo,
+# debole contro il precedente, come sasso-carta-forbice a 5 vie
+# (Ghiaccio spegne la lucidità dello Psichico, l'Illusione psichica
+# disorienta il Cosmico, il Cosmico travolge il Fisico puro, il Fisico
+# resiste e spegne il Fuoco, il Fuoco scioglie il Ghiaccio - chiude il
+# cerchio). Si applica SOLO quando due tecniche si scontrano
+# direttamente (un Contrattacco contro l'attacco che lo ha causato, o
+# una tecnica difensiva vera contro l'attacco che para) - non ai colpi
+# dichiarati a freddo, dove non c'è una tecnica avversaria con cui
+# confrontarsi (lì resta l'affinità di Provenienza, un sistema diverso
+# e già esistente, non toccato da questo).
+ELEMENT_CYCLE = ["ghiaccio", "psichico", "cosmico", "fisico", "fuoco"]
+CYCLE_ADVANTAGE_MULTIPLIER = 1.15
+CYCLE_DISADVANTAGE_MULTIPLIER = 0.85
+
+
+def _cycle_element(tech_type: str) -> str | None:
+    """Trova il primo elemento del ciclo presente nel tech_type dato, o
+    None se la tecnica non usa nessuno dei 5 elementi del ciclo (es.
+    Veleno, Illusione, Armi... - non tutte le tecniche del catalogo
+    rientrano nel ciclo)."""
+    tech_type_lower = (tech_type or "").lower()
+    for element in ELEMENT_CYCLE:
+        if element in tech_type_lower:
+            return element
+    return None
+
+
+def cycle_modifier(attacker_tech_type: str, defender_tech_type: str) -> float:
+    """Il moltiplicatore di danno dato dal ciclo elementale, quando due
+    tecniche si scontrano direttamente. 1.0 se uno dei due elementi non
+    è nel ciclo, o se sono lo stesso elemento (nessun vantaggio)."""
+    att = _cycle_element(attacker_tech_type)
+    dfn = _cycle_element(defender_tech_type)
+    if att is None or dfn is None or att == dfn:
+        return 1.0
+    idx = ELEMENT_CYCLE.index(att)
+    if dfn == ELEMENT_CYCLE[(idx + 1) % len(ELEMENT_CYCLE)]:
+        return CYCLE_ADVANTAGE_MULTIPLIER  # l'attaccante ha il vantaggio del ciclo
+    if dfn == ELEMENT_CYCLE[(idx - 1) % len(ELEMENT_CYCLE)]:
+        return CYCLE_DISADVANTAGE_MULTIPLIER  # l'attaccante è in svantaggio
+    return 1.0  # elementi non adiacenti nel ciclo, nessun effetto
+
+
+def cycle_narrative(attacker_tech_type: str, defender_tech_type: str) -> str | None:
+    """Una riga di narrazione quando il ciclo elementale scatta (in un
+    senso o nell'altro) - None se non c'è nessun effetto da segnalare."""
+    modifier = cycle_modifier(attacker_tech_type, defender_tech_type)
+    if modifier == CYCLE_ADVANTAGE_MULTIPLIER:
+        att = _cycle_element(attacker_tech_type).capitalize()
+        dfn = _cycle_element(defender_tech_type).capitalize()
+        return f"🌀 {att} ha la meglio su {dfn}!"
+    if modifier == CYCLE_DISADVANTAGE_MULTIPLIER:
+        att = _cycle_element(attacker_tech_type).capitalize()
+        dfn = _cycle_element(defender_tech_type).capitalize()
+        return f"🌀 {dfn} tiene testa a {att}!"
+    return None
+
+
 def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int:
     """Riduce il danno grezzo in base alla potenza della tecnica
     difensiva (o della Parata generica, se non ne hai una)."""
