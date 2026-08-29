@@ -19,6 +19,7 @@ la rete c'è.
 """
 from typing import Literal, Optional
 from pathlib import Path
+import random
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.staticfiles import StaticFiles
@@ -46,6 +47,10 @@ from core.arena_manager import (
 )
 from core.version import APP_VERSION
 from core.institutional_npcs import get_institutional_npcs
+from core.training_path import (
+    render_stage, resolve_final_trial, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
+    KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE,
+)
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
 )
@@ -315,6 +320,100 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
     return {"avatar_path": knight["avatar_path"]}
 
 
+@app.get("/characters/{knight_id}/training-path")
+def api_get_training_path(knight_id: int, conn=Depends(get_db)):
+    """Lo stato del percorso di Apprendistato (richiesto in chat): se è
+    già Cavaliere, non c'è nulla da mostrare. Altrimenti, la tappa
+    attuale da leggere, o il segnale che è pronto per la Prova Finale
+    (l'ultima tappa, risolta a parte con POST .../trial)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        return {"is_knight": True}
+
+    if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
+        return {
+            "is_knight": False, "ready_for_trial": True,
+            "master_name": knight["master_name"], "master_armor_name": knight["master_armor_name"],
+            "companion1_name": knight["companion1_name"], "companion2_name": knight["companion2_name"],
+        }
+
+    techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    stage = render_stage(
+        knight["training_stage"] + 1, knight["master_name"], knight["master_armor_name"],
+        knight["companion1_name"], knight["companion2_name"], techniques,
+    )
+    return {"is_knight": False, "ready_for_trial": False, "stage": stage}
+
+
+@app.post("/characters/{knight_id}/training-path/advance")
+def api_advance_training(knight_id: int, conn=Depends(get_db)):
+    """Segna completata la tappa attuale e passa alla prossima -
+    applica anche l'eventuale salita di livello legata a quella tappa
+    (richiesto in chat: livello 2 dopo la lezione sul Cosmo, livello 3
+    dopo la prima tecnica, livello 4 dopo la seconda)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+    if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
+        raise HTTPException(status_code=400, detail="Sei pronto per la Prova Finale - non c'è altro da avanzare.")
+
+    knight["training_stage"] += 1
+    leveled_up_to = LEVEL_UP_AFTER_STAGE.get(knight["training_stage"])
+    if leveled_up_to:
+        knight["player_level"] = leveled_up_to
+        cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
+            f"raggiunge il livello {leveled_up_to} nel proprio addestramento.",
+        )
+
+    save_knight(conn, knight)
+    return {"training_stage": knight["training_stage"], "leveled_up_to": leveled_up_to}
+
+
+@app.post("/characters/{knight_id}/training-path/trial")
+def api_training_trial(knight_id: int, conn=Depends(get_db)):
+    """Risolve la Prova Finale (richiesto in chat: dev'essere possibile
+    fallire) - contro un compagno d'addestramento nella maggior parte
+    dei casi, ma con una possibilità che sia il Maestro stesso a
+    metterti alla prova "al 100%". Sul successo, diventa Cavaliere per
+    sempre; sul fallimento, torna a prepararsi e può riprovare."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+    if knight["training_stage"] < FINAL_TRIAL_STAGE - 1:
+        raise HTTPException(status_code=400, detail="Non sei ancora pronto per la Prova Finale.")
+
+    opponent_is_master = random.random() < 0.2  # per lo più contro un compagno, a volte contro il Maestro
+    opponent_name = knight["master_name"] if opponent_is_master else knight["companion1_name"]
+    passed, narrative = resolve_final_trial(knight, opponent_is_master, opponent_name)
+
+    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    if passed:
+        knight["training_stage"] = FINAL_TRIAL_STAGE
+        knight["is_knight"] = 1
+        knight["player_level"] = max(knight["player_level"], KNIGHTHOOD_LEVEL)
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
+            f"supera la Prova Finale e diventa Cavaliere.",
+        )
+    else:
+        knight["training_stage"] = RETRY_STAGE_ON_FAILURE
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
+            f"non supera la Prova Finale - dovrà prepararsi meglio prima di riprovare.",
+        )
+
+    save_knight(conn, knight)
+    return {
+        "passed": passed, "narrative": narrative,
+        "is_knight": bool(knight["is_knight"]), "player_level": knight["player_level"],
+    }
+
+
 @app.get("/characters/{knight_id}/custom-techniques")
 def api_get_custom_techniques(knight_id: int, conn=Depends(get_db)):
     """Le tecniche personalizzate del personaggio, quanti slot ha
@@ -428,6 +527,11 @@ def api_armor_techniques(armor_name: str, conn=Depends(get_db)):
 @app.post("/characters/{knight_id}/train")
 def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
+    if not knight["is_knight"]:
+        # Apprendistato (richiesto in chat): "ti stai già addestrando,
+        # è quello il tuo allenamento" - l'Allenamento normale resta
+        # bloccato finché non si diventa Cavaliere per davvero.
+        raise HTTPException(status_code=403, detail="Sei ancora un Apprendista - segui il tuo percorso di addestramento prima di poterti allenare liberamente.")
     old_level = knight["player_level"]
 
     schedule = list(req.schedule[:7])
@@ -500,6 +604,8 @@ def api_arena_candidates(knight_id: int, difficulty: str = "medio", conn=Depends
     mostrare; la battaglia vera parte con POST /arena/opponent passando
     il candidato scelto."""
     knight = _get_knight_or_404(conn, knight_id)
+    if not knight["is_knight"]:
+        raise HTTPException(status_code=403, detail="Sei ancora un Apprendista - l'Arena resta chiusa finché non superi la Prova Finale.")
     armor = get_armor(knight["armor_name"], conn)
     candidates = list_opponent_candidates(conn, armor, difficulty=difficulty)
     return {"candidates": candidates}
@@ -513,6 +619,8 @@ def api_arena_new_opponent(knight_id: int, req: ArenaStartBattleRequest, conn=De
     pagina web) e rimandato indietro ad ogni chiamata successiva - il
     server non lo ricorda tra una richiesta e l'altra."""
     knight = _get_knight_or_404(conn, knight_id)
+    if not knight["is_knight"]:
+        raise HTTPException(status_code=403, detail="Sei ancora un Apprendista - l'Arena resta chiusa finché non superi la Prova Finale.")
     armor = get_armor(knight["armor_name"], conn)
 
     battle_state = start_battle(conn, knight, armor, opponent=req.opponent)
