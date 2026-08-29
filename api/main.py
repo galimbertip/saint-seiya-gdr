@@ -147,8 +147,13 @@ class ArenaDeclareRequest(BaseModel):
 
 
 class ArenaReactRequest(BaseModel):
-    defend: bool
+    action: Literal["difenditi", "contrattacca", "incassa"]
     battle_state: dict
+    counter_technique_name: Optional[str] = None
+    counter_technique_power: Optional[int] = None
+    counter_technique_type: Optional[str] = None
+    counter_technique_launch_desc: Optional[str] = None
+    counter_technique_effect_desc: Optional[str] = None
 
 
 # --------------------------- Serializzazione ---------------------------
@@ -518,8 +523,8 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
 
 @app.post("/characters/{knight_id}/arena/react")
 def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)):
-    """Metà 2 del round: reagisci (Difenditi o Incassa) a un attacco
-    già dichiarato dall'avversario (visto in anticipo)."""
+    """Metà 2 del round: reagisci (Difenditi, Contrattacca o Incassa) a
+    un attacco già dichiarato dall'avversario (visto in anticipo)."""
     knight = _get_knight_or_404(conn, knight_id)
     armor = get_armor(knight["armor_name"], conn)
 
@@ -529,7 +534,12 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
     my_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     my_defense = find_defensive_technique(my_techniques)
 
-    log, fight_over, winner = resolve_react(knight, armor, req.defend, my_defense, req.battle_state)
+    log, fight_over, winner = resolve_react(
+        knight, armor, req.action, my_defense, req.battle_state,
+        counter_technique_name=req.counter_technique_name, counter_technique_power=req.counter_technique_power,
+        counter_technique_type=req.counter_technique_type, counter_technique_launch_desc=req.counter_technique_launch_desc,
+        counter_technique_effect_desc=req.counter_technique_effect_desc,
+    )
 
     if fight_over:
         opponent_name = req.battle_state["opponent"]["name"]
