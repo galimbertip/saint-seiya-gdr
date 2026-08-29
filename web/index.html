@@ -279,6 +279,9 @@ const state = {
   editingBackground: false,  // sta modificando il background nella Scheda Cavaliere?
   trainingPath: null,        // lo stato del percorso di Apprendistato del personaggio corrente, null finché non caricato
   trialResult: null,         // il risultato appena arrivato della Prova Finale, da mostrare prima di procedere
+  sparResult: null,          // il risultato appena arrivato dello scontro leggero d'allenamento, da mostrare prima di procedere
+  stageAttemptResult: null,  // il risultato appena arrivato di una prova a dado di una tappa, da mostrare prima di procedere
+  stageChoiceResult: null,   // l'esito appena arrivato di una scelta di una tappa, da mostrare prima di procedere
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -342,6 +345,10 @@ async function selectCharacter(id) {
   state.customTechniques = null;  // idem per le tecniche personalizzate
   state.editingBackground = false;  // idem per una modifica del background lasciata a metà
   state.trainingPath = null;  // idem per il percorso di Apprendistato
+  state.trialResult = null;
+  state.sparResult = null;
+  state.stageAttemptResult = null;
+  state.stageChoiceResult = null;
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -689,12 +696,13 @@ async function goToKnightsHall() {
 }
 
 function applyArenaResult(result) {
-  // Riconosce se lo scontro appena concluso era la Prova Finale
-  // (richiesto in chat: ora è un vero combattimento, non un tiro di
-  // dado - va gestito diversamente da una normale vittoria/sconfitta
-  // in Arena) guardando il flag is_trial PRIMA che state.battle venga
-  // sovrascritto.
+  // Riconosce se lo scontro appena concluso era la Prova Finale o uno
+  // scontro leggero d'allenamento (richiesto in chat: ora sono veri
+  // combattimenti, non tiri di dado - vanno gestiti diversamente da
+  // una normale vittoria/sconfitta in Arena) guardando i flag PRIMA
+  // che state.battle venga sovrascritto.
   const wasTrial = state.battle && state.battle.is_trial;
+  const wasSpar = state.battle && state.battle.is_spar;
   state.character = result.character;
   state.arenaLog = [...state.arenaLog, ...result.log];
   state.battle = result.fight_over ? null : result.battle_state;
@@ -707,6 +715,12 @@ function applyArenaResult(result) {
     if (wasTrial) {
       state.trialResult = { passed: result.won };
       state.trainingPath = null;  // si ricarica da sola (tappa di ripreparazione, o nulla se ora è Cavaliere)
+    } else if (wasSpar) {
+      // Lo scontro leggero avanza comunque, vinca o perda (richiesto
+      // in chat) - ma merita comunque un riscontro chiaro prima di
+      // tornare al percorso, non solo un messaggio di passaggio.
+      state.sparResult = { won: result.won };
+      state.trainingPath = null;
     } else {
       state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
     }
@@ -1069,6 +1083,47 @@ async function advanceTraining() {
   try {
     await api(`/characters/${state.characterId}/training-path/advance`, { method: "POST" });
     state.trainingPath = null;  // si ricarica da sola con la tappa nuova
+    state.stageAttemptResult = null;
+    state.stageChoiceResult = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function attemptSkillCheck() {
+  // La prova a dado di una tappa "skill_check" (richiesto in chat:
+  // tutto l'addestramento dev'essere interattivo) - non avanza da
+  // sola: sul successo si passa avanti col premio, sul fallimento si
+  // può riprovare o accettare e andare avanti senza premio.
+  try {
+    state.stageAttemptResult = await api(`/characters/${state.characterId}/training-path/attempt`, { method: "POST" });
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function chooseTrainingOption(optionIndex) {
+  try {
+    state.stageChoiceResult = await api(`/characters/${state.characterId}/training-path/choose`, {
+      method: "POST",
+      body: JSON.stringify({ option_index: optionIndex }),
+    });
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function startSpar() {
+  // Lo scontro leggero della tappa "Fianco a fianco" (richiesto in
+  // chat) - stessa interfaccia di combattimento della Prova Finale,
+  // ma marcato is_spar: si avanza comunque, vinca o perda.
+  try {
+    const result = await api(`/characters/${state.characterId}/training-path/spar/start`, { method: "POST" });
+    state.battle = result.battle_state;
+    state.arenaLog = [];
     render();
   } catch (e) {
     showError(e.message);
@@ -1095,6 +1150,12 @@ function closeTrialResult() {
   state.trialResult = null;
   state.trainingPath = null;  // si ricarica da sola (tappa di ripreparazione, o nulla se ora è Cavaliere)
   if (eraCavaliere) state.gameTab = "sheet";
+  render();
+}
+
+function closeSparResult() {
+  state.sparResult = null;
+  state.trainingPath = null;  // si ricarica da sola, già avanzata alla tappa successiva
   render();
 }
 
@@ -1397,12 +1458,13 @@ function renderTrainingPathTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Percorso di Apprendistato"));
 
-  // La Prova Finale è in corso (richiesto in chat: un vero
-  // combattimento, non un tiro di dado) - stessa interfaccia
-  // dell'Arena, mostrata qui invece che nella scheda Arena (che gli
-  // Apprendisti non hanno).
+  // Un combattimento è in corso - la Prova Finale, o lo scontro
+  // leggero della tappa "Fianco a fianco" (richiesto in chat: veri
+  // combattimenti interattivi, non testo o dadi narrati) - stessa
+  // interfaccia dell'Arena, mostrata qui invece che nella scheda Arena
+  // (che gli Apprendisti non hanno).
   if (state.battle) {
-    wrap.append(el("h2", {}, "⚔ La Prova Finale"));
+    wrap.append(el("h2", {}, state.battle.is_spar ? "🤝 Fianco a fianco" : "⚔ La Prova Finale"));
     appendBattleColumns(wrap);
     const logCard = el("div", { class: "card" });
     logCard.append(el("h2", {}, "Cronaca dello scontro"));
@@ -1427,6 +1489,21 @@ function renderTrainingPathTab() {
     for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
     resultCard.append(logBox);
     resultCard.append(el("button", { onClick: closeTrialResult }, state.trialResult.passed ? "Continua come Cavaliere" : "Torna a prepararti"));
+    wrap.append(resultCard);
+    return wrap;
+  }
+
+  // Il risultato dello scontro leggero, appena concluso - si avanza
+  // comunque (richiesto in chat), ma merita un riscontro chiaro prima
+  // di passare alla tappa successiva.
+  if (state.sparResult) {
+    const resultCard = el("div", { class: "card" });
+    resultCard.append(el("h2", {}, state.sparResult.won ? "Hai avuto la meglio" : "Il tuo compagno ha avuto la meglio"));
+    resultCard.append(el("p", { class: "hint" }, "Uno scontro di prova, niente di più - fa parte dell'addestramento, non della Prova Finale."));
+    const logBox = el("div", { class: "log-box" });
+    for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+    resultCard.append(logBox);
+    resultCard.append(el("button", { onClick: closeSparResult }, "Continua"));
     wrap.append(resultCard);
     return wrap;
   }
@@ -1465,7 +1542,44 @@ function renderTrainingPathTab() {
   stageCard.append(el("p", { class: "hint" }, `Tappa ${stage.stage_number} di ${stage.total_stages}`));
   stageCard.append(el("h2", {}, stage.title));
   stageCard.append(el("p", {}, stage.text));
-  stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
+
+  if (stage.type === "narrative") {
+    stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
+
+  } else if (stage.type === "skill_check") {
+    // Una vera prova a dado (richiesto in chat: tutto l'addestramento
+    // dev'essere interattivo) - si può fallire, riprovare, o accettare
+    // il fallimento e andare avanti senza il premio.
+    if (state.stageAttemptResult) {
+      const r = state.stageAttemptResult;
+      stageCard.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
+      if (r.success) {
+        stageCard.append(el("p", { class: "hint" }, `+1 ${r.stat.toUpperCase()} permanente.`));
+        stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
+      } else {
+        const btnRow = el("div", { class: "row" });
+        btnRow.append(el("button", { onClick: attemptSkillCheck }, "Riprova"));
+        btnRow.append(el("button", { class: "secondary", onClick: advanceTraining }, "Vai avanti comunque"));
+        stageCard.append(btnRow);
+      }
+    } else {
+      stageCard.append(el("button", { onClick: attemptSkillCheck }, "🎲 Prova"));
+    }
+
+  } else if (stage.type === "choice") {
+    if (state.stageChoiceResult) {
+      stageCard.append(el("p", { style: "font-style:italic;margin-top:8px;" }, state.stageChoiceResult.text));
+      stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
+    } else {
+      for (const opt of stage.options) {
+        stageCard.append(el("button", { onClick: () => chooseTrainingOption(opt.index) }, opt.label));
+      }
+    }
+
+  } else if (stage.type === "spar") {
+    stageCard.append(el("button", { onClick: startSpar }, "🤝 Inizia lo scontro"));
+  }
+
   wrap.append(stageCard);
   return wrap;
 }
