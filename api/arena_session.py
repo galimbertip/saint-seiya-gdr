@@ -399,12 +399,27 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     return log, False, None
 
 
-def resolve_react(knight: dict, armor: dict, defend: bool,
+def resolve_react(knight: dict, armor: dict, action: str,
                    my_defensive_technique: Optional[dict],
-                   battle_state: dict) -> tuple[list[str], bool, Optional[str]]:
+                   battle_state: dict, counter_technique_name: Optional[str] = None,
+                   counter_technique_power: Optional[int] = None, counter_technique_type: Optional[str] = None,
+                   counter_technique_launch_desc: Optional[str] = None,
+                   counter_technique_effect_desc: Optional[str] = None) -> tuple[list[str], bool, Optional[str]]:
     """Metà 2 del round: il giocatore reagisce all'attacco già
     dichiarato dall'avversario (visto in anticipo, non una scelta alla
-    cieca). Muta `knight` e `battle_state` in place.
+    cieca). action: 'difenditi' | 'contrattacca' | 'incassa' (richiesto
+    in chat, terza opzione oltre alle due originarie).
+    'difenditi': come prima, danno ridotto dalla tecnica difensiva (o
+    Parata), il giocatore non attacca.
+    'contrattacca': il colpo avversario arriva PIENO, non ridotto per
+    niente (stesso trattamento di 'incassa') - ma subito dopo il
+    giocatore lancia indietro una SUA tecnica offensiva
+    (counter_technique_*), risolta come un vero attacco a sé stante
+    (Imprevisto proprio, portata, affinità elementale, effetti sul
+    terreno - tutto uguale a un attacco dichiarato normalmente). Un
+    vero scambio di colpi, rischioso da entrambi i lati.
+    'incassa': come prima, danno pieno, nessuna reazione.
+    Muta `knight` e `battle_state` in place.
     Restituisce (log, fight_over, winner)."""
     opponent = battle_state["opponent"]
     t = battle_state["pending_opponent_technique"]
@@ -445,11 +460,11 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
     msg2 = format_damage_message(msg2, dmg2)  # riallinea il testo se la Carica ha cambiato il danno
 
     if dmg2 == 0:
-        # Schivata vera: niente da difendere, la scelta Difenditi/Incassa
-        # non ha inciso su un colpo che non è mai arrivato.
+        # Schivata vera: niente da difendere, la scelta di reazione non
+        # ha inciso su un colpo che non è mai arrivato.
         log.append(msg2)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "miss", "tech_type": t.get("tech_type", "")}
-    elif defend:
+    elif action == "difenditi":
         defense_technique = my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
         reduced = resolve_defense(dmg2, defense_technique["power"])
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
@@ -457,6 +472,9 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "blocked", "tech_type": t.get("tech_type", "")}
         final_damage_dealt2 = reduced
     else:
+        # 'contrattacca' e 'incassa' prendono il colpo PIENO, senza
+        # riduzione - il contrattacco non protegge, è tutto rischio in
+        # cambio della possibilità di ferire (richiesto in chat).
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - dmg2)
         log.append(msg2)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "hit", "tech_type": t.get("tech_type", "")}
@@ -486,6 +504,104 @@ def resolve_react(knight: dict, armor: dict, defend: bool,
 
     check_eighth_sense(knight, battle_state, log)
     check_seventh_sense(knight, battle_state, log)
+
+    fight_over, winner = check_fight_over(knight, opponent)
+    if fight_over:
+        battle_state["pending_opponent_technique"] = None
+        return log, True, winner
+
+    # --- Contrattacco (richiesto in chat) -----------------------------
+    # Un vero attacco a sé stante: stesso trattamento di un attacco
+    # dichiarato normalmente (Imprevisto proprio, portata, ghiaccio,
+    # affinità elementale, effetti sul terreno) - solo che avviene qui,
+    # subito dopo aver incassato il colpo avversario per intero.
+    if action == "contrattacca" and counter_technique_name:
+        roll_mode3 = "normale"
+        cause_phrase3 = None
+        event3 = maybe_trigger_event(knight, opponent)
+        if event3:
+            log.append(event3["message"])
+            roll_mode3 = event3["roll_mode"]
+            cause_phrase3 = event3.get("cause_phrase")
+            fight_over, winner = check_fight_over(knight, opponent)
+            if fight_over:
+                battle_state["pending_opponent_technique"] = None
+                return log, True, winner
+
+        out_of_range3 = not check_attack_range(
+            battle_state["player_position"], battle_state["opponent_position"], counter_technique_name
+        )
+        if out_of_range3:
+            log.append(f"{knight['raw_name']} è troppo lontano per colpire con {counter_technique_name} in contrattacco!")
+        else:
+            distance3 = distance_between(battle_state["player_position"], battle_state["opponent_position"])
+            range_mode3, range_power_mult3 = range_effect(distance3, counter_technique_name)
+            ice_mode3 = "svantaggio" if position_in_ice_patch(
+                battle_state["player_position"], battle_state.get("terrain_effects", [])
+            ) else "normale"
+            combined_mode3 = combine_roll_modes(combine_roll_modes(roll_mode3, range_mode3), ice_mode3)
+            if roll_mode3 == "normale":
+                if range_mode3 == "svantaggio":
+                    cause_phrase3 = "il colpo arriva da lontano, meno preciso"
+                elif ice_mode3 == "svantaggio":
+                    cause_phrase3 = "scivola sul ghiaccio, meno preciso"
+
+            if counter_technique_name != "Attacco Base" and counter_technique_launch_desc:
+                log.append(f"⚡ {counter_technique_name}: {counter_technique_launch_desc}.")
+
+            dmg3, msg3 = resolve_turn(
+                knight["raw_name"], knight["str"], knight["tec"], armor["level"],
+                opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
+                counter_technique_name, counter_technique_power, roll_mode=combined_mode3, cause_phrase=cause_phrase3,
+            )
+            dmg3 = round(dmg3 * range_power_mult3)
+            dmg3 = round(dmg3 * origin_affinity_modifier(knight.get("origin", ""), counter_technique_type, as_attacker=True))
+            dmg3 = round(dmg3 * origin_affinity_modifier(opponent.get("origin", ""), counter_technique_type, as_attacker=False))
+            dmg3 = apply_charge(dmg3, True, battle_state)
+            msg3 = format_damage_message(msg3, dmg3)
+
+            if dmg3 == 0:
+                log.append(msg3)
+                battle_state["last_effect"] = {"attacker": "player", "outcome": "miss", "tech_type": counter_technique_type}
+            else:
+                opp_defense = opponent_reacts(opponent)
+                if opp_defense:
+                    reduced3 = resolve_defense(dmg3, opp_defense["power"])
+                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced3)
+                    log.append(f"{msg3} — {opponent['name']} para con {opp_defense['name']}, il danno scende a {reduced3}.")
+                    battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": counter_technique_type}
+                    final_damage3 = reduced3
+                else:
+                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg3)
+                    log.append(msg3)
+                    battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": counter_technique_type}
+                    final_damage3 = dmg3
+
+                if counter_technique_name != "Attacco Base" and counter_technique_effect_desc:
+                    log.append(f"💥 Effetto: {counter_technique_effect_desc}.")
+
+                terrain_effect3 = maybe_create_terrain_effect(
+                    battle_state["opponent_position"], counter_technique_type, final_damage3
+                )
+                if terrain_effect3:
+                    battle_state.setdefault("terrain_effects", []).append(terrain_effect3)
+                    if terrain_effect3["kind"] == "ghiaccio":
+                        log.append("❄️ Il colpo lascia una chiazza di ghiaccio sul terreno!")
+                    else:
+                        log.append("🕳️ Il colpo apre un cratere nel terreno!")
+
+                status3 = maybe_apply_status(counter_technique_type, counter_technique_power)
+                if status3:
+                    if status_resisted(opponent["vol"]):
+                        log.append(f"💪 {opponent['name']} resiste all'effetto con la sua Volontà!")
+                    else:
+                        battle_state.setdefault("opponent_statuses", []).append(status3)
+                        log.append(status_applied_message(opponent["name"], counter_technique_name, status3))
+
+            fight_over, winner = check_fight_over(knight, opponent)
+            if fight_over:
+                battle_state["pending_opponent_technique"] = None
+                return log, True, winner
 
     aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
     if aging_msg:
