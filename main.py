@@ -1,106 +1,1710 @@
-"""
-Entry point dell'app.
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saint Seiya: Sacro Imperio</title>
+<style>
+  :root {
+    --bg-darkest: #0B0F1A;
+    --bg-panel: #141B2E;
+    --bg-panel-alt: #1B2438;
+    --border: #2A3550;
+    --gold: #D4AF37;
+    --gold-dim: #8A7229;
+    --cosmo-blue: #3FA9F5;
+    --cosmo-blue-dim: #245A7C;
+    --text-primary: #EAE6DA;
+    --text-secondary: #9BA3B7;
+    --danger: #C0392B;
+    --success: #3FA96A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg-darkest);
+    color: var(--text-primary);
+    font-family: "Segoe UI", Arial, sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  h1, h2, h3 { margin: 0 0 12px 0; }
+  h1 { color: var(--gold); font-size: 26px; }
+  h2 { color: var(--cosmo-blue); font-size: 16px; }
+  .hint { color: var(--text-secondary); font-size: 13px; }
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  button {
+    background: var(--gold-dim);
+    color: var(--bg-darkest);
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    margin: 4px 4px 4px 0;
+  }
+  button:hover { background: var(--gold); }
+  button:disabled { background: var(--border); color: var(--text-secondary); cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    color: var(--cosmo-blue);
+    border: 1px solid var(--cosmo-blue-dim);
+  }
+  button.secondary:hover { background: var(--bg-panel-alt); }
+  input, select {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+    width: 100%;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .bar-wrap {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    height: 20px;
+    position: relative;
+    overflow: hidden;
+    margin: 4px 0 10px 0;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--cosmo-blue);
+    transition: width 0.2s;
+  }
+  .bar-fill.stamina { background: var(--gold); }
+  .bar-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-shadow: 0 0 3px #000;
+  }
+  .stats-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat-chip {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    min-width: 80px;
+  }
+  .stat-chip .value { font-size: 20px; font-weight: 700; }
+  .stat-chip .label { font-size: 11px; color: var(--text-secondary); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--gold); }
+  tr.selectable { cursor: pointer; }
+  tr.selectable:hover { background: var(--bg-panel-alt); }
+  tr.selected { background: var(--cosmo-blue-dim); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    padding: 10px 16px;
+    margin: 0;
+  }
+  .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); font-weight: 700; }
+  .log-line { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .log-box { max-height: 300px; overflow-y: auto; }
+  .status-bar {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    margin-bottom: 16px;
+  }
+  .status-bar .calendar { color: var(--cosmo-blue); font-weight: 600; white-space: nowrap; }
+  .status-bar .mini-bar { width: 240px; }
+  .status-bar .mini-bar .bar-wrap { height: 26px; margin: 0; }
+  .status-bar .mini-bar .bar-label { font-size: 13px; font-weight: 700; }
+  .hidden { display: none !important; }
+  #error-banner {
+    background: var(--danger);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-Flusso di navigazione (QStackedWidget con 3 pagine):
-  StartScreen ──continua──────────────► CharacterSheetScreen
-      │                                        │
-      └──nuova partita──► CharacterCreationScreen ──creato──┘
-                                                     (torna a StartScreen col tasto ◄ Menu)
+  /* Disposizione dell'Arena: pannello combattente sinistro, mappa al
+     centro, pannello combattente destro - pensata per estendersi in
+     futuro a più cavalieri per lato (richiesto in chat). Su schermi
+     stretti i pannelli scendono sotto la mappa invece di schiacciarsi. */
+  .arena-columns { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .fighter-panel {
+    flex: 1 1 220px;
+    min-width: 220px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .fighter-panel.opponent-panel button { opacity: 0.55; cursor: not-allowed; }
+  .arena-map-column { flex: 2 1 340px; min-width: 300px; }
 
-A differenza della prima versione di main.py, l'avvio non sceglie più
-in automatico l'ultimo personaggio: mostra sempre il menu iniziale e
-lascia scegliere all'utente, con l'elenco di tutte le partite salvate
-(oggi in pratica quasi sempre una sola, ma la struttura regge già più
-personaggi in futuro).
-"""
-import sys
+  /* Scheda Cavaliere/Home come "carta d'identità" (richiesta in chat,
+     schizzo fornito): immagine grande a sinistra, a destra impilati
+     Dati Anagrafici / BG Personaggio / Statistiche+Progressione;
+     sotto, Tecniche e Diario affiancati. */
+  .sheet-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "image identity"
+      "image background"
+      "image stats"
+      "techniques diary";
+    gap: 16px;
+    align-items: stretch;
+  }
+  .sheet-image { grid-area: image; }
+  .sheet-identity { grid-area: identity; }
+  .sheet-background { grid-area: background; }
+  .sheet-stats { grid-area: stats; }
+  .sheet-techniques { grid-area: techniques; }
+  .sheet-diary { grid-area: diary; }
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
+  /* --- Schermi stretti (smartphone) --- */
+  @media (max-width: 640px) {
+    body { padding: 12px; }
+    h1 { font-size: 21px; }
+    h2 { font-size: 15px; }
+    .card { padding: 12px 14px; }
+    button { padding: 10px 14px; font-size: 13px; }
 
-from database.db_manager import get_connection, init_db, refresh_armors_catalog
-from core.version import APP_VERSION
-from core.app_logger import get_logger
-from ui.theme import build_stylesheet
-from ui.start_screen import StartScreen
-from ui.character_creation import CharacterCreationScreen
-from ui.game_screen import GameScreen
+    /* La barra di stato: da riga unica (calendario + 2 barre da 240px,
+       non ci stanno in 360px di schermo) a colonna impilata, ogni
+       elemento largo quanto lo schermo - segnalato in chat, prima
+       nessuno l'aveva ancora provata da telefono. */
+    .status-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+    .status-bar .calendar { white-space: normal; text-align: center; }
+    .status-bar .mini-bar { width: 100%; }
 
-log = get_logger(__name__)
+    .stat-chip { min-width: 64px; padding: 8px 10px; }
+    .stat-chip .value { font-size: 17px; }
+    .tab-btn { padding: 8px 10px; font-size: 13px; }
 
+    /* Le tabelle (elenco partite, elenco armature) restano leggibili:
+       invece di schiacciarsi o sforare lo schermo, scorrono in
+       orizzontale con un dito - vedi .table-scroll nel markup. */
+    table { font-size: 12px; }
+    th, td { padding: 5px 6px; }
 
-class MainWindow(QMainWindow):
-    def __init__(self, conn):
-        super().__init__()
-        self.conn = conn
+    /* La carta d'identità: da due colonne a una sola, impilata
+       nell'ordine naturale di lettura. */
+    .sheet-grid {
+      grid-template-columns: 1fr;
+      grid-template-areas: "image" "identity" "background" "stats" "techniques" "diary";
+    }
+  }
+</style>
+</head>
+<body>
 
-        self.setWindowTitle(f"Saint Seiya: Sacro Imperio [{APP_VERSION}]")
-        self.resize(760, 820)
+<div id="error-banner" class="hidden"></div>
+<div id="app"></div>
 
-        self.stack = QStackedWidget()
-        self.setCentralWidget(self.stack)
+<script>
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, attrs = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "onClick") node.addEventListener("click", v);
+    else if (k === "class") node.className = v;
+    else node.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    node.append(c instanceof Node ? c : document.createTextNode(c));
+  }
+  return node;
+};
 
-        self.start_screen = StartScreen(self.conn)
-        self.start_screen.continue_requested.connect(self._show_sheet)
-        self.start_screen.new_game_requested.connect(self._show_creation)
-        self.start_screen.exit_requested.connect(self._exit_app)
-        self.stack.addWidget(self.start_screen)
+// Toglie i numeri "da regolamento" (tiro vs CA, dado naturale) E le
+// icone usate come segnaposto visivo negli elenchi, lasciando una
+// frase pulita da poter leggere come prosa - deciso in chat: la prima
+// versione toglieva solo i numeri ma restava comunque un elenco
+// puntato, non un vero racconto (segnalato in chat, corretto qui). Il
+// danno inflitto (— Danno: N) resta: interessa a chi gioca, non è un
+// dettaglio da tavolo di regole.
+function stripTechnicalDetails(line) {
+  return line
+    .replace(/\s*\(\d+\s*vs\s*CA\s*\d+\)/g, "")
+    .replace(/\s*\(\d+\s*naturale\)/g, "")
+    .replace(/^[⚔🎲⚠️☠️🏆💀✨⚡🎉🌟]+\s*/u, "")
+    .trim();
+}
 
-        self.creation_screen = CharacterCreationScreen(self.conn)
-        self.creation_screen.character_created.connect(self._on_character_created)
-        self.stack.addWidget(self.creation_screen)
+// --- Stato globale della pagina (nessun framework, solo un oggetto e un render()) ---
+const state = {
+  screen: "startPage",       // startPage | loadGame | creation | game
+  appVersion: null,         // recuperata all'avvio da GET / (fonte di verità: core/version.py)
+  characters: [],
+  characterId: null,
+  character: null,          // payload completo dell'ultima GET /characters/{id}
+  gameTab: "sheet",         // sheet | training | arena
+  armors: [],
+  weeklySchedule: [],
+  battle: null,             // battle_state, o null fuori combattimento
+  opponentCandidates: null, // sala d'attesa: 5 avversari tra cui scegliere, o null
+  creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
+  roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
+  biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
+  customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
+  showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
+  institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
+  geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
+  showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
+  tutorialStep: 0,           // a che passo del tutorial siamo
+  trainingLog: [],
+  arenaLog: [],
+};
 
-        self.sheet_screen: GameScreen | None = None
+// --- Chiamate API: stesso indirizzo della pagina, nessun URL da configurare ---
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Errore HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
-        self.stack.setCurrentWidget(self.start_screen)
+function showError(msg) {
+  const banner = $("#error-banner");
+  banner.textContent = msg;
+  banner.classList.remove("hidden");
+  setTimeout(() => banner.classList.add("hidden"), 6000);
+}
 
-    def _show_creation(self) -> None:
-        log.info("Utente ha scelto: Nuova Partita")
-        self.stack.setCurrentWidget(self.creation_screen)
+// --- Pagina Iniziale (Nuova/Carica Partita) e schermata "Carica Partita" ---
+// Rinominata da "Home" in chat: la vera Home (una volta dentro al
+// gioco) sarà la Scheda Cavaliere - questa è solo la porta d'ingresso
+// prima di aver caricato un personaggio, concettualmente diversa.
+async function loadStartPage() {
+  state.screen = "startPage";
+  try {
+    state.characters = await api("/characters");
+  } catch (e) {
+    showError(e.message);
+    state.characters = [];
+  }
+  render();
+}
 
-    def _on_character_created(self, knight_id: int) -> None:
-        log.info("Personaggio creato dalla UI: id=%d", knight_id)
-        self._show_sheet(knight_id)
+async function loadStartScreen() {
+  // "Carica Partita": l'elenco dei salvataggi tra cui scegliere -
+  // usata sia dal pulsante omonimo in home, sia per tornare qui dopo
+  // aver lasciato una partita in corso (più naturale che tornare alla
+  // home vera e propria, visto che si era già dentro al gioco).
+  state.screen = "loadGame";
+  try {
+    state.characters = await api("/characters");
+  } catch (e) {
+    showError(e.message);
+    state.characters = [];
+  }
+  render();
+}
 
-    def _show_sheet(self, knight_id: int) -> None:
-        log.info("Apro schermata di gioco: id=%d", knight_id)
-        if self.sheet_screen is not None:
-            self.stack.removeWidget(self.sheet_screen)
-            self.sheet_screen.deleteLater()
+async function selectCharacter(id) {
+  state.characterId = id;
+  state.biography = null;  // il diario del personaggio precedente non deve restare in vista
+  state.customTechniques = null;  // idem per le tecniche personalizzate
+  await refreshCharacter();
+  state.screen = "game";
+  state.gameTab = "sheet";
+  maybeShowTutorial();
+  render();
+}
 
-        self.sheet_screen = GameScreen(self.conn, knight_id)
-        self.sheet_screen.back_to_menu_requested.connect(self._show_start)
-        self.sheet_screen.exit_requested.connect(self._exit_app)
-        self.stack.addWidget(self.sheet_screen)
-        self.stack.setCurrentWidget(self.sheet_screen)
+// --- Tutorial iniziale, saltabile (richiesto in chat) ---
+// Sei passaggi essenziali, non un manuale completo - le meccaniche più
+// fini (affinità elementale, effetti sul terreno nel dettaglio, ecc.)
+// si scoprono giocando. Appare da solo la prima volta che si entra in
+// una partita (knight.tutorial_seen === 0), resta riapribile a
+// piacere dal pulsante "?" nella schermata di gioco.
+const TUTORIAL_STEPS = [
+  {
+    title: "Benvenuto, Cavaliere",
+    body: "Il tuo Cosmo è sia la tua energia per le tecniche sia la tua \"vita\" in combattimento - quando arriva a zero, lo scontro finisce. Il tuo Livello personaggio sale allenandoti e vincendo scontri, e sblocca armature più potenti in una nuova creazione.",
+  },
+  {
+    title: "Centro Allenamento",
+    body: "Imposta un programma settimanale (un obiettivo per giorno: Forza, Costituzione, Riposo, ecc.) e premi Avanza Settimana o Avanza Mese per farlo scorrere. Il tempo passa, il tuo personaggio migliora.",
+  },
+  {
+    title: "Arena: trova un avversario",
+    body: "Scegli una difficoltà, poi ti si presenta una sala d'attesa con 5 rivali tra cui scegliere - ognuno con nome, provenienza e armatura proprie.",
+  },
+  {
+    title: "La mappa",
+    body: "Ti muovi liberamente cliccando sulla mappa, entro i tuoi Punti Movimento. Le tecniche vere colpiscono a distanza; l'Attacco Base richiede stare vicini. Muoverti troppo in un round ti fa perdere l'attacco (ma puoi sempre Caricare).",
+  },
+  {
+    title: "Combattimento",
+    body: "Scegli Attacca o Carica; se l'avversario ti attacca, scegli se Difenditi o Incassa il colpo. Ogni tanto scatta un Imprevisto (un evento casuale dell'arena) - e un colpo forte può lasciare ghiaccio, fiamme, fango o un cratere sul terreno stesso.",
+  },
+  {
+    title: "La Gerarchia",
+    body: "Nella scheda Gerarchia trovi tutte le armature del gioco, ciascuna con un cavaliere assegnato - un PNG (etichettato in giallo) se nessun giocatore l'ha ancora presa, o il personaggio di chi l'ha reclamata.",
+  },
+];
 
-    def _exit_app(self) -> None:
-        log.info("Uscita richiesta dall'utente (i dati sono già tutti salvati su DB).")
-        self.close()
+function maybeShowTutorial() {
+  if (state.character && !state.character.tutorial_seen) {
+    state.showTutorial = true;
+    state.tutorialStep = 0;
+  }
+}
 
-    def _show_start(self) -> None:
-        log.info("Ritorno al menu iniziale")
-        self.start_screen.refresh()  # rilegge l'elenco, utile se nel frattempo è stata creata una partita
-        self.stack.setCurrentWidget(self.start_screen)
+async function closeTutorial() {
+  state.showTutorial = false;
+  if (state.character) state.character.tutorial_seen = true;
+  render();
+  if (state.characterId) {
+    try {
+      await api(`/characters/${state.characterId}/tutorial-seen`, { method: "POST" });
+    } catch (e) {
+      // Non blocchiamo l'esperienza per un errore di rete su un flag
+      // puramente informativo - se fallisce, ricomparirà la prossima
+      // volta, non è grave.
+    }
+  }
+}
 
+function renderTutorialOverlay() {
+  if (!state.showTutorial) return null;
+  const step = TUTORIAL_STEPS[state.tutorialStep];
+  const overlay = el("div", {
+    style: "position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;",
+  });
+  const box = el("div", { class: "card", style: "max-width:420px;width:100%;" });
+  box.append(el("p", { class: "hint" }, `Passo ${state.tutorialStep + 1} di ${TUTORIAL_STEPS.length}`));
+  box.append(el("h2", {}, step.title));
+  box.append(el("p", {}, step.body));
 
-def main():
-    log.info("Avvio applicazione — versione %s", APP_VERSION)
+  const btnRow = el("div", { class: "row", style: "margin-top:16px;justify-content:space-between;" });
+  if (state.tutorialStep > 0) {
+    btnRow.append(el("button", { class: "secondary", onClick: () => { state.tutorialStep--; render(); } }, "◄ Indietro"));
+  }
+  if (state.tutorialStep < TUTORIAL_STEPS.length - 1) {
+    btnRow.append(el("button", { onClick: () => { state.tutorialStep++; render(); } }, "Avanti ►"));
+  } else {
+    btnRow.append(el("button", { onClick: closeTutorial }, "Ho capito, si comincia!"));
+  }
+  box.append(btnRow);
+  box.append(el("button", { class: "secondary", style: "margin-top:10px;width:100%;", onClick: closeTutorial }, "Salta tutorial"));
 
-    conn = get_connection()
-    init_db(conn)
-    refresh_armors_catalog(conn)
+  overlay.append(box);
+  return overlay;
+}
 
-    app = QApplication(sys.argv)
-    app.setStyleSheet(build_stylesheet())
+async function deleteCharacter(id, name) {
+  if (!confirm(`Eliminare definitivamente "${name}"? Non si può annullare.`)) return;
+  try {
+    await api(`/characters/${id}`, { method: "DELETE" });
+    await loadStartScreen();
+  } catch (e) {
+    showError(e.message);
+  }
+}
 
-    window = MainWindow(conn)
-    window.show()
+// --- Creazione personaggio ---
+async function loadCreationScreen() {
+  state.screen = "creation";
+  state.creationMode = null;  // riparte sempre dalla scelta, ad ogni nuovo ingresso
+  try {
+    state.armors = await api("/armors?player_level=1");
+  } catch (e) {
+    showError(e.message);
+    state.armors = [];
+  }
+  if (state.geoOrigins === null) {
+    try {
+      state.geoOrigins = await api("/geo-origins");
+    } catch (e) {
+      showError(e.message);
+      state.geoOrigins = {};
+    }
+  }
+  render();
+}
 
-    exit_code = app.exec()
-    log.info("Applicazione chiusa (exit code %d)", exit_code)
-    conn.close()
-    sys.exit(exit_code)
+const RANDOM_NAMES = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri", "Amara", "Sofia", "Yuki", "Elena", "Priya"];
+const RANDOM_SURNAMES = ["Takeda", "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau", "Petrova"];
+const RANDOM_GENDERS = ["Maschio", "Femmina"];
+const BUILD_OPTIONS = ["Minuta", "Media", "Robusta"];
 
+// Pesca una nazione a caso dall'intero albero geografico (state.geoOrigins,
+// caricato da GET /geo-origins) - usata dal Personaggio Casuale.
+function randomCountryFromGeo() {
+  const continents = Object.values(state.geoOrigins || {});
+  if (continents.length === 0) return "";
+  const zones = Object.values(randomFrom(continents));
+  return randomFrom(randomFrom(zones).countries);
+}
 
-if __name__ == "__main__":
-    main()
+function randomFrom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+async function createRandomCharacter() {
+  if (state.armors.length === 0) return showError("Nessuna armatura disponibile.");
+  const armor = randomFrom(state.armors);
+  const details = {
+    surname: randomFrom(RANDOM_SURNAMES),
+    age: 14 + Math.floor(Math.random() * 9),  // 14-22, l'età tipica di un cavaliere
+    gender: randomFrom(RANDOM_GENDERS),
+    origin: randomCountryFromGeo(),
+    build: randomFrom(BUILD_OPTIONS),
+  };
+  await createCharacter(randomFrom(RANDOM_NAMES), armor.name, details);
+}
+
+async function createCharacter(rawName, armorName, details = {}) {
+  try {
+    const character = await api("/characters", {
+      method: "POST",
+      body: JSON.stringify({
+        raw_name: rawName, armor_name: armorName, player_level: 1,
+        surname: details.surname || "", age: details.age || 15,
+        gender: details.gender || "", origin: details.origin || "", build: details.build || "Media",
+        biography: details.biography || "",
+        skin_tone: details.skin_tone || "", hair_color: details.hair_color || "",
+      }),
+    });
+    state.characterId = character.id;
+    state.character = character;
+    state.biography = null;  // nuovo personaggio, il diario riparte da zero
+    state.customTechniques = null;
+    state.weeklySchedule = [...character.weekly_schedule_list];
+    state.screen = "game";
+    state.gameTab = "sheet";
+    maybeShowTutorial();
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// --- Dati del personaggio corrente ---
+async function refreshCharacter() {
+  state.character = await api(`/characters/${state.characterId}`);
+  state.weeklySchedule = [...state.character.weekly_schedule_list];
+}
+
+// --- Allenamento ---
+async function doTrain(mode) {
+  try {
+    const result = await api(`/characters/${state.characterId}/train`, {
+      method: "POST",
+      body: JSON.stringify({ mode, schedule: state.weeklySchedule }),
+    });
+    state.character = result.character;
+    state.weeklySchedule = [...state.character.weekly_schedule_list];
+    state.trainingLog = result.log.map((l) => (l.day ? `${l.day} (${l.focus}): ${l.message}` : l.message));
+    // Un level up durante l'allenamento può aggiungere una voce nuova al
+    // diario - lo invalido sempre qui, si ricarica da solo la prossima
+    // volta che si apre la Scheda Cavaliere (corretto in chat: prima
+    // restava "vecchio" finché non si tornava alla Sala dei Cavalieri).
+    state.biography = null;
+    // Un level up può anche sbloccare un nuovo slot di tecnica
+    // personalizzata - stesso motivo, si ricarica da sola.
+    state.customTechniques = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// --- Arena ---
+async function searchOpponent(difficulty) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/candidates?difficulty=${difficulty}`, { method: "POST" });
+    state.opponentCandidates = result.candidates;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function challengeOpponent(opponent) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/opponent`, {
+      method: "POST",
+      body: JSON.stringify({ opponent }),
+    });
+    state.battle = result.battle_state;
+    state.opponentCandidates = null;
+    state.arenaLog = [`Un rivale si fa avanti: ${state.battle.opponent.name} (${state.battle.opponent.divinity} / ${state.battle.opponent.faction}, livello armatura ${state.battle.opponent.armor_level}).`];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// Fase 1 della mappa 2D: lo spostamento è ancora solo visivo, non
+// blocca né abilita nessuna azione di combattimento - vedi
+// api/arena_session.py per i dettagli.
+async function movePlayerTo(x, y) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/move`, {
+      method: "POST",
+      body: JSON.stringify({ x, y, battle_state: state.battle }),
+    });
+    state.character = result.character;
+    state.battle = result.battle_state;
+    state.arenaLog = [...state.arenaLog, ...result.log];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function declareAttack(techniqueName, techniquePower, techniqueType, techniqueLaunchDesc, techniqueEffectDesc) {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/declare`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "attacca",
+        technique_name: techniqueName,
+        technique_power: techniquePower,
+        technique_type: techniqueType || null,
+        technique_launch_desc: techniqueLaunchDesc || null,
+        technique_effect_desc: techniqueEffectDesc || null,
+        battle_state: state.battle,
+      }),
+    });
+    applyArenaResult(result);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function declareCharge() {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/declare`, {
+      method: "POST",
+      body: JSON.stringify({ action: "carica", battle_state: state.battle }),
+    });
+    applyArenaResult(result);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function reactToAttack(action, counterTechnique) {
+  try {
+    const body = { action, battle_state: state.battle };
+    if (action === "contrattacca" && counterTechnique) {
+      body.counter_technique_name = counterTechnique.name;
+      body.counter_technique_power = counterTechnique.power;
+      body.counter_technique_type = counterTechnique.tech_type || null;
+      body.counter_technique_launch_desc = counterTechnique.launch_desc || null;
+      body.counter_technique_effect_desc = counterTechnique.effect_desc || null;
+    }
+    const result = await api(`/characters/${state.characterId}/arena/react`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    applyArenaResult(result);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function retreat() {
+  try {
+    const result = await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
+    state.character = result.character;
+    state.battle = null;
+    state.opponentCandidates = null;
+    state.showCounterPicker = false;
+    state.arenaLog = [...state.arenaLog, "Ti ritiri dallo scontro."];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// Chiamata dal pulsante "Torna alla Sala dei Cavalieri" (rinominato in
+// chat da "Torna al Santuario" - troppo legato ad Athena, un nome che
+// non presuppone nessuna divinità specifica visto che ormai il gioco
+// non è più legato a un solo pantheon): se si esce mentre un
+// combattimento è ancora aperto, ci si ritira PRIMA di lasciare la
+// schermata di gioco - altrimenti il Cosmo restava bloccato basso per
+// sempre (bug segnalato in chat: l'unica cosa che lo ricarica è finire
+// uno scontro per davvero, vincendo, perdendo o ritirandosi).
+async function goToKnightsHall() {
+  if (state.battle) {
+    try {
+      await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+  state.battle = null;
+  state.opponentCandidates = null;
+  await loadStartScreen();
+}
+
+function applyArenaResult(result) {
+  state.character = result.character;
+  state.arenaLog = [...state.arenaLog, ...result.log];
+  state.battle = result.fight_over ? null : result.battle_state;
+  state.showCounterPicker = false;  // ogni round risolto riparte pulito
+  if (result.fight_over) {
+    state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
+    // Uno scontro concluso aggiunge sempre una voce al diario - stesso
+    // fix di doTrain, invalido la cache per ricaricarla alla prossima
+    // apertura della Scheda Cavaliere.
+    state.biography = null;
+  }
+  render();
+}
+
+// --- Rendering ---
+function render() {
+  const app = $("#app");
+  app.innerHTML = "";
+  if (state.screen === "startPage") app.append(renderStartPage());
+  else if (state.screen === "loadGame") app.append(renderLoadGameScreen());
+  else if (state.screen === "creation") app.append(renderCreationScreen());
+  else if (state.screen === "game") app.append(renderGameScreen());
+
+  const tutorialOverlay = renderTutorialOverlay();
+  if (tutorialOverlay) app.append(tutorialOverlay);
+
+  // Ogni render ricostruisce la pagina da zero, quindi la cronaca
+  // perdeva sempre lo scorrimento e tornava a mostrare i messaggi più
+  // vecchi (segnalato in chat) - la riportiamo in fondo, dove sta
+  // l'ultimo messaggio appena aggiunto. Ora possono essercene due
+  // insieme (narrazione + dettagli tecnici), quindi li scorriamo tutti.
+  document.querySelectorAll(".log-box").forEach((box) => {
+    box.scrollTop = box.scrollHeight;
+  });
+}
+
+function renderEmblem() {
+  // Emblema originale (nessuna grafica ufficiale Saint Seiya): un
+  // cerchio dorato con una stella cosmica a otto punte e qualche
+  // stellina sparsa - un segnaposto elegante finché non c'è una vera
+  // immagine, come richiesto in chat.
+  const holder = document.createElement("div");
+  holder.innerHTML = `
+    <svg width="160" height="160" viewBox="0 0 180 180" style="display:block;margin:0 auto 16px;">
+      <circle cx="90" cy="90" r="82" fill="#141B2E" stroke="#D4AF37" stroke-width="4"/>
+      <circle cx="90" cy="90" r="68" fill="none" stroke="#D4AF37" stroke-width="1" opacity="0.5"/>
+      <circle cx="40" cy="35" r="1.6" fill="#3FA9F5"/>
+      <circle cx="142" cy="48" r="1.3" fill="#3FA9F5"/>
+      <circle cx="150" cy="122" r="1.6" fill="#3FA9F5"/>
+      <circle cx="34" cy="128" r="1.3" fill="#3FA9F5"/>
+      <circle cx="90" cy="18" r="1.1" fill="#EAE6DA"/>
+      <path d="M90,28 L99,74 L142,90 L99,106 L90,152 L81,106 L38,90 L81,74 Z" fill="#3FA9F5" stroke="#D4AF37" stroke-width="2"/>
+      <circle cx="90" cy="90" r="9" fill="#D4AF37"/>
+    </svg>`;
+  return holder.firstElementChild;
+}
+
+function renderStartPage() {
+  const wrap = el("div", { style: "max-width:420px;margin:40px auto;text-align:center;" });
+  wrap.append(renderEmblem());
+  wrap.append(el("h1", {}, "SAINT SEIYA"));
+  wrap.append(el("p", { class: "hint" }, "Sacro Imperio" + (state.appVersion ? ` · ${state.appVersion}` : "")));
+
+  const btnWrap = el("div", { style: "margin-top:24px;" });
+  btnWrap.append(el("button", { style: "width:100%;", onClick: loadCreationScreen }, "⚔ Nuova Partita"));
+  const loadLabel = state.characters.length === 0 ? "📂 Carica Partita (nessun salvataggio)" : "📂 Carica Partita";
+  btnWrap.append(el("button", {
+    class: "secondary", style: "width:100%;",
+    onClick: loadStartScreen,
+    ...(state.characters.length === 0 ? { disabled: "disabled" } : {}),
+  }, loadLabel));
+  wrap.append(btnWrap);
+
+  return wrap;
+}
+
+function renderLoadGameScreen() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Carica Partita"));
+
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, "Partite salvate"));
+
+  if (state.characters.length === 0) {
+    card.append(el("p", { class: "hint" }, "Nessuna partita salvata."));
+  } else {
+    const table = el("table");
+    table.append(el("tr", {}, el("th", {}, "Nome"), el("th", {}, "Livello"), el("th", {}, "Armatura"), el("th", {}, "")));
+    for (const c of state.characters) {
+      const delBtn = el("button", { class: "secondary", onClick: (e) => { e.stopPropagation(); deleteCharacter(c.id, c.formal_name); } }, "Elimina");
+      const row = el("tr", { class: "selectable", onClick: () => selectCharacter(c.id) },
+        el("td", {}, c.formal_name),
+        el("td", {}, String(c.player_level)),
+        el("td", {}, c.armor_name),
+        el("td", {}, delBtn),
+      );
+      table.append(row);
+    }
+    const scrollWrap = el("div", { class: "table-scroll" });
+    scrollWrap.append(table);
+    card.append(scrollWrap);
+  }
+  wrap.append(card);
+
+  wrap.append(el("button", { class: "secondary", onClick: loadStartPage }, "◄ Indietro"));
+  return wrap;
+}
+
+function renderCreationScreen() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Crea il tuo Cavaliere"));
+
+  if (!state.creationMode) {
+    const modeCard = el("div", { class: "card" });
+    modeCard.append(el("h2", {}, "Come vuoi iniziare?"));
+    modeCard.append(el("button", { onClick: createRandomCharacter }, "🎲 Personaggio Casuale"));
+    modeCard.append(el("button", {
+      class: "secondary",
+      onClick: () => { state.creationMode = "detailed"; render(); },
+    }, "✏️ Crea Come Vuoi Tu"));
+    wrap.append(modeCard);
+    wrap.append(el("button", { class: "secondary", onClick: loadStartPage }, "Annulla"));
+    return wrap;
+  }
+
+  // --- Modalità "Crea Come Vuoi Tu": modulo esteso, richiesto in chat ---
+  const nameCard = el("div", { class: "card" });
+  nameCard.append(el("h2", {}, "Chi è il tuo Cavaliere"));
+
+  const row1 = el("div", { class: "row" });
+  const nameInput = el("input", { placeholder: "Nome (es. Seiya)" });
+  const surnameInput = el("input", { placeholder: "Cognome (opzionale)" });
+  row1.append(nameInput, surnameInput);
+  nameCard.append(row1);
+
+  const row2 = el("div", { class: "row" });
+  const ageInput = el("input", { type: "number", placeholder: "Età", value: "15", min: "10", max: "99" });
+  const genderSelect = el("select", {});
+  for (const g of ["", "Maschio", "Femmina", "Altro"]) {
+    genderSelect.append(el("option", { value: g }, g || "Sesso (opzionale)"));
+  }
+  const buildSelect = el("select", {});
+  for (const b of BUILD_OPTIONS) {
+    buildSelect.append(el("option", { value: b, ...(b === "Media" ? { selected: "selected" } : {}) }, b));
+  }
+  row2.append(ageInput, genderSelect, buildSelect);
+  nameCard.append(row2);
+
+  // Provenienza: menu a cascata Continente -> Macrozona -> Nazione
+  // (richiesto in chat: l'elenco piatto di 10 nazioni era troppo
+  // scarno). L'albero arriva da GET /geo-origins, la stessa fonte di
+  // verità usata dal server per l'affinità elementale in combattimento.
+  const row3 = el("div", { class: "row" });
+  const continentSelect = el("select", {});
+  const macrozoneSelect = el("select", { disabled: "disabled" });
+  const countrySelect = el("select", { disabled: "disabled" });
+
+  continentSelect.append(el("option", { value: "" }, "Continente (opzionale)"));
+  for (const continent of Object.keys(state.geoOrigins || {}).sort()) {
+    continentSelect.append(el("option", { value: continent }, continent));
+  }
+  macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
+  countrySelect.append(el("option", { value: "" }, "Nazione"));
+
+  continentSelect.addEventListener("change", () => {
+    macrozoneSelect.innerHTML = "";
+    countrySelect.innerHTML = "";
+    countrySelect.append(el("option", { value: "" }, "Nazione"));
+    countrySelect.disabled = true;
+    const continent = continentSelect.value;
+    if (!continent) {
+      macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
+      macrozoneSelect.disabled = true;
+      return;
+    }
+    macrozoneSelect.disabled = false;
+    macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
+    for (const zone of Object.keys(state.geoOrigins[continent]).sort()) {
+      macrozoneSelect.append(el("option", { value: zone }, zone));
+    }
+  });
+
+  macrozoneSelect.addEventListener("change", () => {
+    countrySelect.innerHTML = "";
+    const continent = continentSelect.value;
+    const zone = macrozoneSelect.value;
+    if (!zone) {
+      countrySelect.append(el("option", { value: "" }, "Nazione"));
+      countrySelect.disabled = true;
+      return;
+    }
+    countrySelect.disabled = false;
+    countrySelect.append(el("option", { value: "" }, "Nazione"));
+    for (const country of state.geoOrigins[continent][zone].countries) {
+      countrySelect.append(el("option", { value: country }, country));
+    }
+  });
+
+  row3.append(continentSelect, macrozoneSelect, countrySelect);
+  nameCard.append(row3);
+  nameCard.append(el("p", { class: "hint" }, "La provenienza dà un piccolo bonus/resistenza con l'elemento della sua macrozona. La corporatura sposta la Costituzione di partenza."));
+
+  // Background (richiesto in chat): l'abbozzo iniziale del diario, da
+  // cui il gioco continua a scrivere da solo (level up, Sensi,
+  // vittorie/sconfitte) man mano che si gioca.
+  const biographyInput = el("textarea", {
+    placeholder: "Background (opzionale) - da dove viene, cosa lo spinge a diventare un cavaliere...",
+    rows: "3", style: "width:100%;resize:vertical;",
+  });
+  nameCard.append(el("p", { class: "hint", style: "margin-top:12px;" }, "Il tuo diario comincia da qui - il gioco continuerà a scriverlo da solo man mano che giochi."));
+  nameCard.append(biographyInput);
+  wrap.append(nameCard);
+
+  const armorCard = el("div", { class: "card" });
+  armorCard.append(el("h2", {}, `Scegli l'armatura (${state.armors.length} disponibili al livello 1)`));
+  const table = el("table");
+  table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Divinità"), el("th", {}, "Fazione"), el("th", {}, "Livello")));
+  let selectedArmor = null;
+  for (const a of state.armors) {
+    const row = el("tr", { class: "selectable" },
+      el("td", {}, a.name), el("td", {}, a.divinity), el("td", {}, a.faction), el("td", {}, String(a.level)));
+    row.addEventListener("click", () => {
+      table.querySelectorAll("tr.selected").forEach((r) => r.classList.remove("selected"));
+      row.classList.add("selected");
+      selectedArmor = a.name;
+    });
+    table.append(row);
+  }
+  const armorScrollWrap = el("div", { class: "table-scroll" });
+  armorScrollWrap.append(table);
+  armorCard.append(armorScrollWrap);
+  wrap.append(armorCard);
+
+  const createBtn = el("button", {
+    onClick: () => {
+      const name = nameInput.value.trim();
+      if (!name) return showError("Inserisci un nome per il personaggio.");
+      if (!selectedArmor) return showError("Seleziona un'armatura dalla tabella.");
+      const age = parseInt(ageInput.value, 10) || 15;
+      createCharacter(name, selectedArmor, {
+        surname: surnameInput.value.trim(),
+        age,
+        gender: genderSelect.value,
+        origin: countrySelect.value,
+        build: buildSelect.value,
+        biography: biographyInput.value.trim(),
+      });
+    },
+  }, "Crea e Seleziona");
+  wrap.append(createBtn);
+  wrap.append(el("button", { class: "secondary", onClick: () => { state.creationMode = null; render(); } }, "◄ Indietro"));
+  return wrap;
+}
+
+function renderGameScreen() {
+  const wrap = el("div");
+  const k = state.character;
+
+  // --- Barra di stato, sempre visibile ---
+  const statusBar = el("div", { class: "status-bar" });
+  statusBar.append(el("span", { class: "calendar" }, "📅 " + k.calendar.label));
+  statusBar.append(renderMiniBar("Cosmo", k.cosmo_cur, k.cosmo_max, "cosmo"));
+  statusBar.append(renderMiniBar("Stamina", k.stamina, 100, "stamina"));
+  wrap.append(statusBar);
+
+  // --- Tabs ---
+  const tabs = el("div", { class: "tabs" });
+  const tabDefs = [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
+  for (const [key, label] of tabDefs) {
+    tabs.append(el("button", {
+      class: "tab-btn" + (state.gameTab === key ? " active" : ""),
+      onClick: () => { state.gameTab = key; render(); },
+    }, label));
+  }
+  // Riapre il tutorial in ogni momento (richiesto in chat), senza
+  // toccare il flag "già visto" - resta sempre disponibile a chi vuole
+  // rivederlo, anche dopo averlo già chiuso una volta.
+  tabs.append(el("button", {
+    class: "tab-btn", title: "Rivedi il tutorial",
+    onClick: () => { state.showTutorial = true; state.tutorialStep = 0; render(); },
+  }, "❓"));
+  wrap.append(tabs);
+
+  if (state.gameTab === "sheet") wrap.append(renderSheetTab());
+  else if (state.gameTab === "training") wrap.append(renderTrainingTab());
+  else if (state.gameTab === "arena") wrap.append(renderArenaTab());
+  else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
+
+  wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
+  return wrap;
+}
+
+async function loadRoster() {
+  try {
+    state.roster = await api("/roster");
+  } catch (e) {
+    showError(e.message);
+    state.roster = [];
+  }
+  render();
+}
+
+async function loadInstitutionalNpcs() {
+  try {
+    state.institutionalNpcs = await api("/institutional-npcs");
+  } catch (e) {
+    showError(e.message);
+    state.institutionalNpcs = [];
+  }
+  render();
+}
+
+async function loadBiography() {
+  try {
+    state.biography = await api(`/characters/${state.characterId}/biography`);
+  } catch (e) {
+    showError(e.message);
+    state.biography = { sketch: "", entries: [] };
+  }
+  render();
+}
+
+async function loadCustomTechniques() {
+  try {
+    state.customTechniques = await api(`/characters/${state.characterId}/custom-techniques`);
+  } catch (e) {
+    showError(e.message);
+    state.customTechniques = { techniques: [], slots_total: 0, slots_used: 0, allowed_elements: [] };
+  }
+  render();
+}
+
+async function createCustomTechnique(name, techType, launchDesc, effectDesc) {
+  try {
+    await api(`/characters/${state.characterId}/custom-techniques`, {
+      method: "POST",
+      body: JSON.stringify({ name, tech_type: techType, launch_desc: launchDesc, effect_desc: effectDesc }),
+    });
+    state.customTechniques = null;  // si ricarica da sola con la nuova tecnica dentro
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// La Gerarchia (richiesta in chat): tutte le 224 armature, raggruppate
+// per divinità e fazione, ciascuna con chi la occupa - un PNG fisso
+// (etichettato chiaramente, per far capire che è ancora selezionabile
+// in creazione personaggio) o il cavaliere giocatore che l'ha già
+// reclamata.
+function renderHierarchyTab() {
+  const wrap = el("div");
+
+  // Le Figure Istituzionali (richiesto in chat): un minimo di gdr,
+  // statiche e non giocabili - Il Grande Sacerdote, Pandora, ecc.
+  // Mostrate in cima, prima dell'elenco delle armature.
+  if (state.institutionalNpcs === null) {
+    loadInstitutionalNpcs();
+  } else if (state.institutionalNpcs.length > 0) {
+    const npcCard = el("div", { class: "card" });
+    npcCard.append(el("h2", {}, "Le Figure del Sacro Imperio"));
+    for (const npc of state.institutionalNpcs) {
+      const block = el("div", { style: "margin-top:12px;" });
+      block.append(el("p", {}, el("strong", {}, `${npc.name}`), ` — ${npc.divinity}`));
+      block.append(el("p", { class: "hint" }, npc.role));
+      block.append(el("p", {}, npc.description));
+      block.append(el("p", { style: "font-style:italic;" }, `"${npc.quote}"`));
+      npcCard.append(block);
+    }
+    wrap.append(npcCard);
+  }
+
+  if (state.roster === null) {
+    loadRoster();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Gerarchia...")));
+    return wrap;
+  }
+
+  const groups = {};
+  for (const r of state.roster) {
+    groups[r.divinity] = groups[r.divinity] || {};
+    groups[r.divinity][r.faction] = groups[r.divinity][r.faction] || [];
+    groups[r.divinity][r.faction].push(r);
+  }
+
+  for (const divinity of Object.keys(groups).sort()) {
+    const divCard = el("div", { class: "card" });
+    divCard.append(el("h2", {}, divinity));
+    for (const faction of Object.keys(groups[divinity]).sort()) {
+      divCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, faction));
+      const table = el("table");
+      table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Livello"), el("th", {}, "Occupante")));
+      for (const entry of groups[divinity][faction]) {
+        const playerDisplayName = [entry.claimed_by_raw_name, entry.claimed_by_surname].filter(Boolean).join(" ");
+        const occupantCell = entry.claimed_by_raw_name
+          ? el("td", {}, `${playerDisplayName} (livello ${entry.claimed_by_level})`)
+          : el("td", {}, entry.npc_name, el("span", {
+              style: "background:var(--gold);color:#1a1a1a;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;font-weight:700;",
+            }, "PNG"));
+        const row = el("tr", {}, el("td", {}, entry.armor_name), el("td", {}, String(entry.level)), occupantCell);
+        table.append(row);
+      }
+      const scrollWrap = el("div", { class: "table-scroll" });
+      scrollWrap.append(table);
+      divCard.append(scrollWrap);
+    }
+    wrap.append(divCard);
+  }
+
+  return wrap;
+}
+
+function renderMiniBar(label, value, max, kind) {
+  const wrap = el("div", { class: "mini-bar" });
+  const barWrap = el("div", { class: "bar-wrap" });
+  const pct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
+  const fill = el("div", { class: "bar-fill" + (kind === "stamina" ? " stamina" : ""), style: `width:${pct}%` });
+  barWrap.append(fill, el("div", { class: "bar-label" }, `${label}: ${value}/${max}`));
+  wrap.append(barWrap);
+  return wrap;
+}
+
+// Caricamento dell'immagine del personaggio (richiesto in chat: tolte
+// le sagome geometriche, "fanno cagare" - restava solo questa strada
+// per avere un vero ritratto, senza uno strumento di disegno vero).
+async function uploadAvatar(file) {
+  if (!state.characterId) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch(`/characters/${state.characterId}/avatar`, { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Errore HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    state.character.avatar_path = data.avatar_path;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function renderSheetTab() {
+  const k = state.character;
+  const wrap = el("div");
+  wrap.append(el("h1", {}, k.formal_name));
+
+  const grid = el("div", { class: "sheet-grid" });
+
+  // --- Immagine PG: l'avatar caricato se c'è, altrimenti un
+  // segnaposto semplice (tolte le sagome geometriche - richiesto in
+  // chat, non reggevano il confronto) ---
+  const imageCard = el("div", { class: "card sheet-image" });
+  if (k.avatar_path) {
+    imageCard.append(el("img", { src: k.avatar_path, style: "width:100%;border-radius:8px;display:block;" }));
+  } else {
+    imageCard.append(el("div", {
+      style: "display:flex;align-items:center;justify-content:center;min-height:160px;border:1px dashed var(--border);border-radius:8px;color:var(--text-secondary);font-size:13px;",
+    }, "Nessuna immagine caricata"));
+  }
+  const avatarFileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+  avatarFileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadAvatar(e.target.files[0]); });
+  imageCard.append(avatarFileInput);
+  imageCard.append(el("button", {
+    class: "secondary", style: "width:100%;margin-top:8px;",
+    onClick: () => avatarFileInput.click(),
+  }, k.avatar_path ? "📷 Cambia immagine" : "📷 Carica una tua immagine"));
+  grid.append(imageCard);
+
+  // --- Dati anagrafici ---
+  const idCard = el("div", { class: "card sheet-identity" });
+  idCard.append(el("h2", {}, "Dati Anagrafici"));
+  const idLine = [
+    `${k.armor.divinity} · ${k.armor.faction}`, `Livello armatura ${k.armor.level}`,
+    k.age ? `${k.age} anni` : null, k.gender, k.origin,
+    k.build && k.build !== "Media" ? `Corporatura ${k.build}` : null,
+  ].filter(Boolean).join(" · ");
+  idCard.append(el("p", { class: "hint" }, idLine));
+  grid.append(idCard);
+
+  // --- BG Personaggio: solo l'abbozzo scritto alla creazione, non le
+  // voci auto-generate (quelle sono nel Diario, più in basso -
+  // separati come richiesto in chat) ---
+  const bgCard = el("div", { class: "card sheet-background" });
+  bgCard.append(el("h2", {}, "Background"));
+  if (state.biography === null) {
+    loadBiography();
+    bgCard.append(el("p", { class: "hint" }, "Caricamento..."));
+  } else if (state.biography.sketch) {
+    bgCard.append(el("p", { style: "font-style:italic;" }, state.biography.sketch));
+  } else {
+    bgCard.append(el("p", { class: "hint" }, "Nessun background scritto alla creazione."));
+  }
+  grid.append(bgCard);
+
+  // --- Statistiche + Progressione, unite in una card sola ---
+  const statsCard = el("div", { class: "card sheet-stats" });
+  statsCard.append(el("h2", {}, "Statistiche"));
+  const statsGrid = el("div", { class: "stats-grid" });
+  for (const [label, val] of [["FORZA", k.str], ["DESTREZZA", k.dex], ["COSTITUZIONE", k.con], ["TECNICA", k.tec], ["VOLONTÀ", k.vol]]) {
+    statsGrid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(val)), el("div", { class: "label" }, label)));
+  }
+  statsGrid.append(el("div", { class: "stat-chip" }, el("div", { class: "value" }, String(k.movement_points)), el("div", { class: "label" }, "MOVIMENTO")));
+  statsCard.append(statsGrid);
+  statsCard.append(el("h2", { style: "margin-top:14px;" }, "Progressione"));
+  statsCard.append(el("p", {}, `Livello personaggio ${k.player_level} · XP ${k.xp}`));
+  const senses = k.senses;
+  const mark = (b) => (b ? "✓" : "✗");
+  statsCard.append(el("p", { class: "hint" },
+    `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
+  grid.append(statsCard);
+
+  // --- Tecniche (catalogo + personalizzate) ---
+  const techCard = el("div", { class: "card sheet-techniques" });
+  techCard.append(el("h2", {}, "Tecniche"));
+  for (const t of k.techniques) {
+    techCard.append(el("p", {}, `⚡ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+  }
+
+  // Tecniche personalizzate (richiesto in chat) - caricate pigre, come
+  // il Diario e la Gerarchia.
+  if (state.customTechniques === null) {
+    loadCustomTechniques();
+    techCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Caricamento delle tecniche personalizzate..."));
+  } else {
+    const ct = state.customTechniques;
+    if (ct.techniques.length > 0) {
+      techCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, "Personalizzate:"));
+      for (const t of ct.techniques) {
+        techCard.append(el("p", {}, `✨ ${t.name} — ${t.tech_type} (potenza ${t.power})`));
+      }
+    }
+    techCard.append(el("p", { class: "hint", style: "margin-top:8px;" }, `Slot tecnica personalizzata: ${ct.slots_used}/${ct.slots_total}`));
+
+    if (ct.slots_used < ct.slots_total) {
+      if (ct.allowed_elements.length === 0) {
+        techCard.append(el("p", { class: "hint" }, "Nessun elemento ammesso al momento (serve un'armatura con tecniche riconosciute, o una Provenienza con affinità)."));
+      } else {
+        const nameInput = el("input", { placeholder: "Nome della tecnica" });
+        const elementSelect = el("select", {});
+        for (const el_ of ct.allowed_elements) elementSelect.append(el("option", { value: el_ }, el_));
+        const launchInput = el("textarea", { placeholder: "Come si manifesta (opzionale)", rows: "2", style: "width:100%;resize:vertical;" });
+        const effectInput = el("textarea", { placeholder: "Che effetto ha (opzionale)", rows: "2", style: "width:100%;resize:vertical;" });
+        techCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Crea una nuova tecnica personalizzata:"));
+        techCard.append(nameInput, elementSelect, launchInput, effectInput);
+        techCard.append(el("button", {
+          style: "margin-top:6px;",
+          onClick: () => {
+            if (!nameInput.value.trim()) return showError("Dai un nome alla tecnica.");
+            createCustomTechnique(nameInput.value.trim(), elementSelect.value, launchInput.value.trim(), effectInput.value.trim());
+          },
+        }, "✨ Crea tecnica"));
+      }
+    }
+  }
+  grid.append(techCard);
+
+  // --- Diario: solo le voci auto-generate (level up, Sensi,
+  // vittorie/sconfitte) - il Background sta ora a parte, sopra ---
+  const diaryCard = el("div", { class: "card sheet-diary" });
+  diaryCard.append(el("h2", {}, "Diario"));
+  if (state.biography === null) {
+    diaryCard.append(el("p", { class: "hint" }, "Caricamento..."));
+  } else if (state.biography.entries.length === 0) {
+    diaryCard.append(el("p", { class: "hint" }, "Il diario si arricchirà da solo man mano che ti alleni e combatti."));
+  } else {
+    const entriesBox = el("div", { class: "log-box" });
+    for (const entry of state.biography.entries) {
+      entriesBox.append(el("div", { class: "log-line" }, "• " + entry.entry));
+    }
+    diaryCard.append(entriesBox);
+  }
+  grid.append(diaryCard);
+
+  wrap.append(grid);
+  return wrap;
+}
+
+function renderTrainingTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Centro Allenamento"));
+
+  const focusOptions = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
+                         "Cascata del Sacrificio", "Sparring con i Compagni", "Riposo"];
+  const dayNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+  const focusLegend = {
+    "Cosmo": "aumenta il Cosmo massimo",
+    "Forza": "aumenta Forza",
+    "Destrezza": "aumenta Destrezza",
+    "Costituzione": "aumenta Costituzione",
+    "Tecnica": "aumenta Tecnica",
+    "Volontà": "aumenta Volontà",
+    "Cascata del Sacrificio": "aumenta Costituzione (allenamento duro: costa più Stamina)",
+    "Sparring con i Compagni": "aumenta Forza, Destrezza o Costituzione a caso (rischio infortunio più alto)",
+    "Riposo": "recupera Stamina, nessuna crescita",
+  };
+
+  const legendCard = el("div", { class: "card" });
+  legendCard.append(el("h2", {}, "Cosa allena ogni voce"));
+  for (const [focus, desc] of Object.entries(focusLegend)) {
+    legendCard.append(el("p", { class: "hint" }, `${focus}: ${desc}`));
+  }
+  wrap.append(legendCard);
+
+  const scheduleCard = el("div", { class: "card" });
+  scheduleCard.append(el("h2", {}, "Programma settimanale"));
+  const row = el("div", { class: "row" });
+  state.weeklySchedule.forEach((focus, i) => {
+    const select = el("select", {});
+    for (const opt of focusOptions) {
+      const optionEl = el("option", { value: opt }, opt);
+      if (opt === focus) optionEl.setAttribute("selected", "selected");
+      select.append(optionEl);
+    }
+    select.addEventListener("change", (e) => { state.weeklySchedule[i] = e.target.value; });
+    const col = el("div", {}, el("div", { class: "hint" }, dayNames[i]), select);
+    row.append(col);
+  });
+  scheduleCard.append(row);
+
+  const btnRow = el("div", { class: "row" });
+  btnRow.append(el("button", { onClick: () => doTrain("settimana") }, "▶ Avanza Settimana"));
+  btnRow.append(el("button", { class: "secondary", onClick: () => doTrain("mese") }, "▶▶ Avanza Mese"));
+  scheduleCard.append(btnRow);
+  wrap.append(scheduleCard);
+
+  const logCard = el("div", { class: "card" });
+  logCard.append(el("h2", {}, "Ultimo avanzamento"));
+  const logBox = el("div", { class: "log-box" });
+  if (state.trainingLog.length === 0) logBox.append(el("p", { class: "hint" }, "I risultati appariranno qui."));
+  for (const line of state.trainingLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  logCard.append(logBox);
+  wrap.append(logCard);
+
+  return wrap;
+}
+
+function renderArenaTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Arena del Santuario"));
+
+  if (!state.battle && !state.opponentCandidates) {
+    const searchCard = el("div", { class: "card" });
+    searchCard.append(el("h2", {}, "Cerca un avversario"));
+    searchCard.append(el("p", { class: "hint" }, "Scegli la difficoltà dell'avversario:"));
+    searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("facile") }, "🗡 Facile"));
+    searchCard.append(el("button", { onClick: () => searchOpponent("medio") }, "🗡 Medio"));
+    searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
+    wrap.append(searchCard);
+  } else if (!state.battle && state.opponentCandidates) {
+    const waitingCard = el("div", { class: "card" });
+    waitingCard.append(el("h2", {}, "Sala d'attesa"));
+    waitingCard.append(el("p", { class: "hint" }, "5 rivali si fanno avanti dalla sala d'attesa - chi sfidi?"));
+    for (const candidate of state.opponentCandidates) {
+      waitingCard.append(el("button", {
+        onClick: () => challengeOpponent(candidate),
+      }, `⚔ ${candidate.name} (${candidate.divinity} / ${candidate.faction}, livello ${candidate.armor_level})`));
+    }
+    waitingCard.append(el("button", { class: "secondary", onClick: () => { state.opponentCandidates = null; render(); } }, "◄ Cambia difficoltà"));
+    wrap.append(waitingCard);
+  } else {
+    const k = state.character;
+    const o = state.battle.opponent;
+    // Scala condivisa: chi ha più Cosmo massimo ha la barra fisicamente
+    // più "grossa", non solo la percentuale - prima le due barre
+    // avevano sempre la stessa lunghezza anche con Cosmo massimo
+    // molto diverso tra i due combattenti.
+    const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
+
+    const columns = el("div", { class: "arena-columns" });
+
+    // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
+    const leftPanel = el("div", { class: "fighter-panel" });
+    leftPanel.append(el("h2", {}, k.formal_name));
+    leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
+    leftPanel.append(renderFullBar(k.cosmo_cur, k.cosmo_max, sharedMaxCosmo));
+
+    if (state.battle.pending_opponent_technique) {
+      const t = state.battle.pending_opponent_technique;
+      leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
+
+      if (!state.showCounterPicker) {
+        leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
+        leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
+        leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
+      } else {
+        // Contrattacco (richiesto in chat): il colpo avversario arriva
+        // pieno, non ridotto per niente - in cambio, scegli TU con
+        // quale delle tue tecniche rispondere, come un vero attacco.
+        if (state.customTechniques === null) loadCustomTechniques();
+        const customTechs = state.customTechniques ? state.customTechniques.techniques : [];
+        const counterOptions = [{ name: "Attacco Base", power: 20 }].concat(
+          k.techniques.filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv")),
+          customTechs,
+        );
+        leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Il colpo avversario arriva pieno, senza riduzione - scegli con cosa rispondere:"));
+        for (const ct of counterOptions) {
+          leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
+        }
+        leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
+      }
+    } else {
+      const senses = k.senses;
+      // Tecniche personalizzate (richiesto in chat): caricate pigre
+      // anche qui, non solo nella Scheda Cavaliere - si può arrivare
+      // in Arena senza mai aver aperto quella scheda prima.
+      if (state.customTechniques === null) loadCustomTechniques();
+      const customTechs = state.customTechniques ? state.customTechniques.techniques : [];
+      const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
+        k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv")),
+        customTechs,
+      );
+      leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
+      for (const t of attackOptions) {
+        leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
+      }
+      leftPanel.append(el("button", {
+        onClick: declareCharge,
+        class: "secondary",
+        ...(senses.sesto ? {} : { disabled: "disabled" }),
+      }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica (richiede Sesto Senso)"));
+      leftPanel.append(el("button", { class: "secondary", onClick: retreat }, "Ritirati"));
+    }
+    columns.append(leftPanel);
+
+    // --- Colonna centrale: la mappa ---
+    const mapColumn = el("div", { class: "arena-map-column" });
+    const mapCard = el("div", { class: "card" });
+    mapCard.append(el("h2", {}, "Arena"));
+    mapCard.append(renderArenaMap());
+    const movementHint = state.battle.pending_opponent_technique
+      ? "Rispondi all'attacco prima di poterti muovere ancora."
+      : `Punti Movimento: ${k.movement_points} — clicca sulla mappa per spostarti. L'Attacco Base richiede stare vicini; le tecniche vere colpiscono a distanza. Muoverti molto consuma il turno.`;
+    mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
+    mapColumn.append(mapCard);
+    columns.append(mapColumn);
+
+    // --- Pannello destro: L'AVVERSARIO ---
+    // Le sue tecniche sono mostrate ma NON cliccabili - oggi lo
+    // controlla l'IA, ma la disposizione è pronta per un domani in cui
+    // due cavalieri diversi (magari due giocatori) potrebbero
+    // scegliere ciascuno le proprie tecniche dalla stessa schermata
+    // (richiesto in chat).
+    const rightPanel = el("div", { class: "fighter-panel opponent-panel" });
+    rightPanel.append(el("h2", {}, o.name));
+    rightPanel.append(el("p", { class: "hint" }, `${o.divinity} / ${o.faction} · Livello armatura ${o.armor_level}`));
+    rightPanel.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
+    rightPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le sue tecniche:"));
+    for (const t of o.techniques) {
+      rightPanel.append(el("button", { disabled: "disabled" }, `⚔ ${t.name} (${t.power})`));
+    }
+    columns.append(rightPanel);
+
+    wrap.append(columns);
+  }
+
+  const logCard = el("div", { class: "card" });
+  logCard.append(el("h2", {}, "Cronaca dello scontro"));
+  const logBox = el("div", { class: "log-box" });
+  if (state.arenaLog.length === 0) logBox.append(el("p", { class: "hint" }, "Cerca un avversario per iniziare."));
+  for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+  logCard.append(logBox);
+  wrap.append(logCard);
+
+  return wrap;
+}
+
+function renderFullBar(value, max, scaleMax) {
+  // scaleMax (opzionale): il Cosmo massimo più alto tra i due
+  // combattenti - la CORNICE esterna si restringe in proporzione,
+  // così chi ha meno Cosmo massimo ha una barra fisicamente più
+  // corta, non solo una percentuale diversa dentro una barra identica.
+  const containerPct = scaleMax ? Math.max(15, Math.min(100, (max / scaleMax) * 100)) : 100;
+  const fillPct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
+
+  const outer = el("div", { style: `width:${containerPct}%;` });
+  const barWrap = el("div", { class: "bar-wrap" });
+  barWrap.append(el("div", { class: "bar-fill", style: `width:${fillPct}%` }));
+  barWrap.append(el("div", { class: "bar-label" }, `Cosmo: ${value} / ${max}`));
+  outer.append(barWrap);
+  return outer;
+}
+
+// Mappa 2D dell'Arena, Fase 1: griglia 10x10 come "righello", movimento
+// libero/continuo (non a caselle - deciso in chat, stile Football
+// Manager). Cliccare/toccare sposta il giocatore verso quel punto,
+// entro i Punti Movimento disponibili - se troppo lontano, ci si ferma
+// al massimo raggiungibile invece di rifiutare il click. La distanza
+// non blocca ancora nulla nel combattimento (Fase 1: solo visiva).
+//
+// I due combattenti sono figure stilizzate (testa + mantello a
+// triangolo), non più pallini - e dopo ogni colpo, battle.last_effect
+// (impostato dal backend) dice alla mappa cosa disegnare: un fascio
+// colorato per elemento della tecnica, un segno di scudo se parato,
+// un segno d'impatto se il colpo è passato, o uno scarto laterale del
+// colpito se ha schivato - tutto richiesto in chat.
+
+function elementColor(techType) {
+  const t = (techType || "").toLowerCase();
+  if (t.includes("ghiaccio")) return "#AEE6FF";
+  if (t.includes("fuoco")) return "#FF7043";
+  if (t.includes("veleno")) return "#7CB342";
+  if (t.includes("acqua")) return "#4FC3F7";
+  if (t.includes("psichico") || t.includes("illusione")) return "#B266FF";
+  if (t.includes("cosmico") || t.includes("cosmo")) return "#3FA9F5";
+  if (t.includes("fisico")) return "#D4AF37";
+  return "#EAE6DA"; // elemento non riconosciuto: colore neutro
+}
+
+function drawKnightFigure(ctx, x, y, color, label) {
+  // Tornato al semplice cerchio (la figura testa+mantello "faceva
+  // cacare" - parole tue): l'estetica vera aspetta il 3D, molto più
+  // avanti. Per ora leggibilità sopra tutto.
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, 11, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#EAE6DA";
+  ctx.font = "11px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, x, y - 16);
+}
+
+// Le 5 arene della Fase 4 (puramente estetiche, nessuna nuova
+// meccanica - richiesto in chat): sfondo diverso e una piccola
+// decorazione caratteristica per ciascuna, scelta dal server in base
+// alla provenienza dell'avversario (vedi pick_arena_theme lato
+// backend). Niente immagini vere (nessuno strumento di generazione
+// disponibile, vedi discussione sull'emblema) - solo forme geometriche
+// semplici, sufficienti a dare un'identità visiva diversa a colpo
+// d'occhio.
+const ARENA_THEMES = {
+  atene: { bg: "linear-gradient(#26324a, #0B0F1A)" },
+  siberia: { bg: "linear-gradient(#cfe8f7, #7fa8c9)" },
+  deserto: { bg: "linear-gradient(#f6cf8e, #d98e3a)" },
+  colosseo: { bg: "linear-gradient(#9b9689, #4a453d)" },
+  piramidi: { bg: "linear-gradient(#6b4a7e, #d9a441)" },
+};
+
+function drawArenaDecoration(ctx, theme, size) {
+  ctx.save();
+  if (theme === "atene") {
+    ctx.fillStyle = "rgba(234,230,218,0.45)";
+    for (const x of [size * 0.08, size * 0.22, size * 0.78, size * 0.92]) {
+      ctx.fillRect(x - 3, 0, 6, size * 0.16);
+      ctx.fillRect(x - 3, size * 0.84, 6, size * 0.16);
+    }
+  } else if (theme === "siberia") {
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(0, size);
+    ctx.lineTo(size * 0.15, size * 0.72);
+    ctx.lineTo(size * 0.3, size);
+    ctx.lineTo(size * 0.5, size * 0.68);
+    ctx.lineTo(size * 0.7, size);
+    ctx.lineTo(size * 0.85, size * 0.78);
+    ctx.lineTo(size, size);
+    ctx.closePath();
+    ctx.fill();
+  } else if (theme === "deserto") {
+    ctx.fillStyle = "rgba(255, 224, 140, 0.7)";
+    ctx.beginPath();
+    ctx.arc(size * 0.85, size * 0.14, size * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(160, 100, 40, 0.35)";
+    ctx.beginPath();
+    ctx.moveTo(0, size);
+    ctx.quadraticCurveTo(size * 0.25, size * 0.83, size * 0.5, size * 0.94);
+    ctx.quadraticCurveTo(size * 0.75, size * 1.0, size, size * 0.88);
+    ctx.lineTo(size, size);
+    ctx.closePath();
+    ctx.fill();
+  } else if (theme === "colosseo") {
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 3;
+    for (const x of [size * 0.15, size * 0.35, size * 0.65, size * 0.85]) {
+      ctx.beginPath();
+      ctx.arc(x, size * 0.09, size * 0.07, Math.PI, 0);
+      ctx.stroke();
+    }
+  } else if (theme === "piramidi") {
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(size * 0.5, size * 0.5);
+    ctx.lineTo(size * 0.72, size);
+    ctx.lineTo(size * 0.28, size);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function renderArenaMap() {
+  const SIZE = 340;
+  const battle = state.battle;
+  const theme = ARENA_THEMES[battle && battle.arena_theme] || ARENA_THEMES.atene;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = `${SIZE}px`;
+  canvas.style.display = "block";
+  canvas.style.margin = "0 auto";
+  canvas.style.background = theme.bg;
+  canvas.style.border = "1px solid var(--border)";
+  canvas.style.borderRadius = "8px";
+
+  const ctx = canvas.getContext("2d");
+  const scale = SIZE / 10; // la griglia va da 0 a 10 in entrambi gli assi
+
+  if (battle) drawArenaDecoration(ctx, battle.arena_theme, SIZE);
+
+  // Sfondo a griglia leggera, solo come riferimento visivo.
+  ctx.strokeStyle = "rgba(120,130,150,0.25)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * scale, 0);
+    ctx.lineTo(i * scale, SIZE);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * scale);
+    ctx.lineTo(SIZE, i * scale);
+    ctx.stroke();
+  }
+
+  const canMove = battle && !battle.pending_opponent_technique;
+
+  // Effetti sul terreno (Fase 3): il ghiaccio come chiazza azzurra
+  // semi-trasparente, i crateri come cerchio scuro, le fiamme come
+  // cerchio arancione, il fango come cerchio marrone opaco -
+  // disegnati PRIMA dei combattenti, così restano "sotto" di loro,
+  // come lo sfondo.
+  if (battle && battle.terrain_effects) {
+    for (const eff of battle.terrain_effects) {
+      const px = eff.x * scale;
+      const py = eff.y * scale;
+      const r = eff.radius * scale;
+      if (eff.kind === "ghiaccio") {
+        ctx.fillStyle = "rgba(174, 230, 255, 0.35)";
+        ctx.strokeStyle = "rgba(174, 230, 255, 0.7)";
+      } else if (eff.kind === "fiamme") {
+        ctx.fillStyle = "rgba(255, 112, 67, 0.4)";
+        ctx.strokeStyle = "rgba(255, 87, 34, 0.8)";
+      } else if (eff.kind === "fango") {
+        ctx.fillStyle = "rgba(93, 64, 55, 0.5)";
+        ctx.strokeStyle = "rgba(62, 39, 35, 0.85)";
+      } else {
+        ctx.fillStyle = "rgba(20, 20, 20, 0.85)";
+        ctx.strokeStyle = "#5a3a1a";
+      }
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  if (battle) {
+    const effect = battle.last_effect;
+
+    // Posizioni a schermo (pixel), partendo da quelle vere sulla griglia.
+    let playerPx = { x: battle.player_position.x * scale, y: battle.player_position.y * scale };
+    let opponentPx = { x: battle.opponent_position.x * scale, y: battle.opponent_position.y * scale };
+
+    // Su una schivata, il colpito si scosta lateralmente SOLO per
+    // questo disegno - non tocca la sua posizione vera sulla griglia
+    // (quella resta quella tattica, gestita a parte).
+    if (effect && effect.outcome === "miss") {
+      const dodgerPx = effect.attacker === "player" ? opponentPx : playerPx;
+      dodgerPx.x = Math.min(SIZE - 15, dodgerPx.x + 28);
+    }
+
+    // Il fascio della tecnica: solo se il colpo è arrivato (parato o
+    // no) - su una schivata non ha senso disegnarlo, non ha mai toccato.
+    if (effect && (effect.outcome === "hit" || effect.outcome === "blocked")) {
+      const fromPx = effect.attacker === "player" ? playerPx : opponentPx;
+      const toPx = effect.attacker === "player" ? opponentPx : playerPx;
+      ctx.strokeStyle = elementColor(effect.tech_type);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(fromPx.x, fromPx.y);
+      ctx.lineTo(toPx.x, toPx.y);
+      ctx.stroke();
+    }
+
+    drawKnightFigure(ctx, opponentPx.x, opponentPx.y, "#C0392B", battle.opponent.name.split(" ").slice(-1)[0]);
+    drawKnightFigure(ctx, playerPx.x, playerPx.y, "#3FA9F5", "Tu");
+
+    // Segno di parata/colpo sopra chi ha subito l'attacco.
+    if (effect && (effect.outcome === "hit" || effect.outcome === "blocked")) {
+      const targetPx = effect.attacker === "player" ? opponentPx : playerPx;
+      ctx.font = "20px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(effect.outcome === "blocked" ? "🛡" : "💥", targetPx.x + 18, targetPx.y - 18);
+    }
+  }
+
+  canvas.style.cursor = canMove ? "crosshair" : "default";
+  if (canMove) {
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const gridX = ((e.clientX - rect.left) / rect.width) * 10;
+      const gridY = ((e.clientY - rect.top) / rect.height) * 10;
+      movePlayerTo(gridX, gridY);
+    });
+  }
+
+  return canvas;
+}
+
+// --- Avvio ---
+async function loadAppVersion() {
+  try {
+    const info = await api("/");
+    state.appVersion = info.version || null;
+    if (state.appVersion) document.title = `Saint Seiya: Sacro Imperio — ${state.appVersion}`;
+    render();  // se la schermata iniziale è già disegnata, la ridisegna con la versione visibile
+  } catch (e) {
+    // Non blocchiamo l'avvio dell'app se questa chiamata fallisce - la
+    // versione è un'informazione utile, non essenziale per giocare.
+  }
+}
+
+loadAppVersion();
+loadStartPage();
+</script>
+</body>
+</html>
