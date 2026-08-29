@@ -273,6 +273,7 @@ const state = {
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
+  showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -617,11 +618,19 @@ async function declareCharge() {
   }
 }
 
-async function reactToAttack(defend) {
+async function reactToAttack(action, counterTechnique) {
   try {
+    const body = { action, battle_state: state.battle };
+    if (action === "contrattacca" && counterTechnique) {
+      body.counter_technique_name = counterTechnique.name;
+      body.counter_technique_power = counterTechnique.power;
+      body.counter_technique_type = counterTechnique.tech_type || null;
+      body.counter_technique_launch_desc = counterTechnique.launch_desc || null;
+      body.counter_technique_effect_desc = counterTechnique.effect_desc || null;
+    }
     const result = await api(`/characters/${state.characterId}/arena/react`, {
       method: "POST",
-      body: JSON.stringify({ defend, battle_state: state.battle }),
+      body: JSON.stringify(body),
     });
     applyArenaResult(result);
   } catch (e) {
@@ -635,6 +644,7 @@ async function retreat() {
     state.character = result.character;
     state.battle = null;
     state.opponentCandidates = null;
+    state.showCounterPicker = false;
     state.arenaLog = [...state.arenaLog, "Ti ritiri dallo scontro."];
     render();
   } catch (e) {
@@ -667,6 +677,7 @@ function applyArenaResult(result) {
   state.character = result.character;
   state.arenaLog = [...state.arenaLog, ...result.log];
   state.battle = result.fight_over ? null : result.battle_state;
+  state.showCounterPicker = false;  // ogni round risolto riparte pulito
   if (result.fight_over) {
     state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
     // Uno scontro concluso aggiunge sempre una voce al diario - stesso
@@ -1315,8 +1326,27 @@ function renderArenaTab() {
     if (state.battle.pending_opponent_technique) {
       const t = state.battle.pending_opponent_technique;
       leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
-      leftPanel.append(el("button", { onClick: () => reactToAttack(true) }, "🛡 Difenditi"));
-      leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack(false) }, "😤 Incassa il colpo"));
+
+      if (!state.showCounterPicker) {
+        leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
+        leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
+        leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
+      } else {
+        // Contrattacco (richiesto in chat): il colpo avversario arriva
+        // pieno, non ridotto per niente - in cambio, scegli TU con
+        // quale delle tue tecniche rispondere, come un vero attacco.
+        if (state.customTechniques === null) loadCustomTechniques();
+        const customTechs = state.customTechniques ? state.customTechniques.techniques : [];
+        const counterOptions = [{ name: "Attacco Base", power: 20 }].concat(
+          k.techniques.filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv")),
+          customTechs,
+        );
+        leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Il colpo avversario arriva pieno, senza riduzione - scegli con cosa rispondere:"));
+        for (const ct of counterOptions) {
+          leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
+        }
+        leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
+      }
     } else {
       const senses = k.senses;
       // Tecniche personalizzate (richiesto in chat): caricate pigre
