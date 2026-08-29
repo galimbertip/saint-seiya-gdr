@@ -277,6 +277,8 @@ const state = {
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
   institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
   editingBackground: false,  // sta modificando il background nella Scheda Cavaliere?
+  trainingPath: null,        // lo stato del percorso di Apprendistato del personaggio corrente, null finché non caricato
+  trialResult: null,         // il risultato appena arrivato della Prova Finale, da mostrare prima di procedere
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -339,6 +341,7 @@ async function selectCharacter(id) {
   state.biography = null;  // il diario del personaggio precedente non deve restare in vista
   state.customTechniques = null;  // idem per le tecniche personalizzate
   state.editingBackground = false;  // idem per una modifica del background lasciata a metà
+  state.trainingPath = null;  // idem per il percorso di Apprendistato
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -506,6 +509,7 @@ async function createCharacter(rawName, armorName, details = {}) {
     state.character = character;
     state.biography = null;  // nuovo personaggio, il diario riparte da zero
     state.customTechniques = null;
+    state.trainingPath = null;
     state.weeklySchedule = [...character.weekly_schedule_list];
     state.screen = "game";
     state.gameTab = "sheet";
@@ -946,7 +950,15 @@ function renderGameScreen() {
 
   // --- Tabs ---
   const tabs = el("div", { class: "tabs" });
-  const tabDefs = [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
+  // Finché è Apprendista (richiesto in chat), Allenamento e Arena sono
+  // sostituiti da un'unica scheda "Percorso" - non ha senso mostrarli
+  // se sono comunque bloccati lato server.
+  const tabDefs = k.is_knight
+    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]]
+    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["hierarchy", "Gerarchia"]];
+  if (!k.is_knight && state.gameTab !== "sheet" && state.gameTab !== "percorso" && state.gameTab !== "hierarchy") {
+    state.gameTab = "percorso";  // se stava su Allenamento/Arena e diventa Apprendista, non deve restarci bloccato
+  }
   for (const [key, label] of tabDefs) {
     tabs.append(el("button", {
       class: "tab-btn" + (state.gameTab === key ? " active" : ""),
@@ -963,6 +975,7 @@ function renderGameScreen() {
   wrap.append(tabs);
 
   if (state.gameTab === "sheet") wrap.append(renderSheetTab());
+  else if (state.gameTab === "percorso") wrap.append(renderTrainingPathTab());
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
   else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
@@ -1022,6 +1035,47 @@ async function loadCustomTechniques() {
     showError(e.message);
     state.customTechniques = { techniques: [], slots_total: 0, slots_used: 0, allowed_elements: [] };
   }
+  render();
+}
+
+async function loadTrainingPath() {
+  try {
+    state.trainingPath = await api(`/characters/${state.characterId}/training-path`);
+  } catch (e) {
+    showError(e.message);
+    state.trainingPath = { is_knight: false, ready_for_trial: false, stage: null };
+  }
+  render();
+}
+
+async function advanceTraining() {
+  try {
+    await api(`/characters/${state.characterId}/training-path/advance`, { method: "POST" });
+    state.trainingPath = null;  // si ricarica da sola con la tappa nuova
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function attemptFinalTrial() {
+  try {
+    const result = await api(`/characters/${state.characterId}/training-path/trial`, { method: "POST" });
+    state.trialResult = result;  // mostrato come messaggio a parte prima di procedere
+    if (result.is_knight) {
+      await refreshCharacter();  // le schede Allenamento/Arena si sbloccano da qui in poi
+    }
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function closeTrialResult() {
+  const eraCavaliere = state.trialResult && state.trialResult.is_knight;
+  state.trialResult = null;
+  state.trainingPath = null;  // si ricarica da sola (tappa di ripreparazione, o nulla se ora è Cavaliere)
+  if (eraCavaliere) state.gameTab = "sheet";
   render();
 }
 
@@ -1311,6 +1365,50 @@ function renderSheetTab() {
   grid.append(diaryCard);
 
   wrap.append(grid);
+  return wrap;
+}
+
+function renderTrainingPathTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Percorso di Apprendistato"));
+
+  // Il risultato della Prova Finale, se è appena arrivato - mostrato a
+  // parte prima di procedere (richiesto in chat: dev'essere possibile
+  // fallire, e il fallimento va raccontato, non solo un numero che cambia).
+  if (state.trialResult) {
+    const resultCard = el("div", { class: "card" });
+    resultCard.append(el("h2", {}, state.trialResult.passed ? "🏆 Prova Finale superata!" : "Prova Finale non superata"));
+    resultCard.append(el("p", {}, state.trialResult.narrative));
+    resultCard.append(el("button", { onClick: closeTrialResult }, state.trialResult.passed ? "Continua come Cavaliere" : "Torna a prepararti"));
+    wrap.append(resultCard);
+    return wrap;
+  }
+
+  if (state.trainingPath === null) {
+    loadTrainingPath();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento del percorso...")));
+    return wrap;
+  }
+
+  const tp = state.trainingPath;
+
+  if (tp.ready_for_trial) {
+    const trialCard = el("div", { class: "card" });
+    trialCard.append(el("h2", {}, "La Prova Finale"));
+    trialCard.append(el("p", {}, `Hai completato l'addestramento sotto la guida di ${tp.master_name}, fianco a fianco con ${tp.companion1_name} e ${tp.companion2_name}. Non resta che una cosa: la Prova Finale, uno scontro vero contro chi ti ha accompagnato fin qui - a volte contro un compagno, a volte (raramente) contro il Maestro stesso, impegnato al massimo.`));
+    trialCard.append(el("p", { class: "hint" }, "Puoi fallire - in tal caso tornerai a prepararti e potrai riprovare."));
+    trialCard.append(el("button", { onClick: attemptFinalTrial }, "⚔ Affronta la Prova Finale"));
+    wrap.append(trialCard);
+    return wrap;
+  }
+
+  const stage = tp.stage;
+  const stageCard = el("div", { class: "card" });
+  stageCard.append(el("p", { class: "hint" }, `Tappa ${stage.stage_number} di ${stage.total_stages}`));
+  stageCard.append(el("h2", {}, stage.title));
+  stageCard.append(el("p", {}, stage.text));
+  stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
+  wrap.append(stageCard);
   return wrap;
 }
 
