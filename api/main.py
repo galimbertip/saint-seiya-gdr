@@ -20,6 +20,7 @@ la rete c'è.
 from typing import Literal, Optional
 from pathlib import Path
 import random
+import json
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.staticfiles import StaticFiles
@@ -244,6 +245,9 @@ def _knight_payload(conn, knight: dict) -> dict:
         "senses": senses,
         "movement_points": movement_points,
         "weekly_schedule_list": parse_weekly_schedule(knight["weekly_schedule"]),
+        # Il dizionario già interpretato (non la stringa JSON grezza),
+        # stesso principio di weekly_schedule_list qui sopra.
+        "arena_backgrounds": json.loads(knight["arena_backgrounds"] or "{}"),
     }
 
 
@@ -368,26 +372,35 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
     return {"avatar_path": knight["avatar_path"]}
 
 
-@app.post("/characters/{knight_id}/arena-background")
-async def api_upload_arena_background(knight_id: int, file: UploadFile = File(...), conn=Depends(get_db)):
-    """Carica un'immagine di sfondo personalizzata per l'Arena
-    (richiesto in chat: le decorazioni geometriche non reggevano il
-    confronto) - sostituisce il colore del tema quando presente. Stessa
-    logica dell'upload dell'avatar."""
+VALID_ARENA_THEMES = {"atene", "siberia", "deserto", "colosseo", "piramidi"}
+
+
+@app.post("/characters/{knight_id}/arena-background/{theme}")
+async def api_upload_arena_background(knight_id: int, theme: str, file: UploadFile = File(...), conn=Depends(get_db)):
+    """Carica un'immagine di sfondo personalizzata per UNO dei 5 temi
+    dell'Arena (richiesto in chat: uno sfondo solo, uguale per tutti i
+    temi, aveva poco senso - meglio una galleria, un'immagine per
+    ciascuno). Le immagini sono un dizionario JSON tema->percorso
+    salvato in arena_backgrounds; caricarne una nuova per un tema
+    sovrascrive solo quella, le altre restano intatte."""
+    if theme not in VALID_ARENA_THEMES:
+        raise HTTPException(status_code=400, detail=f"Tema non valido - deve essere uno tra: {', '.join(sorted(VALID_ARENA_THEMES))}.")
     knight = _get_knight_or_404(conn, knight_id)
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
         raise HTTPException(status_code=400, detail="Formato immagine non supportato (usa PNG, JPG, WEBP o GIF).")
 
-    filename = f"knight_{knight_id}{ext}"
+    filename = f"knight_{knight_id}_{theme}{ext}"
     dest = ARENA_BACKGROUNDS_DIR / filename
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    knight["arena_background_path"] = f"/arena_backgrounds/{filename}"
+    backgrounds = json.loads(knight["arena_backgrounds"] or "{}")
+    backgrounds[theme] = f"/arena_backgrounds/{filename}"
+    knight["arena_backgrounds"] = json.dumps(backgrounds)
     save_knight(conn, knight)
-    return {"arena_background_path": knight["arena_background_path"]}
+    return {"arena_backgrounds": backgrounds}
 
 
 @app.get("/characters/{knight_id}/training-path")
