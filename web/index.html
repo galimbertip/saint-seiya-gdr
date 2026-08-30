@@ -1284,18 +1284,18 @@ async function uploadAvatar(file) {
   }
 }
 
-async function uploadArenaBackground(file) {
+async function uploadArenaBackground(file, theme) {
   if (!state.characterId) return;
   const formData = new FormData();
   formData.append("file", file);
   try {
-    const res = await fetch(`/characters/${state.characterId}/arena-background`, { method: "POST", body: formData });
+    const res = await fetch(`/characters/${state.characterId}/arena-background/${theme}`, { method: "POST", body: formData });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.detail || `Errore HTTP ${res.status}`);
     }
     const data = await res.json();
-    state.character.arena_background_path = data.arena_background_path;
+    state.character.arena_backgrounds = data.arena_backgrounds;
     render();
   } catch (e) {
     showError(e.message);
@@ -1683,25 +1683,34 @@ function renderArenaTab() {
     searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
     wrap.append(searchCard);
 
-    // Sfondo personalizzato dell'Arena (richiesto in chat: le
-    // decorazioni geometriche non reggevano il confronto) - un'opzione
-    // a parte, non obbligatoria: senza immagine resta il colore del
-    // tema scelto in base alla provenienza dell'avversario.
+    // Galleria degli sfondi dell'Arena (richiesto in chat: uno sfondo
+    // solo, uguale per ogni tema, aveva poco senso - un'immagine per
+    // ciascuno dei 5 temi, usata solo quando quel tema è davvero
+    // attivo in base alla provenienza dell'avversario).
     const bgCard = el("div", { class: "card" });
-    bgCard.append(el("h2", {}, "Sfondo dell'Arena"));
+    bgCard.append(el("h2", {}, "Sfondi dell'Arena"));
+    bgCard.append(el("p", { class: "hint" }, "Un'immagine per ciascun tema - senza immagine, quel tema usa semplicemente un colore."));
     const k = state.character;
-    if (k.arena_background_path) {
-      bgCard.append(el("img", { src: k.arena_background_path, style: "width:100%;max-width:200px;border-radius:8px;display:block;margin:0 auto 8px;" }));
-    } else {
-      bgCard.append(el("p", { class: "hint" }, "Nessuna immagine caricata - l'Arena usa un colore diverso in base alla provenienza dell'avversario."));
+    const backgrounds = k.arena_backgrounds || {};
+    for (const [themeKey, themeLabel] of Object.entries(ARENA_THEME_LABELS)) {
+      const row = el("div", { style: "display:flex;align-items:center;gap:10px;margin-top:10px;" });
+      if (backgrounds[themeKey]) {
+        row.append(el("img", { src: backgrounds[themeKey], style: "width:60px;height:60px;object-fit:cover;border-radius:6px;flex-shrink:0;" }));
+      } else {
+        row.append(el("div", { style: "width:60px;height:60px;border:1px dashed var(--border);border-radius:6px;flex-shrink:0;" }));
+      }
+      const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+      fileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadArenaBackground(e.target.files[0], themeKey); });
+      const col = el("div", { style: "flex:1;" });
+      col.append(el("p", { style: "margin:0 0 4px;" }, themeLabel));
+      col.append(fileInput);
+      col.append(el("button", {
+        class: "secondary",
+        onClick: () => fileInput.click(),
+      }, backgrounds[themeKey] ? "Cambia" : "Carica"));
+      row.append(col);
+      bgCard.append(row);
     }
-    const bgFileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
-    bgFileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadArenaBackground(e.target.files[0]); });
-    bgCard.append(bgFileInput);
-    bgCard.append(el("button", {
-      class: "secondary", style: "width:100%;",
-      onClick: () => bgFileInput.click(),
-    }, k.arena_background_path ? "🖼️ Cambia sfondo" : "🖼️ Carica uno sfondo personalizzato"));
     wrap.append(bgCard);
   } else if (!state.battle && state.opponentCandidates) {
     const waitingCard = el("div", { class: "card" });
@@ -1905,7 +1914,9 @@ function drawKnightFigure(ctx, x, y, color, label) {
 // pick_arena_theme lato backend). Le decorazioni geometriche disegnate
 // a mano sono state tolte (richiesto in chat: non reggevano il
 // confronto) - resta il colore, sostituibile con un'immagine propria
-// (vedi arenaBackgroundPath più sotto).
+// per ciascun tema (richiesto in chat: una galleria, non un'unica
+// immagine uguale per tutti i temi - vedi arena_backgrounds sul
+// personaggio, e la card "Sfondi dell'Arena" nella scheda Arena).
 const ARENA_THEMES = {
   atene: { bg: "linear-gradient(#26324a, #0B0F1A)" },
   siberia: { bg: "linear-gradient(#cfe8f7, #7fa8c9)" },
@@ -1914,10 +1925,15 @@ const ARENA_THEMES = {
   piramidi: { bg: "linear-gradient(#6b4a7e, #d9a441)" },
 };
 
+const ARENA_THEME_LABELS = {
+  atene: "Atene", siberia: "Siberia", deserto: "Deserto", colosseo: "Colosseo", piramidi: "Piramidi",
+};
+
 function renderArenaMap() {
   const SIZE = 340;
   const battle = state.battle;
-  const theme = ARENA_THEMES[battle && battle.arena_theme] || ARENA_THEMES.atene;
+  const themeKey = (battle && battle.arena_theme) || "atene";
+  const theme = ARENA_THEMES[themeKey] || ARENA_THEMES.atene;
 
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
@@ -1926,10 +1942,13 @@ function renderArenaMap() {
   canvas.style.maxWidth = `${SIZE}px`;
   canvas.style.display = "block";
   canvas.style.margin = "0 auto";
-  // Un'immagine di sfondo personalizzata (richiesto in chat) ha la
-  // precedenza sul colore del tema, se il giocatore ne ha caricata una.
-  if (state.character && state.character.arena_background_path) {
-    canvas.style.backgroundImage = `url(${state.character.arena_background_path})`;
+  // Un'immagine di sfondo personalizzata per QUESTO tema (richiesto in
+  // chat: una galleria per tema, non un'unica immagine per tutti) ha
+  // la precedenza sul colore, se il giocatore ne ha caricata una per
+  // il tema attivo in questo scontro.
+  const customBg = state.character && state.character.arena_backgrounds && state.character.arena_backgrounds[themeKey];
+  if (customBg) {
+    canvas.style.backgroundImage = `url(${customBg})`;
     canvas.style.backgroundSize = "cover";
     canvas.style.backgroundPosition = "center";
   } else {
