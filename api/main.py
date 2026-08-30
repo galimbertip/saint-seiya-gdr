@@ -51,7 +51,13 @@ from core.institutional_npcs import get_institutional_npcs
 from core.training_path import (
     render_stage, generate_trial_opponent, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
     KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE, TRAINING_STAGES, resolve_skill_check,
-    build_stage_context,
+    build_stage_context, build_opponent_from_armor,
+)
+from core.missions import (
+    MISSION_ID, TOTAL_HOUSES, HOUSE_ORDER, COSMO_MAX_REWARD, DENARO_REWARD,
+    get_house_guardian, get_house_content, resolve_persuasion,
+    COLONNE_MISSION_ID, COLONNE_START_NODE, COLONNE_NODES,
+    get_colonne_node_content, pick_duel_armor_for_node, resolve_colonne_ending,
 )
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
@@ -221,6 +227,24 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
         # in chat) - si avanza comunque, vinca o perda: qui si fa
         # pratica, non si rischia l'addestramento.
         knight["training_stage"] += 1
+    elif battle_state.get("is_mission"):
+        # Un duello delle Missioni, quale che sia (richiesto in chat) -
+        # sulla vittoria si avanza (Casa successiva per la Scalata, il
+        # nodo win_next per le Colonne - completando la missione con la
+        # ricompensa se è l'ultimo passo); sulla sconfitta si applica
+        # lose_next (per la Scalata coincide sempre con restare sulla
+        # stessa Casa) - il giocatore sceglierà se ritentare o
+        # abbandonare (gestito lato frontend, nessuna penalità qui).
+        if knight["mission_id"] == MISSION_ID:
+            if winner == "player":
+                knight["mission_stage"] += 1
+                _complete_scalata_if_done(conn, knight)
+        elif knight["mission_id"] == COLONNE_MISSION_ID:
+            node_id = knight["mission_node"] or COLONNE_START_NODE
+            node = COLONNE_NODES[node_id]
+            knight["mission_node"] = node["win_next"] if winner == "player" else node["lose_next"]
+            if winner == "player":
+                _complete_colonne_if_done(conn, knight)
     else:
         _record_fight_outcome(conn, knight, opponent_name, winner)
 
@@ -570,6 +594,253 @@ def api_start_spar(knight_id: int, conn=Depends(get_db)):
     return {"battle_state": battle_state}
 
 
+# --------------------------- Missioni ---------------------------
+
+def _require_mission_ready(knight: dict) -> None:
+    """Controlli comuni agli endpoint delle Missioni - solo i
+    Cavalieri (non gli Apprendisti) possono avere una missione."""
+    if not knight["is_knight"]:
+        raise HTTPException(status_code=403, detail="Devi prima completare l'apprendistato e diventare Cavaliere.")
+
+
+def _mission_flags_set(knight: dict) -> set[str]:
+    return set(f for f in knight["mission_flags"].split(",") if f)
+
+
+@app.get("/characters/{knight_id}/mission")
+def api_get_mission(knight_id: int, conn=Depends(get_db)):
+    """Lo stato della missione in corso, quale che sia (richiesto in
+    chat: più di una missione, ciascuna con la sua forma) - se non ce
+    n'è una attiva, il chiamante mostrerà l'elenco di quelle
+    disponibili."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if not knight["mission_id"]:
+        return {"active": False}
+
+    if knight["mission_id"] == MISSION_ID:
+        house_name = HOUSE_ORDER[knight["mission_stage"] - 1]
+        guardian_name = get_house_guardian(conn, house_name)
+        house = get_house_content(knight["mission_stage"], guardian_name)
+        return {"active": True, "mission_id": knight["mission_id"], "house": house}
+
+    if knight["mission_id"] == COLONNE_MISSION_ID:
+        node_id = knight["mission_node"] or COLONNE_START_NODE
+        node = get_colonne_node_content(node_id)
+        return {"active": True, "mission_id": knight["mission_id"], "node": node}
+
+    return {"active": False}
+
+
+class StartMissionRequest(BaseModel):
+    mission_id: str
+
+
+@app.post("/characters/{knight_id}/mission/start")
+def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get_db)):
+    """Avvia una missione (una alla volta, richiesto in chat: non se ne
+    può avere già una in corso)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if knight["mission_id"]:
+        raise HTTPException(status_code=400, detail="Hai già una missione in corso.")
+    if req.mission_id not in (MISSION_ID, COLONNE_MISSION_ID):
+        raise HTTPException(status_code=400, detail="Missione sconosciuta.")
+
+    knight["mission_id"] = req.mission_id
+    if req.mission_id == MISSION_ID:
+        knight["mission_stage"] = 1
+    else:
+        knight["mission_node"] = COLONNE_START_NODE
+        knight["mission_flags"] = ""
+    save_knight(conn, knight)
+    return {"active": True}
+
+
+def _complete_scalata_if_done(conn, knight: dict) -> bool:
+    """Se mission_stage ha superato l'ultima Casa, assegna la
+    ricompensa (Cosmo massimo + denaro, richiesto in chat) e chiude la
+    missione. Restituisce True se la missione è stata completata in
+    questa chiamata. Non salva da sola - il chiamante deve comunque
+    fare save_knight dopo."""
+    if knight["mission_stage"] <= TOTAL_HOUSES:
+        return False
+    knight["cosmo_max"] += COSMO_MAX_REWARD
+    knight["cosmo_cur"] = knight["cosmo_max"]
+    knight["denaro"] += DENARO_REWARD
+    knight["mission_id"] = ""
+    knight["mission_stage"] = 0
+    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    add_biography_entry(
+        conn, knight["id"], knight["game_minutes"],
+        f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} completa "
+        f"la Scalata delle Dodici Case, guadagnando {COSMO_MAX_REWARD} Cosmo massimo e {DENARO_REWARD} denaro.",
+    )
+    return True
+
+
+def _complete_colonne_if_done(conn, knight: dict) -> tuple[bool, str]:
+    """Se il nodo attuale è 'fine', assegna la ricompensa (base + un
+    eventuale bonus dai flag accumulati durante il percorso, richiesto
+    in chat: una conseguenza vera per la scelta morale centrale) e
+    chiude la missione. Restituisce (completata, testo del finale)."""
+    if knight["mission_node"] != "fine":
+        return False, ""
+    ending = resolve_colonne_ending(_mission_flags_set(knight))
+    knight["cosmo_max"] += COSMO_MAX_REWARD
+    knight["cosmo_cur"] = knight["cosmo_max"]
+    knight["denaro"] += DENARO_REWARD + ending["bonus"].get("denaro", 0)
+    knight["mission_id"] = ""
+    knight["mission_node"] = ""
+    knight["mission_flags"] = ""
+    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    add_biography_entry(
+        conn, knight["id"], knight["game_minutes"],
+        f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} completa "
+        f"Le Colonne dei Sette Mari.",
+    )
+    return True, ending["text"]
+
+
+@app.post("/characters/{knight_id}/mission/persuade")
+def api_mission_persuade(knight_id: int, conn=Depends(get_db)):
+    """Tenta di convincere il Guardiano della Casa attuale a lasciarti
+    passare senza combattere (richiesto in chat: bivio vero ad ogni
+    Casa, non solo duelli) - un vero tiro di dado, si può fallire.
+    Specifico della Scalata delle Dodici Case."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if knight["mission_id"] != MISSION_ID:
+        raise HTTPException(status_code=400, detail="Nessuna Scalata delle Dodici Case in corso.")
+
+    house_name = HOUSE_ORDER[knight["mission_stage"] - 1]
+    guardian_name = get_house_guardian(conn, house_name)
+    content = get_house_content(knight["mission_stage"], guardian_name)
+
+    success = resolve_persuasion(knight)
+    mission_completed = False
+    if success:
+        knight["mission_stage"] += 1
+        mission_completed = _complete_scalata_if_done(conn, knight)
+        save_knight(conn, knight)
+
+    return {
+        "success": success,
+        "text": content["persuade_success"] if success else content["persuade_failure"],
+        "mission_completed": mission_completed,
+    }
+
+
+class MissionChoiceRequest(BaseModel):
+    option_index: int
+
+
+@app.post("/characters/{knight_id}/mission/choose")
+def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(get_db)):
+    """Risolve una scelta di un nodo 'choice' delle Colonne dei Sette
+    Mari (richiesto in chat: bivi che portano DAVVERO a strade diverse)
+    - applica l'eventuale flag dell'opzione scelta (che può cambiare il
+    finale più avanti) e passa al nodo successivo."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if knight["mission_id"] != COLONNE_MISSION_ID:
+        raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
+
+    node_id = knight["mission_node"] or COLONNE_START_NODE
+    node = COLONNE_NODES[node_id]
+    if node["type"] != "choice":
+        raise HTTPException(status_code=400, detail="Questo nodo non prevede una scelta.")
+    if not (0 <= req.option_index < len(node["options"])):
+        raise HTTPException(status_code=400, detail="Scelta non valida.")
+
+    option = node["options"][req.option_index]
+    if option.get("flag"):
+        flags = _mission_flags_set(knight)
+        flags.add(option["flag"])
+        knight["mission_flags"] = ",".join(sorted(flags))
+    knight["mission_node"] = option["next"]
+    save_knight(conn, knight)
+    return {"next_node": option["next"]}
+
+
+@app.post("/characters/{knight_id}/mission/attempt")
+def api_mission_attempt(knight_id: int, conn=Depends(get_db)):
+    """Un vero tiro di dado per un nodo 'skill_check' delle Colonne dei
+    Sette Mari (richiesto in chat) - a seconda dell'esito, porta a nodi
+    SUCCESSIVI DIVERSI (non solo testo diverso sulla stessa strada)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if knight["mission_id"] != COLONNE_MISSION_ID:
+        raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
+
+    node_id = knight["mission_node"] or COLONNE_START_NODE
+    node = COLONNE_NODES[node_id]
+    if node["type"] != "skill_check":
+        raise HTTPException(status_code=400, detail="Questo nodo non prevede una prova a dado.")
+
+    success = resolve_skill_check(knight, node["stat"])
+    knight["mission_node"] = node["success_next"] if success else node["failure_next"]
+    save_knight(conn, knight)
+    return {
+        "success": success,
+        "text": node["success_text"] if success else node["failure_text"],
+        "next_node": knight["mission_node"],
+    }
+
+
+@app.post("/characters/{knight_id}/mission/duel/start")
+def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
+    """Avvia il duello vero del punto in cui ti trovi nella missione
+    attiva, quale che sia (richiesto in chat) - stesso motore di
+    battaglia della Prova Finale, marcato is_mission perché
+    .../arena/declare e .../arena/react sappiano gestirne la
+    conclusione diversamente."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if not knight["mission_id"]:
+        raise HTTPException(status_code=400, detail="Nessuna missione in corso.")
+
+    armor = get_armor(knight["armor_name"], conn)
+
+    if knight["mission_id"] == MISSION_ID:
+        house_name = HOUSE_ORDER[knight["mission_stage"] - 1]
+        guardian_name = get_house_guardian(conn, house_name)
+        opponent = build_opponent_from_armor(conn, house_name, guardian_name)
+        battle_state = start_battle(conn, knight, armor, opponent=opponent)
+        battle_state["is_mission"] = True
+        return {"battle_state": battle_state}
+
+    if knight["mission_id"] == COLONNE_MISSION_ID:
+        node_id = knight["mission_node"] or COLONNE_START_NODE
+        node = COLONNE_NODES[node_id]
+        if node["type"] != "duel":
+            raise HTTPException(status_code=400, detail="Questo nodo non prevede uno scontro.")
+        duel_armor_name = pick_duel_armor_for_node(node_id)
+        guardian_name = get_house_guardian(conn, duel_armor_name)
+        opponent = build_opponent_from_armor(conn, duel_armor_name, guardian_name)
+        battle_state = start_battle(conn, knight, armor, opponent=opponent)
+        battle_state["is_mission"] = True
+        return {"battle_state": battle_state, "intro": node["intro"].format(guardian=guardian_name)}
+
+    raise HTTPException(status_code=400, detail="Missione sconosciuta.")
+
+
+@app.post("/characters/{knight_id}/mission/abandon")
+def api_abandon_mission(knight_id: int, conn=Depends(get_db)):
+    """Abbandona la missione in corso, quale che sia (richiesto in
+    chat: diverso dall'uscire dal gioco, che invece la congela dov'era)
+    - si torna liberi, senza nessuna ricompensa."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if not knight["mission_id"]:
+        raise HTTPException(status_code=400, detail="Nessuna missione da abbandonare.")
+    knight["mission_id"] = ""
+    knight["mission_stage"] = 0
+    knight["mission_node"] = ""
+    knight["mission_flags"] = ""
+    save_knight(conn, knight)
+    return {"abandoned": True}
+
+
 @app.post("/characters/{knight_id}/training-path/trial/start")
 def api_start_trial(knight_id: int, conn=Depends(get_db)):
     """Avvia la Prova Finale come un VERO combattimento (richiesto in
@@ -714,6 +985,11 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
         # è quello il tuo allenamento" - l'Allenamento normale resta
         # bloccato finché non si diventa Cavaliere per davvero.
         raise HTTPException(status_code=403, detail="Sei ancora un Apprendista - segui il tuo percorso di addestramento prima di poterti allenare liberamente.")
+    if knight["mission_id"]:
+        # Missioni (richiesto in chat): "mentre sono in missione, non
+        # posso essere in arena/in taverna" - stesso principio
+        # dell'apprendistato, l'Allenamento resta bloccato.
+        raise HTTPException(status_code=403, detail="Sei in missione - non puoi allenarti liberamente finché non la completi o l'abbandoni.")
     old_level = knight["player_level"]
 
     schedule = list(req.schedule[:7])
@@ -788,6 +1064,8 @@ def api_arena_candidates(knight_id: int, difficulty: str = "medio", conn=Depends
     knight = _get_knight_or_404(conn, knight_id)
     if not knight["is_knight"]:
         raise HTTPException(status_code=403, detail="Sei ancora un Apprendista - l'Arena resta chiusa finché non superi la Prova Finale.")
+    if knight["mission_id"]:
+        raise HTTPException(status_code=403, detail="Sei in missione - l'Arena resta chiusa finché non la completi o l'abbandoni.")
     armor = get_armor(knight["armor_name"], conn)
     candidates = list_opponent_candidates(conn, armor, difficulty=difficulty)
     return {"candidates": candidates}
@@ -803,6 +1081,8 @@ def api_arena_new_opponent(knight_id: int, req: ArenaStartBattleRequest, conn=De
     knight = _get_knight_or_404(conn, knight_id)
     if not knight["is_knight"]:
         raise HTTPException(status_code=403, detail="Sei ancora un Apprendista - l'Arena resta chiusa finché non superi la Prova Finale.")
+    if knight["mission_id"]:
+        raise HTTPException(status_code=403, detail="Sei in missione - l'Arena resta chiusa finché non la completi o l'abbandoni.")
     armor = get_armor(knight["armor_name"], conn)
 
     battle_state = start_battle(conn, knight, armor, opponent=req.opponent)
