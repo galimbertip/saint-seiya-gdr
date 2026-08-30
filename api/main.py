@@ -73,6 +73,12 @@ AVATARS_DIR = Path(__file__).resolve().parent.parent / "avatars"
 AVATARS_DIR.mkdir(exist_ok=True)
 app.mount("/avatars", StaticFiles(directory=str(AVATARS_DIR)), name="avatars")
 
+# Stessa cosa per gli sfondi personalizzati dell'Arena (richiesto in
+# chat: le decorazioni geometriche non reggevano il confronto).
+ARENA_BACKGROUNDS_DIR = Path(__file__).resolve().parent.parent / "arena_backgrounds"
+ARENA_BACKGROUNDS_DIR.mkdir(exist_ok=True)
+app.mount("/arena_backgrounds", StaticFiles(directory=str(ARENA_BACKGROUNDS_DIR)), name="arena_backgrounds")
+
 
 def _init_schema_once() -> None:
     """Crea le tabelle, carica il catalogo armature dai CSV, e popola la
@@ -360,6 +366,28 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
     knight["avatar_path"] = f"/avatars/{filename}"
     save_knight(conn, knight)
     return {"avatar_path": knight["avatar_path"]}
+
+
+@app.post("/characters/{knight_id}/arena-background")
+async def api_upload_arena_background(knight_id: int, file: UploadFile = File(...), conn=Depends(get_db)):
+    """Carica un'immagine di sfondo personalizzata per l'Arena
+    (richiesto in chat: le decorazioni geometriche non reggevano il
+    confronto) - sostituisce il colore del tema quando presente. Stessa
+    logica dell'upload dell'avatar."""
+    knight = _get_knight_or_404(conn, knight_id)
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+        raise HTTPException(status_code=400, detail="Formato immagine non supportato (usa PNG, JPG, WEBP o GIF).")
+
+    filename = f"knight_{knight_id}{ext}"
+    dest = ARENA_BACKGROUNDS_DIR / filename
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    knight["arena_background_path"] = f"/arena_backgrounds/{filename}"
+    save_knight(conn, knight)
+    return {"arena_background_path": knight["arena_background_path"]}
 
 
 @app.get("/characters/{knight_id}/training-path")
