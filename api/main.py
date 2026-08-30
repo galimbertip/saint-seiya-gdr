@@ -416,15 +416,22 @@ def api_advance_training(knight_id: int, conn=Depends(get_db)):
     return {"training_stage": knight["training_stage"], "leveled_up_to": leveled_up_to}
 
 
+class TrainingChoiceRequest(BaseModel):
+    option_index: int
+
+
 @app.post("/characters/{knight_id}/training-path/attempt")
-def api_training_attempt(knight_id: int, conn=Depends(get_db)):
-    """Un vero tiro di dado per una tappa 'skill_check' (richiesto in
-    chat: tutto l'addestramento dev'essere interattivo) - NON avanza
-    la tappa da solo: sul successo dà un piccolo premio permanente alla
-    statistica in gioco, poi il chiamante userà .../advance per
-    proseguire; sul fallimento, il chiamante può richiamare di nuovo
-    questo stesso endpoint (riprova) o comunque .../advance (accetta il
-    fallimento e va avanti senza premio)."""
+def api_training_attempt(knight_id: int, req: TrainingChoiceRequest, conn=Depends(get_db)):
+    """Un vero tiro di dado per una tappa 'choice_check' (richiesto in
+    chat: prima "scegli l'approccio, poi tira" - una decisione vera
+    prima del dado, non solo un pulsante nudo) - la statistica usata
+    nel tiro dipende dall'approccio scelto, non è più fissa per tappa.
+    NON avanza la tappa da solo: sul successo dà un piccolo premio
+    permanente alla statistica scelta, poi il chiamante userà
+    .../advance per proseguire; sul fallimento, il chiamante può
+    richiamare di nuovo questo stesso endpoint (anche con un approccio
+    diverso) o comunque .../advance (accetta il fallimento e va avanti
+    senza premio)."""
     knight = _get_knight_or_404(conn, knight_id)
     if knight["is_knight"]:
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
@@ -432,25 +439,24 @@ def api_training_attempt(knight_id: int, conn=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Non c'è nessuna tappa da tentare in questo momento.")
 
     stage_def = TRAINING_STAGES[knight["training_stage"]]
-    if stage_def["type"] != "skill_check":
+    if stage_def["type"] != "choice_check":
         raise HTTPException(status_code=400, detail="Questa tappa non richiede una prova a dado.")
+    if not (0 <= req.option_index < len(stage_def["approaches"])):
+        raise HTTPException(status_code=400, detail="Approccio non valido.")
 
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     ctx = build_stage_context(
         knight["master_name"], knight["master_armor_name"], knight["companion1_name"],
         knight["companion2_name"], techniques, knight["armor_name"],
     )
-    success = resolve_skill_check(knight, stage_def["stat"])
+    stat = stage_def["approaches"][req.option_index]["stat"]
+    success = resolve_skill_check(knight, stat)
     if success:
-        knight[stage_def["stat"]] += 1  # piccolo premio permanente, PLACEHOLDER come le altre formule
+        knight[stat] += 1  # piccolo premio permanente, PLACEHOLDER come le altre formule
         save_knight(conn, knight)
 
     text = (stage_def["success_text"] if success else stage_def["failure_text"]).format(**ctx)
-    return {"success": success, "text": text, "stat": stage_def["stat"]}
-
-
-class TrainingChoiceRequest(BaseModel):
-    option_index: int
+    return {"success": success, "text": text, "stat": stat}
 
 
 @app.post("/characters/{knight_id}/training-path/choose")
