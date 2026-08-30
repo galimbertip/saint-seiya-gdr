@@ -986,14 +986,27 @@ function renderGameScreen() {
   // se sono comunque bloccati lato server.
   const tabDefs = k.is_knight
     ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]]
-    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["hierarchy", "Gerarchia"]];
-  if (!k.is_knight && state.gameTab !== "sheet" && state.gameTab !== "percorso" && state.gameTab !== "hierarchy") {
-    state.gameTab = "percorso";  // se stava su Allenamento/Arena e diventa Apprendista, non deve restarci bloccato
-  }
+    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
+  // Allenamento e Arena ora restano visibili anche da Apprendista
+  // (richiesto in chat: prima sparivano del tutto dalla barra, e senza
+  // vederle il tutorial che le nomina risultava incomprensibile) - il
+  // blocco vero avviene dentro le due schede stesse, con un messaggio
+  // che spiega perché.
   for (const [key, label] of tabDefs) {
     tabs.append(el("button", {
       class: "tab-btn" + (state.gameTab === key ? " active" : ""),
-      onClick: () => { state.gameTab = key; render(); },
+      onClick: () => {
+        // Il log è condiviso con Allenamento/Missioni (richiesto in
+        // chat: prima capitava di vedere ancora il resoconto di un
+        // duello d'addestramento entrando in Arena) - lo si pulisce
+        // solo entrando in Arena dall'esterno, e solo se non c'è
+        // davvero un combattimento in Arena in corso da riprendere.
+        if (key === "arena" && state.gameTab !== "arena" && !state.battle) {
+          state.arenaLog = [];
+        }
+        state.gameTab = key;
+        render();
+      },
     }, label));
   }
   // Riapre il tutorial in ogni momento (richiesto in chat), senza
@@ -1503,14 +1516,21 @@ function renderTrainingPathTab() {
   // cambia) - la cronaca dello scontro appena finito resta in vista.
   if (state.trialResult) {
     const resultCard = el("div", { class: "card" });
-    resultCard.append(el("h2", {}, state.trialResult.passed ? "🏆 Prova Finale superata!" : "Prova Finale non superata"));
-    resultCard.append(el("p", { class: "hint" }, state.trialResult.passed
-      ? "Sei ora un Cavaliere a tutti gli effetti - Allenamento e Arena sono sbloccati."
-      : "Non oggi. Torna a prepararti: potrai riprovare quando vuoi."));
+    if (state.trialResult.passed) {
+      // Richiesto in chat: "nulla di pomposo e romanzato?" - un vero
+      // momento di svolta merita di più di un semplice pulsante
+      // "Continua".
+      resultCard.append(el("h2", {}, "🏆 Sei un Cavaliere"));
+      resultCard.append(el("p", {}, `Il tuo Cosmo esplode in un'ultima, incontenibile fiammata - e quando si placa, non sei più l'aspirante che ha varcato quella soglia settimane fa. ${state.character.armor.name}, per cui hai sanguinato e sudato, è finalmente tua da indossare. Non è solo un'armatura: è la prova vivente che ogni singola caduta, ogni fallimento, ogni notte insonne è servita a qualcosa.`));
+      resultCard.append(el("p", { class: "hint" }, "Allenamento e Arena sono ora sbloccati."));
+    } else {
+      resultCard.append(el("h2", {}, "Prova Finale non superata"));
+      resultCard.append(el("p", { class: "hint" }, "Non oggi. Torna a prepararti: potrai riprovare quando vuoi."));
+    }
     const logBox = el("div", { class: "log-box" });
     for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
     resultCard.append(logBox);
-    resultCard.append(el("button", { onClick: closeTrialResult }, state.trialResult.passed ? "Continua come Cavaliere" : "Torna a prepararti"));
+    resultCard.append(el("button", { onClick: closeTrialResult }, state.trialResult.passed ? "⚔ Indossa l'Armatura" : "Torna a prepararti"));
     wrap.append(resultCard);
     return wrap;
   }
@@ -1615,6 +1635,24 @@ function renderTrainingTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Centro Allenamento"));
 
+  // Bloccato per gli Apprendisti (richiesto in chat: ora la scheda
+  // resta visibile, ma con un messaggio chiaro sul perché non è
+  // ancora accessibile, invece di sparire del tutto dalla barra).
+  if (!state.character.is_knight) {
+    wrap.append(el("div", { class: "card" },
+      el("p", {}, "🔒 Sei ancora un Apprendista - ti stai già addestrando, ed è quello il tuo allenamento per ora."),
+      el("p", { class: "hint" }, "Il Centro Allenamento si sblocca quando superi la Prova Finale e diventi Cavaliere."),
+      el("button", { onClick: () => { state.gameTab = "percorso"; render(); } }, "Vai al tuo Percorso di Apprendistato"),
+    ));
+    return wrap;
+  }
+  if (state.character.mission_id) {
+    wrap.append(el("div", { class: "card" },
+      el("p", {}, "🔒 Sei in missione - l'Allenamento resta chiuso finché non la completi o l'abbandoni."),
+    ));
+    return wrap;
+  }
+
   const focusOptions = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
                          "Cascata del Sacrificio", "Sparring con i Compagni", "Riposo"];
   const dayNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
@@ -1702,6 +1740,24 @@ function buildBackgroundGalleryCard(title, hint, labelsMap, backgrounds) {
 function renderArenaTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Arena del Santuario"));
+
+  // Bloccato per gli Apprendisti (richiesto in chat: stesso principio
+  // del Centro Allenamento - visibile, ma con un messaggio chiaro).
+  if (!state.character.is_knight) {
+    wrap.append(el("div", { class: "card" },
+      el("p", {}, "🔒 Sei ancora un Apprendista - l'Arena si sblocca quando superi la Prova Finale."),
+      el("button", { onClick: () => { state.gameTab = "percorso"; render(); } }, "Vai al tuo Percorso di Apprendistato"),
+    ));
+    return wrap;
+  }
+  // Bloccato mentre una missione è in corso (richiesto in chat: "non
+  // posso essere in arena mentre sono in missione").
+  if (state.character.mission_id) {
+    wrap.append(el("div", { class: "card" },
+      el("p", {}, "🔒 Sei in missione - l'Arena resta chiusa finché non la completi o l'abbandoni."),
+    ));
+    return wrap;
+  }
 
   if (!state.battle && !state.opponentCandidates) {
     const searchCard = el("div", { class: "card" });
@@ -1811,12 +1867,23 @@ function appendBattleColumns(wrap) {
     // anche qui, non solo nella Scheda Cavaliere - si può arrivare
     // in Arena senza mai aver aperto quella scheda prima.
     if (state.customTechniques === null) loadCustomTechniques();
-    const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
-      .filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv"));
+    const isDefensive = (t) => (t.tech_type || "").toLowerCase().includes("difensiv");
+    const customTechs = (state.customTechniques ? state.customTechniques.techniques : []).filter((t) => !isDefensive(t));
     const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
-      k.techniques.filter((t) => !(t.tech_type || "").toLowerCase().includes("difensiv")),
+      k.techniques.filter((t) => !isDefensive(t)),
       customTechs,
     );
+    // Le tecniche difensive non compaiono tra i pulsanti d'attacco (non
+    // ha senso "attaccare" con uno scudo) - ma prima non si vedevano
+    // MAI da nessuna parte nel proprio pannello, a differenza di
+    // quello avversario che mostra tutto (richiesto in chat: sembrava
+    // che mancasse una tecnica, in realtà è solo usata in automatico
+    // quando ci si difende).
+    const myDefensive = k.techniques.filter(isDefensive)
+      .concat((state.customTechniques ? state.customTechniques.techniques : []).filter(isDefensive));
+    if (myDefensive.length > 0) {
+      leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, `🛡 Tecnica difensiva (usata in automatico quando ti difendi): ${myDefensive.map((t) => t.name).join(", ")}`));
+    }
     leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
     for (const t of attackOptions) {
       leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
