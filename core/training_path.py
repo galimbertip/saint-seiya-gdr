@@ -142,14 +142,19 @@ TRAINING_STAGES = [
         "text": ("{master}, che porta {master_armor}, ti accoglie senza troppe cerimonie: sarà lui a "
                   "guidarti nell'addestramento che ti porterà, se lo supererai, a indossare {your_armor}. "
                   "Al suo fianco, due facce nuove quanto la tua: {companion1} e {companion2}, altri due "
-                  "aspiranti che affronteranno lo stesso cammino. \"Da oggi in poi\", dice {master}, "
-                  "\"non siete più chi eravate prima di arrivare qui.\""),
+                  "aspiranti alla stessa {your_armor} - solo uno di voi tre, alla fine, la indosserà "
+                  "davvero. \"Da oggi in poi\", dice {master}, \"non siete più chi eravate prima di "
+                  "arrivare qui.\""),
     },
     {
-        "type": "skill_check", "stat": "con",
+        "type": "choice_check",
         "title": "Le prime fatiche",
         "text": ("Corsa, flessioni, ore a reggere pesi che sembrano non finire mai. {companion1} crolla "
-                  "a terra due volte prima di mezzogiorno; tu non stai molto meglio."),
+                  "a terra due volte prima di mezzogiorno; tu non stai molto meglio. Come vuoi affrontarla?"),
+        "approaches": [
+            {"label": "Spingere sul fisico puro", "stat": "con"},
+            {"label": "Trovare il ritmo con la mente, non col corpo", "stat": "vol"},
+        ],
         "success_text": ("Il tuo corpo regge più di quanto pensassi - {master} annuisce appena, il segno "
                           "più vicino a un complimento che concede."),
         "failure_text": ("Non ce la fai a reggere il ritmo fino in fondo - ti fermi prima degli altri, le "
@@ -163,20 +168,28 @@ TRAINING_STAGES = [
                   "Cosmo. Il vostro compito, da qui in avanti, è imparare ad accenderlo.\""),
     },
     {
-        "type": "skill_check", "stat": "vol",
+        "type": "choice_check",
         "title": "Il primo tentativo",
-        "text": "Ti concentri, stringi i pugni, cerchi quella scintilla di cui parla {master}.",
+        "text": "Ti concentri, cerchi quella scintilla di cui parla {master}. Come provi a raggiungerla?",
+        "approaches": [
+            {"label": "Concentrarti in silenzio assoluto", "stat": "vol"},
+            {"label": "Lasciarti guidare dall'istinto del corpo", "stat": "dex"},
+        ],
         "success_text": ("Per un istante brevissimo, qualcosa si muove dentro di te - non è ancora la "
                           "vera scintilla, ma è la prima volta che la senti passare."),
         "failure_text": ("Niente aura, niente calore. Solo la frustrazione di {companion2} che ride della "
                           "propria stessa goffaggine, e la tua che non fa altrettanto ridere."),
     },
     {
-        "type": "skill_check", "stat": "con",
+        "type": "choice_check",
         "title": "La prova dei limiti",
-        "text": "{master} vi porta al limite del corpo - non un allenamento, una prova di resistenza vera.",
-        "success_text": ("Stringi i denti e resisti oltre il punto in cui il corpo chiedeva di fermarsi. "
-                          "{companion1} ce la fa per un soffio, proprio come te."),
+        "text": "{master} vi porta al limite del corpo - una prova di resistenza vera. Come resisti?",
+        "approaches": [
+            {"label": "Stringere i denti e incassare", "stat": "con"},
+            {"label": "Trovare la forza nella determinazione", "stat": "vol"},
+        ],
+        "success_text": ("Resisti oltre il punto in cui il corpo chiedeva di fermarsi. {companion1} ce la "
+                          "fa per un soffio, proprio come te."),
         "failure_text": ("Il corpo cede prima della mente - crolli a terra, sconfitto dalla fatica più che "
                           "da un avversario. Ci riproverai."),
     },
@@ -195,9 +208,13 @@ TRAINING_STAGES = [
                   "succedere perché il colpo non sia solo un pugno con un nome altisonante."),
     },
     {
-        "type": "skill_check", "stat": "tec",
+        "type": "choice_check",
         "title": "I primi fallimenti",
-        "text": "Provi {tech1} decine di volte, cercando la sensazione giusta.",
+        "text": "Provi {tech1} decine di volte, cercando la sensazione giusta. Come provi ad arrivarci?",
+        "approaches": [
+            {"label": "Ripetere il gesto finché non è perfetto", "stat": "tec"},
+            {"label": "Fermarti a capire la teoria prima di riprovare", "stat": "vol"},
+        ],
         "success_text": ("Qualcosa comincia a funzionare - non ancora perfetto, ma abbastanza vicino da "
                           "farti capire che sei sulla strada giusta."),
         "failure_text": ("Niente. Troppo debole, o nella direzione sbagliata, o senza la scintilla del "
@@ -205,9 +222,13 @@ TRAINING_STAGES = [
                           "capisce nemmeno lui."),
     },
     {
-        "type": "skill_check", "stat": "tec",
+        "type": "choice_check",
         "title": "La padronanza",
-        "text": "È il momento di dimostrare di aver davvero imparato {tech1}.",
+        "text": "È il momento di dimostrare di aver davvero imparato {tech1}. Come ti presenti alla prova?",
+        "approaches": [
+            {"label": "Fidarti dell'istinto, senza pensarci troppo", "stat": "dex"},
+            {"label": "Applicare la tecnica con metodo, passo per passo", "stat": "tec"},
+        ],
         "success_text": ("Il movimento è giusto - il corpo, il Cosmo, l'intenzione, tutto insieme nello "
                           "stesso istante. {tech1} lascia il segno che deve lasciare. {master} annuisce: "
                           "\"Cominci a vedere quello che c'è oltre la superficie delle cose, adesso.\""),
@@ -221,36 +242,52 @@ TRAINING_STAGES = [
                   "prima, dice, e per questo più difficile da controllare davvero, non solo da eseguire."),
     },
     {
-        "type": "skill_check", "stat": "tec",
+        "type": "choice_check",
         "title": "La pratica",
-        "text": "{tech2} si rifiuta di venire naturale quanto la prima.",
+        "text": "{tech2} si rifiuta di venire naturale quanto la prima. Come insisti?",
+        "approaches": [
+            {"label": "Insistere con la ripetizione", "stat": "tec"},
+            {"label": "Osservare {master} e imitarlo con calma", "stat": "vol"},
+        ],
         "success_text": ("Qualcosa si sblocca - {tech2} comincia ad avere senso, anche se resta più "
                           "sottile e difficile da controllare della prima."),
         "failure_text": ("{companion1} la impara più in fretta di te, e per un momento è difficile non "
                           "lasciarsi mordere dall'invidia."),
     },
     {
-        "type": "skill_check", "stat": "tec",
+        "type": "choice_check",
         "title": "La seconda padronanza",
-        "text": "L'ultimo passo prima di poter dire di conoscere davvero {tech2}.",
+        "text": "L'ultimo passo prima di poter dire di conoscere davvero {tech2}. Come chiudi il cerchio?",
+        "approaches": [
+            {"label": "Fidarti della forza del corpo", "stat": "str"},
+            {"label": "Rifinire ogni dettaglio con precisione", "stat": "tec"},
+        ],
         "success_text": ("Arriva anche questa - {tech2} eseguita come deve essere, senza più doverci "
                           "pensare ad ogni singolo passaggio. Due tecniche vere, ora, non più solo teoria "
                           "raccontata da {master}."),
         "failure_text": "{tech2} resta ostinata, un passo oltre la tua portata per oggi. Domani sarà un altro giorno.",
     },
     {
-        "type": "skill_check", "stat": "vol",
+        "type": "choice_check",
         "title": "Il Sesto Senso",
-        "text": "\"C'è un modo di percepire il Cosmo altrui\", spiega {master}, \"prima ancora che un colpo arrivi.\"",
+        "text": "\"C'è un modo di percepire il Cosmo altrui\", spiega {master}, \"prima ancora che un colpo arrivi.\" Come ci provi?",
+        "approaches": [
+            {"label": "Aprire la mente al Cosmo altrui", "stat": "vol"},
+            {"label": "Affinare i sensi fisici", "stat": "dex"},
+        ],
         "success_text": ("Per un istante, senti qualcosa muoversi nell'aria prima ancora di vederlo - un "
                           "affinamento dell'attenzione che, ti accorgi, avevi già cominciato ad avere."),
         "failure_text": "Non senti nulla, per ora - solo il vuoto silenzio di un'attenzione non ancora abbastanza affinata.",
     },
     {
-        "type": "skill_check", "stat": "vol",
+        "type": "choice_check",
         "title": "La prova del dolore",
         "text": ("{master} non risparmia nessuno, in questa prova - il corpo che chiede di fermarsi, la "
-                  "mente che deve imparare a non ascoltarlo senza per questo smettere di proteggerlo."),
+                  "mente che deve imparare a non ascoltarlo. Come resisti?"),
+        "approaches": [
+            {"label": "Resistere con la forza di volontà", "stat": "vol"},
+            {"label": "Distrarre la mente dal dolore fisico", "stat": "con"},
+        ],
         "success_text": ("Resisti, oltre il punto in cui avresti voluto arrenderti. {companion2} non ce "
                           "la fa al primo tentativo - tu sì."),
         "failure_text": ("Il dolore vince, questa volta - ti fermi prima del necessario. Non è una "
@@ -352,8 +389,11 @@ def render_stage(stage_number: int, master_name: str, master_armor_name: str,
         "master_name": master_name, "master_armor_name": master_armor_name,
         "companion1_name": companion1, "companion2_name": companion2, "your_armor_name": your_armor_name,
     }
-    if stage["type"] == "skill_check":
-        result["stat"] = stage["stat"]
+    if stage["type"] == "choice_check":
+        result["approaches"] = [
+            {"label": _fill_placeholders(a["label"], ctx), "index": i}
+            for i, a in enumerate(stage["approaches"])
+        ]
     elif stage["type"] == "choice":
         result["options"] = [
             {"label": _fill_placeholders(opt["label"], ctx), "index": i}
@@ -371,16 +411,11 @@ def generate_trial_opponent(conn: sqlite3.Connection, opponent_is_master: bool, 
     di un normale scontro in Arena (movimento, tecniche, Contrattacco,
     tutto).
     Contro il Maestro: la SUA armatura vera, molto più forte.
-    Contro un compagno: un'armatura a caso della TUA stessa
-    divinità/fazione - un pari, un altro aspirante alla tua fascia."""
-    if opponent_is_master:
-        armor_name = master_armor_name
-    else:
-        pari = conn.execute(
-            "SELECT name FROM armors WHERE divinity = ? AND faction = ? AND name != ?",
-            (player_armor["divinity"], player_armor["faction"], player_armor["name"]),
-        ).fetchall()
-        armor_name = random.choice(pari)["name"] if pari else player_armor["name"]
+    Contro un compagno: la STESSA armatura per cui si sta addestrando
+    anche il personaggio (corretto in chat: fedeltà al canone - più
+    aspiranti competono per la stessa Cloth, non per armature diverse
+    - non più "un pari della tua fascia" con un'armatura a caso)."""
+    armor_name = master_armor_name if opponent_is_master else player_armor["name"]
 
     armor = get_armor(armor_name, conn)
     techniques = [dict(t) for t in get_techniques_for_armor(armor_name, conn)]
