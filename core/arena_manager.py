@@ -40,10 +40,35 @@ DEFAULT_DIFFICULTY = "medio"
 # usato per il giocatore) ammorbidisce la frase in ogni caso. Elenco
 # volutamente piccolo e generico, non collegato a nessuna provenienza
 # specifica (quella è una scelta narrativa del giocatore, non qui).
-OPPONENT_FIRST_NAMES = ["Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael",
-                        "Luca", "Dmitri", "Amara", "Sofia", "Yuki", "Elena", "Priya", "Kenji"]
-OPPONENT_SURNAMES = ["Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson",
-                      "Silva", "Moreau", "Petrova", "Takeda"]
+OPPONENT_FIRST_NAMES = [
+    # Ampliato molto (richiesto in chat: troppi doppioni con solo 15
+    # nomi pescati a ripetizione per Maestri, compagni, avversari e
+    # Guardiani delle missioni) - mix internazionale ampio, senza
+    # legame con un genere specifico (i PNG di questo gioco non hanno
+    # un campo sesso assegnato).
+    "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri",
+    "Amara", "Sofia", "Yuki", "Elena", "Priya", "Kenji", "Wei", "Hiroshi", "Ivan",
+    "Carlos", "Giulia", "Anastasia", "Mateus", "Fatima", "Omar", "Ines", "Nikolai",
+    "Sven", "Astrid", "Bjorn", "Freya", "Hans", "Greta", "Pierre", "Camille", "Antoine",
+    "Isabelle", "Klaus", "Ingrid", "Stefan", "Katarina", "Mikhail", "Olga", "Boris",
+    "Tatiana", "Ravi", "Ananya", "Arjun", "Meera", "Jin", "Hana", "Ryo", "Sakura",
+    "Min-jun", "So-yeon", "Tae-woo", "Ji-eun", "Ahmed", "Layla", "Yusuf", "Zara",
+    "Adaeze", "Kwame", "Chidinma", "Kofi", "Thabo", "Naledi", "Sipho", "Lucas", "Beatriz",
+    "Rodrigo", "Valentina", "Santiago", "Camila", "Mateo", "Lucia", "Alejandro", "Paula",
+    "Nikos", "Despina", "Dimitri", "Calista", "Costas", "Xanthe", "Alexandros", "Eleni",
+]
+OPPONENT_SURNAMES = [
+    "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau",
+    "Petrova", "Takeda", "Zhang", "Yamamoto", "Ivanov", "Garcia", "Muller", "Dubois",
+    "Andersson", "Kowalski", "Hernandez", "Sato", "Suzuki", "Nakamura", "Kim", "Park",
+    "Lee", "Singh", "Sharma", "Kumar", "Al-Rashid", "Hassan", "Ibrahim", "Diallo",
+    "Okafor", "Mensah", "Ndlovu", "Dlamini", "Adeyemi", "Popescu", "Nowak", "Novak",
+    "Kovac", "Horvat", "Larsen", "Hansen", "Berg", "Lindqvist", "Rousseau", "Lefebvre",
+    "Bernard", "Martin", "Schmidt", "Weber", "Wagner", "Fischer", "Romano", "Bianchi",
+    "Ferrari", "Esposito", "Alves", "Pereira", "Santos", "Oliveira", "Souza", "Reyes",
+    "Torres", "Ramirez", "Vasquez", "Castro", "Morales", "Chen", "Liu", "Huang",
+    "Wu", "Watanabe", "Kobayashi", "Inoue",
+]
 
 # PLACEHOLDER: bonus di "sintonia cosmica" alla Classe Armatura.
 # calculate_ac si aspettava un valore piccolo (0-100 circa), ma qui il
