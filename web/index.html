@@ -1091,13 +1091,17 @@ async function advanceTraining() {
   }
 }
 
-async function attemptSkillCheck() {
-  // La prova a dado di una tappa "skill_check" (richiesto in chat:
-  // tutto l'addestramento dev'essere interattivo) - non avanza da
-  // sola: sul successo si passa avanti col premio, sul fallimento si
-  // può riprovare o accettare e andare avanti senza premio.
+async function attemptSkillCheck(approachIndex) {
+  // La prova a dado di una tappa "choice_check" (richiesto in chat:
+  // prima scegli l'approccio - determina la statistica del tiro - poi
+  // tiri davvero) - non avanza da sola: sul successo si passa avanti
+  // col premio, sul fallimento si può riprovare (anche con un
+  // approccio diverso) o accettare e andare avanti senza premio.
   try {
-    state.stageAttemptResult = await api(`/characters/${state.characterId}/training-path/attempt`, { method: "POST" });
+    state.stageAttemptResult = await api(`/characters/${state.characterId}/training-path/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ option_index: approachIndex }),
+    });
     render();
   } catch (e) {
     showError(e.message);
@@ -1546,10 +1550,12 @@ function renderTrainingPathTab() {
   if (stage.type === "narrative") {
     stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
 
-  } else if (stage.type === "skill_check") {
-    // Una vera prova a dado (richiesto in chat: tutto l'addestramento
-    // dev'essere interattivo) - si può fallire, riprovare, o accettare
-    // il fallimento e andare avanti senza il premio.
+  } else if (stage.type === "choice_check") {
+    // Scelta + tiro combinati (richiesto in chat: prima era solo un
+    // pulsante "Prova" nudo, troppo ripetitivo) - prima si sceglie
+    // l'approccio, che determina la statistica del tiro; solo dopo si
+    // vede l'esito. Si può fallire, riprovare (anche con un approccio
+    // diverso), o accettare il fallimento e andare avanti senza premio.
     if (state.stageAttemptResult) {
       const r = state.stageAttemptResult;
       stageCard.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
@@ -1558,12 +1564,15 @@ function renderTrainingPathTab() {
         stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
       } else {
         const btnRow = el("div", { class: "row" });
-        btnRow.append(el("button", { onClick: attemptSkillCheck }, "Riprova"));
+        btnRow.append(el("button", { onClick: () => { state.stageAttemptResult = null; render(); } }, "Riprova"));
         btnRow.append(el("button", { class: "secondary", onClick: advanceTraining }, "Vai avanti comunque"));
         stageCard.append(btnRow);
       }
     } else {
-      stageCard.append(el("button", { onClick: attemptSkillCheck }, "🎲 Prova"));
+      stageCard.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Come vuoi affrontarla?"));
+      for (const approach of stage.approaches) {
+        stageCard.append(el("button", { onClick: () => attemptSkillCheck(approach.index) }, approach.label));
+      }
     }
 
   } else if (stage.type === "choice") {
