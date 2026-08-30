@@ -210,7 +210,8 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
                             surname=?, gender=?, origin=?, build=?, tutorial_seen=?, biography=?,
                             skin_tone=?, hair_color=?, avatar_path=?, created_at=?,
                             is_knight=?, training_stage=?, master_name=?, master_armor_name=?,
-                            companion1_name=?, companion2_name=?, arena_background_path=?, arena_backgrounds=?
+                            companion1_name=?, companion2_name=?, arena_background_path=?, arena_backgrounds=?,
+                            denaro=?, mission_id=?, mission_stage=?, mission_node=?, mission_flags=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["str"], knight["dex"], knight["con"],
@@ -220,6 +221,8 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
          knight["biography"], knight["skin_tone"], knight["hair_color"], knight["avatar_path"],
          knight["created_at"], knight["is_knight"], knight["training_stage"], knight["master_name"],
          knight["master_armor_name"], knight["companion1_name"], knight["companion2_name"],
-         knight["arena_background_path"], knight["arena_backgrounds"], knight["id"]),
+         knight["arena_background_path"], knight["arena_backgrounds"],
+         knight["denaro"], knight["mission_id"], knight["mission_stage"],
+         knight["mission_node"], knight["mission_flags"], knight["id"]),
     )
     conn.commit()
