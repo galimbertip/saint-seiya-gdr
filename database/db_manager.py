@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS knights (
     master_name TEXT NOT NULL DEFAULT '',
     master_armor_name TEXT NOT NULL DEFAULT '',
     companion1_name TEXT NOT NULL DEFAULT '',
-    companion2_name TEXT NOT NULL DEFAULT ''
+    companion2_name TEXT NOT NULL DEFAULT '',
+    arena_background_path TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -223,6 +224,13 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN companion2_name TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunte colonne dell'apprendistato a knights (salvataggi esistenti già 'Cavalieri').")
+    if "arena_background_path" not in existing_columns:
+        # Sfondo personalizzato dell'Arena (richiesto in chat: le
+        # decorazioni geometriche non reggevano il confronto) - vuoto
+        # per tutti finché non se ne carica uno, usa il colore del tema.
+        conn.execute("ALTER TABLE knights ADD COLUMN arena_background_path TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna arena_background_path a knights.")
 
 
 def get_connection() -> sqlite3.Connection:
