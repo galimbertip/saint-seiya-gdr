@@ -373,18 +373,29 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
 
 
 VALID_ARENA_THEMES = {"atene", "siberia", "deserto", "colosseo", "piramidi"}
+# Una "sede" per ciascuna delle 13 divinità del catalogo (richiesto in
+# chat), oltre ai 5 temi elementali già esistenti - stessa galleria,
+# stesso meccanismo di upload, solo più chiavi ammesse. "Black Saint"
+# ha uno spazio nel nome: qui uso una chiave "sicura" (black_saint) per
+# l'URL/il dizionario, la Divinità vera resta quella nel catalogo.
+VALID_DIVINITY_ARENA_KEYS = {
+    "athena", "hades", "nettuno", "odino", "ares", "artemide", "zeus",
+    "crono", "eris", "saturno", "lucifero", "black_saint", "apollo",
+}
+VALID_ARENA_KEYS = VALID_ARENA_THEMES | VALID_DIVINITY_ARENA_KEYS
 
 
 @app.post("/characters/{knight_id}/arena-background/{theme}")
 async def api_upload_arena_background(knight_id: int, theme: str, file: UploadFile = File(...), conn=Depends(get_db)):
     """Carica un'immagine di sfondo personalizzata per UNO dei 5 temi
-    dell'Arena (richiesto in chat: uno sfondo solo, uguale per tutti i
-    temi, aveva poco senso - meglio una galleria, un'immagine per
-    ciascuno). Le immagini sono un dizionario JSON tema->percorso
-    salvato in arena_backgrounds; caricarne una nuova per un tema
-    sovrascrive solo quella, le altre restano intatte."""
-    if theme not in VALID_ARENA_THEMES:
-        raise HTTPException(status_code=400, detail=f"Tema non valido - deve essere uno tra: {', '.join(sorted(VALID_ARENA_THEMES))}.")
+    elementali dell'Arena o per una delle 13 "sedi" di divinità
+    (richiesto in chat) - uno sfondo solo, uguale per tutti, aveva poco
+    senso: meglio una galleria, un'immagine per ciascuno. Le immagini
+    sono un dizionario JSON chiave->percorso salvato in
+    arena_backgrounds; caricarne una nuova per una chiave sovrascrive
+    solo quella, le altre restano intatte."""
+    if theme not in VALID_ARENA_KEYS:
+        raise HTTPException(status_code=400, detail=f"Tema/divinità non valido - deve essere uno tra: {', '.join(sorted(VALID_ARENA_KEYS))}.")
     knight = _get_knight_or_404(conn, knight_id)
 
     ext = Path(file.filename or "").suffix.lower()
