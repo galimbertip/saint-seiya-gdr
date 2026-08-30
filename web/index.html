@@ -1284,6 +1284,24 @@ async function uploadAvatar(file) {
   }
 }
 
+async function uploadArenaBackground(file) {
+  if (!state.characterId) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch(`/characters/${state.characterId}/arena-background`, { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Errore HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    state.character.arena_background_path = data.arena_background_path;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 // Riga di descrizione di una tecnica, con l'etichetta Offensiva/
 // Difensiva ben visibile (richiesto in chat: prima si capiva solo
 // leggendo "Difensivo" dentro il tech_type, poco a colpo d'occhio) -
@@ -1664,6 +1682,27 @@ function renderArenaTab() {
     searchCard.append(el("button", { onClick: () => searchOpponent("medio") }, "🗡 Medio"));
     searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
     wrap.append(searchCard);
+
+    // Sfondo personalizzato dell'Arena (richiesto in chat: le
+    // decorazioni geometriche non reggevano il confronto) - un'opzione
+    // a parte, non obbligatoria: senza immagine resta il colore del
+    // tema scelto in base alla provenienza dell'avversario.
+    const bgCard = el("div", { class: "card" });
+    bgCard.append(el("h2", {}, "Sfondo dell'Arena"));
+    const k = state.character;
+    if (k.arena_background_path) {
+      bgCard.append(el("img", { src: k.arena_background_path, style: "width:100%;max-width:200px;border-radius:8px;display:block;margin:0 auto 8px;" }));
+    } else {
+      bgCard.append(el("p", { class: "hint" }, "Nessuna immagine caricata - l'Arena usa un colore diverso in base alla provenienza dell'avversario."));
+    }
+    const bgFileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+    bgFileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadArenaBackground(e.target.files[0]); });
+    bgCard.append(bgFileInput);
+    bgCard.append(el("button", {
+      class: "secondary", style: "width:100%;",
+      onClick: () => bgFileInput.click(),
+    }, k.arena_background_path ? "🖼️ Cambia sfondo" : "🖼️ Carica uno sfondo personalizzato"));
+    wrap.append(bgCard);
   } else if (!state.battle && state.opponentCandidates) {
     const waitingCard = el("div", { class: "card" });
     waitingCard.append(el("h2", {}, "Sala d'attesa"));
@@ -1861,13 +1900,12 @@ function drawKnightFigure(ctx, x, y, color, label) {
 }
 
 // Le 5 arene della Fase 4 (puramente estetiche, nessuna nuova
-// meccanica - richiesto in chat): sfondo diverso e una piccola
-// decorazione caratteristica per ciascuna, scelta dal server in base
-// alla provenienza dell'avversario (vedi pick_arena_theme lato
-// backend). Niente immagini vere (nessuno strumento di generazione
-// disponibile, vedi discussione sull'emblema) - solo forme geometriche
-// semplici, sufficienti a dare un'identità visiva diversa a colpo
-// d'occhio.
+// meccanica): solo un colore di sfondo diverso per tema, scelto dal
+// server in base alla provenienza dell'avversario (vedi
+// pick_arena_theme lato backend). Le decorazioni geometriche disegnate
+// a mano sono state tolte (richiesto in chat: non reggevano il
+// confronto) - resta il colore, sostituibile con un'immagine propria
+// (vedi arenaBackgroundPath più sotto).
 const ARENA_THEMES = {
   atene: { bg: "linear-gradient(#26324a, #0B0F1A)" },
   siberia: { bg: "linear-gradient(#cfe8f7, #7fa8c9)" },
@@ -1875,59 +1913,6 @@ const ARENA_THEMES = {
   colosseo: { bg: "linear-gradient(#9b9689, #4a453d)" },
   piramidi: { bg: "linear-gradient(#6b4a7e, #d9a441)" },
 };
-
-function drawArenaDecoration(ctx, theme, size) {
-  ctx.save();
-  if (theme === "atene") {
-    ctx.fillStyle = "rgba(234,230,218,0.45)";
-    for (const x of [size * 0.08, size * 0.22, size * 0.78, size * 0.92]) {
-      ctx.fillRect(x - 3, 0, 6, size * 0.16);
-      ctx.fillRect(x - 3, size * 0.84, 6, size * 0.16);
-    }
-  } else if (theme === "siberia") {
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.beginPath();
-    ctx.moveTo(0, size);
-    ctx.lineTo(size * 0.15, size * 0.72);
-    ctx.lineTo(size * 0.3, size);
-    ctx.lineTo(size * 0.5, size * 0.68);
-    ctx.lineTo(size * 0.7, size);
-    ctx.lineTo(size * 0.85, size * 0.78);
-    ctx.lineTo(size, size);
-    ctx.closePath();
-    ctx.fill();
-  } else if (theme === "deserto") {
-    ctx.fillStyle = "rgba(255, 224, 140, 0.7)";
-    ctx.beginPath();
-    ctx.arc(size * 0.85, size * 0.14, size * 0.07, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "rgba(160, 100, 40, 0.35)";
-    ctx.beginPath();
-    ctx.moveTo(0, size);
-    ctx.quadraticCurveTo(size * 0.25, size * 0.83, size * 0.5, size * 0.94);
-    ctx.quadraticCurveTo(size * 0.75, size * 1.0, size, size * 0.88);
-    ctx.lineTo(size, size);
-    ctx.closePath();
-    ctx.fill();
-  } else if (theme === "colosseo") {
-    ctx.strokeStyle = "rgba(255,255,255,0.4)";
-    ctx.lineWidth = 3;
-    for (const x of [size * 0.15, size * 0.35, size * 0.65, size * 0.85]) {
-      ctx.beginPath();
-      ctx.arc(x, size * 0.09, size * 0.07, Math.PI, 0);
-      ctx.stroke();
-    }
-  } else if (theme === "piramidi") {
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.beginPath();
-    ctx.moveTo(size * 0.5, size * 0.5);
-    ctx.lineTo(size * 0.72, size);
-    ctx.lineTo(size * 0.28, size);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
-}
 
 function renderArenaMap() {
   const SIZE = 340;
@@ -1941,14 +1926,20 @@ function renderArenaMap() {
   canvas.style.maxWidth = `${SIZE}px`;
   canvas.style.display = "block";
   canvas.style.margin = "0 auto";
-  canvas.style.background = theme.bg;
+  // Un'immagine di sfondo personalizzata (richiesto in chat) ha la
+  // precedenza sul colore del tema, se il giocatore ne ha caricata una.
+  if (state.character && state.character.arena_background_path) {
+    canvas.style.backgroundImage = `url(${state.character.arena_background_path})`;
+    canvas.style.backgroundSize = "cover";
+    canvas.style.backgroundPosition = "center";
+  } else {
+    canvas.style.background = theme.bg;
+  }
   canvas.style.border = "1px solid var(--border)";
   canvas.style.borderRadius = "8px";
 
   const ctx = canvas.getContext("2d");
   const scale = SIZE / 10; // la griglia va da 0 a 10 in entrambi gli assi
-
-  if (battle) drawArenaDecoration(ctx, battle.arena_theme, SIZE);
 
   // Sfondo a griglia leggera, solo come riferimento visivo.
   ctx.strokeStyle = "rgba(120,130,150,0.25)";
