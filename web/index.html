@@ -1670,6 +1670,35 @@ function renderTrainingTab() {
   return wrap;
 }
 
+// Una card-galleria di sfondi (richiesto in chat: una per i 5 temi
+// elementali, una per le 13 "sedi" di divinità) - stessa logica,
+// riusata due volte invece di duplicarla.
+function buildBackgroundGalleryCard(title, hint, labelsMap, backgrounds) {
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, title));
+  card.append(el("p", { class: "hint" }, hint));
+  for (const [key, label] of Object.entries(labelsMap)) {
+    const row = el("div", { style: "display:flex;align-items:center;gap:10px;margin-top:10px;" });
+    if (backgrounds[key]) {
+      row.append(el("img", { src: backgrounds[key], style: "width:60px;height:60px;object-fit:cover;border-radius:6px;flex-shrink:0;" }));
+    } else {
+      row.append(el("div", { style: "width:60px;height:60px;border:1px dashed var(--border);border-radius:6px;flex-shrink:0;" }));
+    }
+    const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+    fileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadArenaBackground(e.target.files[0], key); });
+    const col = el("div", { style: "flex:1;" });
+    col.append(el("p", { style: "margin:0 0 4px;" }, label));
+    col.append(fileInput);
+    col.append(el("button", {
+      class: "secondary",
+      onClick: () => fileInput.click(),
+    }, backgrounds[key] ? "Cambia" : "Carica"));
+    row.append(col);
+    card.append(row);
+  }
+  return card;
+}
+
 function renderArenaTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Arena del Santuario"));
@@ -1683,35 +1712,21 @@ function renderArenaTab() {
     searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
     wrap.append(searchCard);
 
-    // Galleria degli sfondi dell'Arena (richiesto in chat: uno sfondo
-    // solo, uguale per ogni tema, aveva poco senso - un'immagine per
-    // ciascuno dei 5 temi, usata solo quando quel tema è davvero
-    // attivo in base alla provenienza dell'avversario).
-    const bgCard = el("div", { class: "card" });
-    bgCard.append(el("h2", {}, "Sfondi dell'Arena"));
-    bgCard.append(el("p", { class: "hint" }, "Un'immagine per ciascun tema - senza immagine, quel tema usa semplicemente un colore."));
+    // Gallerie degli sfondi dell'Arena (richiesto in chat: uno sfondo
+    // solo, uguale per tutti, aveva poco senso - un'immagine per
+    // ciascuno dei 5 temi elementali, PIÙ una per ciascuna delle 13
+    // "sedi" di divinità, con priorità sul tema quando l'avversario
+    // appartiene a quella divinità).
     const k = state.character;
     const backgrounds = k.arena_backgrounds || {};
-    for (const [themeKey, themeLabel] of Object.entries(ARENA_THEME_LABELS)) {
-      const row = el("div", { style: "display:flex;align-items:center;gap:10px;margin-top:10px;" });
-      if (backgrounds[themeKey]) {
-        row.append(el("img", { src: backgrounds[themeKey], style: "width:60px;height:60px;object-fit:cover;border-radius:6px;flex-shrink:0;" }));
-      } else {
-        row.append(el("div", { style: "width:60px;height:60px;border:1px dashed var(--border);border-radius:6px;flex-shrink:0;" }));
-      }
-      const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
-      fileInput.addEventListener("change", (e) => { if (e.target.files[0]) uploadArenaBackground(e.target.files[0], themeKey); });
-      const col = el("div", { style: "flex:1;" });
-      col.append(el("p", { style: "margin:0 0 4px;" }, themeLabel));
-      col.append(fileInput);
-      col.append(el("button", {
-        class: "secondary",
-        onClick: () => fileInput.click(),
-      }, backgrounds[themeKey] ? "Cambia" : "Carica"));
-      row.append(col);
-      bgCard.append(row);
-    }
-    wrap.append(bgCard);
+    wrap.append(buildBackgroundGalleryCard(
+      "Sfondi per elemento", "Un'immagine per ciascun tema elementale - senza immagine, quel tema usa semplicemente un colore.",
+      ARENA_THEME_LABELS, backgrounds,
+    ));
+    wrap.append(buildBackgroundGalleryCard(
+      "Sfondi per divinità", "Un'immagine per la \"sede\" di ciascuna divinità (richiesto in chat) - ha la precedenza sul tema elementale quando l'avversario appartiene a quella divinità.",
+      DIVINITY_ARENA_LABELS, backgrounds,
+    ));
   } else if (!state.battle && state.opponentCandidates) {
     const waitingCard = el("div", { class: "card" });
     waitingCard.append(el("h2", {}, "Sala d'attesa"));
@@ -1929,6 +1944,25 @@ const ARENA_THEME_LABELS = {
   atene: "Atene", siberia: "Siberia", deserto: "Deserto", colosseo: "Colosseo", piramidi: "Piramidi",
 };
 
+// Una "sede" per ciascuna delle 13 divinità del catalogo (richiesto in
+// chat, oltre ai 5 temi elementali) - la chiave usata per l'upload/il
+// dizionario arena_backgrounds a sinistra, il nome vero della divinità
+// (per il confronto con battle.opponent.divinity) e l'etichetta
+// mostrata a destra.
+const DIVINITY_ARENA_LABELS = {
+  athena: "Athena", hades: "Hades", nettuno: "Nettuno", odino: "Odino",
+  ares: "Ares", artemide: "Artemide", zeus: "Zeus", crono: "Crono",
+  eris: "Eris", saturno: "Saturno", lucifero: "Lucifero",
+  black_saint: "Black Saint", apollo: "Apollo",
+};
+// Da nome vero della divinità (come arriva da battle.opponent.divinity)
+// alla chiave "sicura" usata nel dizionario/URL - serve solo per
+// "Black Saint", che ha uno spazio; per tutte le altre coincide con la
+// versione minuscola del nome.
+function divinityToKey(divinityName) {
+  return (divinityName || "").toLowerCase().replace(/\s+/g, "_");
+}
+
 function renderArenaMap() {
   const SIZE = 340;
   const battle = state.battle;
@@ -1942,11 +1976,13 @@ function renderArenaMap() {
   canvas.style.maxWidth = `${SIZE}px`;
   canvas.style.display = "block";
   canvas.style.margin = "0 auto";
-  // Un'immagine di sfondo personalizzata per QUESTO tema (richiesto in
-  // chat: una galleria per tema, non un'unica immagine per tutti) ha
-  // la precedenza sul colore, se il giocatore ne ha caricata una per
-  // il tema attivo in questo scontro.
-  const customBg = state.character && state.character.arena_backgrounds && state.character.arena_backgrounds[themeKey];
+  // La priorità è: 1) un'immagine caricata per la DIVINITÀ
+  // dell'avversario (richiesto in chat: più significativo di un
+  // colore legato solo all'elemento), 2) un'immagine caricata per il
+  // tema elementale, 3) il semplice colore del tema.
+  const backgrounds = (state.character && state.character.arena_backgrounds) || {};
+  const opponentDivinityKey = battle && battle.opponent ? divinityToKey(battle.opponent.divinity) : null;
+  const customBg = (opponentDivinityKey && backgrounds[opponentDivinityKey]) || backgrounds[themeKey];
   if (customBg) {
     canvas.style.backgroundImage = `url(${customBg})`;
     canvas.style.backgroundSize = "cover";
