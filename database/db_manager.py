@@ -77,7 +77,12 @@ CREATE TABLE IF NOT EXISTS knights (
     companion1_name TEXT NOT NULL DEFAULT '',
     companion2_name TEXT NOT NULL DEFAULT '',
     arena_background_path TEXT NOT NULL DEFAULT '',
-    arena_backgrounds TEXT NOT NULL DEFAULT '{}'
+    arena_backgrounds TEXT NOT NULL DEFAULT '{}',
+    denaro INTEGER NOT NULL DEFAULT 0,
+    mission_id TEXT NOT NULL DEFAULT '',
+    mission_stage INTEGER NOT NULL DEFAULT 0,
+    mission_node TEXT NOT NULL DEFAULT '',
+    mission_flags TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -241,6 +246,30 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN arena_backgrounds TEXT NOT NULL DEFAULT '{}'")
         conn.commit()
         log.info("Migrazione: aggiunta colonna arena_backgrounds a knights (dizionario JSON per tema).")
+    if "denaro" not in existing_columns:
+        # Missioni (richiesto in chat): una ricompensa in Cosmo/denaro a
+        # missione completata - nessun negozio dove spenderlo ancora
+        # (le taverne restano un capitolo futuro), ma il numero cresce
+        # già da ora. mission_id/mission_stage tracciano una missione
+        # in corso - vuoti/zero quando nessuna è attiva.
+        conn.execute("ALTER TABLE knights ADD COLUMN denaro INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE knights ADD COLUMN mission_id TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN mission_stage INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne delle Missioni a knights (denaro, mission_id, mission_stage).")
+    if "mission_node" not in existing_columns:
+        # Seconda missione a grafo (richiesto in chat: bivi che portano
+        # DAVVERO a strade diverse) - mission_node tiene il nodo
+        # attuale (per missioni a grafo come "Le Colonne dei Sette
+        # Mari"), mission_flags i flag accumulati durante il percorso
+        # (es. "helped_prisoner", separati da virgola) che influenzano
+        # il finale. La Scalata delle Dodici Case continua a usare solo
+        # mission_stage, essendo il suo ordine fisso per fedeltà al
+        # canone.
+        conn.execute("ALTER TABLE knights ADD COLUMN mission_node TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE knights ADD COLUMN mission_flags TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne mission_node/mission_flags a knights (per missioni a grafo).")
 
 
 def get_connection() -> sqlite3.Connection:
