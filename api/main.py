@@ -48,6 +48,9 @@ from core.arena_manager import (
 )
 from core.version import APP_VERSION
 from core.institutional_npcs import get_institutional_npcs
+from core.app_logger import get_logger
+
+log = get_logger(__name__)
 from core.training_path import (
     render_stage, generate_trial_opponent, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
     KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE, TRAINING_STAGES, resolve_skill_check,
@@ -386,13 +389,22 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
     if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
         raise HTTPException(status_code=400, detail="Formato immagine non supportato (usa PNG, JPG, WEBP o GIF).")
 
-    filename = f"knight_{knight_id}{ext}"
-    dest = AVATARS_DIR / filename
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    try:
+        filename = f"knight_{knight_id}{ext}"
+        dest = AVATARS_DIR / filename
+        with dest.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
 
-    knight["avatar_path"] = f"/avatars/{filename}"
-    save_knight(conn, knight)
+        knight["avatar_path"] = f"/avatars/{filename}"
+        save_knight(conn, knight)
+    except Exception:
+        # Un log dettagliato invece di un 500 muto (richiesto in chat:
+        # un errore così com'era non dava nessun indizio su cosa fosse
+        # andato storto davvero) - qualunque cosa succeda qui, almeno
+        # resta traccia nei log per capire la causa reale.
+        log.exception(f"Caricamento avatar fallito per il cavaliere {knight_id}")
+        raise HTTPException(status_code=500, detail="Caricamento immagine fallito - controlla i log del server per il dettaglio.")
+
     return {"avatar_path": knight["avatar_path"]}
 
 
