@@ -1828,6 +1828,23 @@ function appendBattleColumns(wrap) {
   // molto diverso tra i due combattenti.
   const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
 
+  // Tecniche personalizzate (richiesto in chat): caricate pigre una
+  // sola volta qui, non separatamente in ogni ramo sottostante - si
+  // può arrivare in Arena senza mai aver aperto la Scheda Cavaliere.
+  if (state.customTechniques === null) loadCustomTechniques();
+  const isDefensive = (t) => (t.tech_type || "").toLowerCase().includes("difensiv");
+  const allMyTechniques = k.techniques.concat(state.customTechniques ? state.customTechniques.techniques : []);
+  const myDefensive = allMyTechniques.filter(isDefensive);
+  const myOffensive = [{ name: "Attacco Base", power: 20 }].concat(allMyTechniques.filter((t) => !isDefensive(t)));
+  // La riga informativa sulla propria tecnica difensiva (richiesto in
+  // chat: prima non si vedeva MAI da nessuna parte, né quando si
+  // dichiara un attacco né - soprattutto - nel momento in cui conta
+  // davvero, cioè quando ci si difende) - un unico pezzo di interfaccia
+  // riusato in entrambi i punti sottostanti.
+  const defensiveInfoLine = () => myDefensive.length > 0
+    ? el("p", { class: "hint", style: "margin-top:10px;" }, `🛡 Tecnica difensiva (usata in automatico quando ti difendi): ${myDefensive.map((t) => t.name).join(", ")}`)
+    : null;
+
   const columns = el("div", { class: "arena-columns" });
 
   // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
@@ -1841,6 +1858,8 @@ function appendBattleColumns(wrap) {
     leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
 
     if (!state.showCounterPicker) {
+      const defLine = defensiveInfoLine();
+      if (defLine) leftPanel.append(defLine);
       leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
       leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
       leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
@@ -1848,44 +1867,18 @@ function appendBattleColumns(wrap) {
       // Contrattacco (richiesto in chat): il colpo avversario arriva
       // pieno, non ridotto per niente - in cambio, scegli TU con
       // quale delle tue tecniche rispondere, come un vero attacco.
-      if (state.customTechniques === null) loadCustomTechniques();
-      const customTechs = (state.customTechniques ? state.customTechniques.techniques : [])
-        .filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv"));
-      const counterOptions = [{ name: "Attacco Base", power: 20 }].concat(
-        k.techniques.filter((tt) => !(tt.tech_type || "").toLowerCase().includes("difensiv")),
-        customTechs,
-      );
       leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Il colpo avversario arriva pieno, senza riduzione - scegli con cosa rispondere:"));
-      for (const ct of counterOptions) {
+      for (const ct of myOffensive) {
         leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
       }
       leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
     }
   } else {
     const senses = k.senses;
-    // Tecniche personalizzate (richiesto in chat): caricate pigre
-    // anche qui, non solo nella Scheda Cavaliere - si può arrivare
-    // in Arena senza mai aver aperto quella scheda prima.
-    if (state.customTechniques === null) loadCustomTechniques();
-    const isDefensive = (t) => (t.tech_type || "").toLowerCase().includes("difensiv");
-    const customTechs = (state.customTechniques ? state.customTechniques.techniques : []).filter((t) => !isDefensive(t));
-    const attackOptions = [{ name: "Attacco Base", power: 20 }].concat(
-      k.techniques.filter((t) => !isDefensive(t)),
-      customTechs,
-    );
-    // Le tecniche difensive non compaiono tra i pulsanti d'attacco (non
-    // ha senso "attaccare" con uno scudo) - ma prima non si vedevano
-    // MAI da nessuna parte nel proprio pannello, a differenza di
-    // quello avversario che mostra tutto (richiesto in chat: sembrava
-    // che mancasse una tecnica, in realtà è solo usata in automatico
-    // quando ci si difende).
-    const myDefensive = k.techniques.filter(isDefensive)
-      .concat((state.customTechniques ? state.customTechniques.techniques : []).filter(isDefensive));
-    if (myDefensive.length > 0) {
-      leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, `🛡 Tecnica difensiva (usata in automatico quando ti difendi): ${myDefensive.map((t) => t.name).join(", ")}`));
-    }
+    const defLine = defensiveInfoLine();
+    if (defLine) leftPanel.append(defLine);
     leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
-    for (const t of attackOptions) {
+    for (const t of myOffensive) {
       leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
     }
     leftPanel.append(el("button", {
