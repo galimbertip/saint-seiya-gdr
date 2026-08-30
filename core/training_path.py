@@ -139,213 +139,254 @@ TRAINING_STAGES = [
     {
         "type": "narrative",
         "title": "Il primo giorno",
-        "text": ("{master}, che porta {master_armor}, ti accoglie senza troppe cerimonie: sarà lui a "
-                  "guidarti nell'addestramento che ti porterà, se lo supererai, a indossare {your_armor}. "
-                  "Al suo fianco, due facce nuove quanto la tua: {companion1} e {companion2}, altri due "
-                  "aspiranti alla stessa {your_armor} - solo uno di voi tre, alla fine, la indosserà "
-                  "davvero. \"Da oggi in poi\", dice {master}, \"non siete più chi eravate prima di "
-                  "arrivare qui.\""),
+        "text": ("{master} - che porta l'armatura {master_armor} come un manto di stelle - ti accoglie "
+                  "senza una sola parola di troppo: sarà lui a forgiarti, giorno dopo giorno, nel Cavaliere "
+                  "che sei destinato a diventare, se il tuo Cosmo saprà ardere abbastanza da meritare "
+                  "l'armatura {your_armor}. Al suo fianco, due ombre incerte quanto la tua: {companion1} e "
+                  "{companion2}, altri due aspiranti chiamati dallo stesso destino verso la stessa armatura "
+                  "- solo uno di voi tre, quando tutto sarà finito, la indosserà davvero. \"Da oggi\", dice "
+                  "{master}, con una voce che non ammette repliche, \"non siete più chi eravate. O "
+                  "diventerete Cavalieri, o non sarete stati nulla.\""),
     },
     {
         "type": "choice_check",
         "title": "Le prime fatiche",
-        "text": ("Corsa, flessioni, ore a reggere pesi che sembrano non finire mai. {companion1} crolla "
-                  "a terra due volte prima di mezzogiorno; tu non stai molto meglio. Come vuoi affrontarla?"),
+        "text": ("Il sole non è ancora sorto e il tuo corpo già urla. Corsa, flessioni, pesi che sembrano "
+                  "macigni caduti dal cielo - {companion1} crolla a terra due volte prima di mezzogiorno, "
+                  "il fiato spezzato. Il tuo corpo trema quanto il suo. Come rispondi alla fatica che vuole "
+                  "spezzarti?"),
         "approaches": [
-            {"label": "Spingere sul fisico puro", "stat": "con"},
-            {"label": "Trovare il ritmo con la mente, non col corpo", "stat": "vol"},
+            {"label": "Spingere il corpo oltre ogni limite", "stat": "con"},
+            {"label": "Piegare la fatica con la sola forza della mente", "stat": "vol"},
         ],
-        "success_text": ("Il tuo corpo regge più di quanto pensassi - {master} annuisce appena, il segno "
-                          "più vicino a un complimento che concede."),
-        "failure_text": ("Non ce la fai a reggere il ritmo fino in fondo - ti fermi prima degli altri, le "
-                          "gambe che tremano. {master} non dice nulla, ma non serve."),
+        "success_text": ("Qualcosa dentro di te non si spezza, oggi - resisti oltre il punto in cui il "
+                          "corpo giurava di doversi fermare. {master} ti osserva un istante di troppo: il "
+                          "segno più vicino a un elogio che concederà mai."),
+        "failure_text": ("Il corpo cede prima dell'orgoglio - crolli nella polvere, le gambe che tremano "
+                          "come rami spezzati dal vento. {master} non dice nulla. Non serve: il silenzio "
+                          "pesa più di qualunque parola."),
     },
     {
         "type": "narrative",
         "title": "Cos'è il Cosmo",
-        "text": ("\"Tutto ciò che esiste\", spiega {master}, \"è fatto delle stesse particelle "
-                  "infinitesimali - e dentro ognuno di voi arde un piccolo universo. Quello è il vostro "
-                  "Cosmo. Il vostro compito, da qui in avanti, è imparare ad accenderlo.\""),
+        "text": ("\"Tutto ciò che esiste nell'universo\", tuona {master}, la voce carica di un peso quasi "
+                  "religioso, \"è fatto delle stesse infinite particelle - le stelle, le montagne, il "
+                  "sangue nelle vostre vene. E dentro ognuno di voi arde, sepolto, un piccolo universo "
+                  "tutto suo. Quello è il vostro Cosmo. Da oggi, il vostro unico compito è imparare a "
+                  "farlo esplodere.\""),
     },
     {
         "type": "choice_check",
         "title": "Il primo tentativo",
-        "text": "Ti concentri, cerchi quella scintilla di cui parla {master}. Come provi a raggiungerla?",
+        "text": ("Chiudi gli occhi. Cerchi quella scintilla di cui parla {master} - il fuoco che dovrebbe "
+                  "ardere sotto la pelle e non arde ancora. Come provi a strapparlo al silenzio del tuo "
+                  "stesso corpo?"),
         "approaches": [
-            {"label": "Concentrarti in silenzio assoluto", "stat": "vol"},
-            {"label": "Lasciarti guidare dall'istinto del corpo", "stat": "dex"},
+            {"label": "Sprofondare nel silenzio più assoluto", "stat": "vol"},
+            {"label": "Lasciare che sia il corpo, non la mente, a cercarlo", "stat": "dex"},
         ],
-        "success_text": ("Per un istante brevissimo, qualcosa si muove dentro di te - non è ancora la "
-                          "vera scintilla, ma è la prima volta che la senti passare."),
-        "failure_text": ("Niente aura, niente calore. Solo la frustrazione di {companion2} che ride della "
-                          "propria stessa goffaggine, e la tua che non fa altrettanto ridere."),
+        "success_text": ("Per un solo istante - un battito di ciglia, non di più - qualcosa si muove nel "
+                          "profondo del tuo petto. Non è ancora la vera scintilla. Ma per la prima volta, "
+                          "sai che esiste."),
+        "failure_text": ("Niente. Nessuna aura, nessun calore, solo il silenzio ostinato di un corpo che "
+                          "non vuole ancora obbedire. {companion2} ride della propria goffaggine; tu non "
+                          "trovi nulla da ridere."),
     },
     {
         "type": "choice_check",
         "title": "La prova dei limiti",
-        "text": "{master} vi porta al limite del corpo - una prova di resistenza vera. Come resisti?",
+        "text": ("{master} vi conduce oltre ogni confine conosciuto del corpo - non un allenamento, una "
+                  "vera prova di sopravvivenza, il tipo che si supera solo quando la mente smette di "
+                  "implorare pietà per la carne. Come resisti, quando ogni fibra del tuo corpo ti grida di "
+                  "fermarti?"),
         "approaches": [
-            {"label": "Stringere i denti e incassare", "stat": "con"},
-            {"label": "Trovare la forza nella determinazione", "stat": "vol"},
+            {"label": "Stringere i denti e incassare, senza pensare", "stat": "con"},
+            {"label": "Aggrapparti alla sola forza della volontà", "stat": "vol"},
         ],
-        "success_text": ("Resisti oltre il punto in cui il corpo chiedeva di fermarsi. {companion1} ce la "
-                          "fa per un soffio, proprio come te."),
-        "failure_text": ("Il corpo cede prima della mente - crolli a terra, sconfitto dalla fatica più che "
-                          "da un avversario. Ci riproverai."),
+        "success_text": ("Resisti oltre il punto in cui credevi che il tuo corpo dovesse spezzarsi. "
+                          "{companion1} ce la fa per un soffio, proprio come te - due sopravvissuti, non "
+                          "ancora due Cavalieri."),
+        "failure_text": ("Il corpo cede dove la volontà non basta - crolli, sconfitto non da un nemico ma "
+                          "dai tuoi stessi limiti. Ci riproverai: non hai altra scelta."),
     },
     {
         "type": "narrative",
         "title": "La scintilla",
-        "text": ("Succede quando meno te lo aspetti: una fitta al petto, un calore che sale, e per un "
-                  "istante l'aria intorno a te vibra visibilmente. \"Ecco\", dice {master}, quasi senza "
-                  "sorpresa. \"Ora sai cosa cercare.\""),
+        "text": ("Succede quando meno te lo aspetti, come un fulmine a ciel sereno: una fitta al petto, un "
+                  "calore che sale dal profondo, e per un istante l'aria stessa intorno a te vibra, "
+                  "visibile a occhio nudo. \"Ecco\", dice {master}, quasi senza sorpresa, come se sapesse "
+                  "da sempre che sarebbe successo. \"Ora sai cosa cercare. Ora comincia il vero "
+                  "addestramento.\""),
     },
     {
         "type": "narrative",
         "title": "Lo studio della prima tecnica",
-        "text": ("{master} ti mostra, con calma, i princìpi di {tech1} - non ancora come eseguirla, solo "
-                  "perché funziona: dove nasce il movimento, dove va incanalato il Cosmo, cosa deve "
-                  "succedere perché il colpo non sia solo un pugno con un nome altisonante."),
+        "text": ("{master} ti mostra, con la pazienza di chi ha ripetuto lo stesso gesto migliaia di "
+                  "volte, i princìpi segreti di {tech1} - non ancora come eseguirla, ma perché esiste: da "
+                  "dove nasce il movimento, come il Cosmo vi si deve fondere, cosa deve accadere perché un "
+                  "colpo smetta di essere un semplice pugno e diventi qualcosa di più vicino a un "
+                  "miracolo."),
     },
     {
         "type": "choice_check",
         "title": "I primi fallimenti",
-        "text": "Provi {tech1} decine di volte, cercando la sensazione giusta. Come provi ad arrivarci?",
+        "text": ("Provi {tech1} decine, centinaia di volte, cercando quella sensazione che {master} non "
+                  "riesce a spiegare a parole - si sente, non si insegna. Come cerchi di afferrarla?"),
         "approaches": [
-            {"label": "Ripetere il gesto finché non è perfetto", "stat": "tec"},
-            {"label": "Fermarti a capire la teoria prima di riprovare", "stat": "vol"},
+            {"label": "Ripetere il gesto fino allo sfinimento", "stat": "tec"},
+            {"label": "Fermarti a capire prima di colpire ancora", "stat": "vol"},
         ],
-        "success_text": ("Qualcosa comincia a funzionare - non ancora perfetto, ma abbastanza vicino da "
-                          "farti capire che sei sulla strada giusta."),
-        "failure_text": ("Niente. Troppo debole, o nella direzione sbagliata, o senza la scintilla del "
-                          "Cosmo dietro. {companion2} osserva e prova a darti consigli che, sospetti, non "
-                          "capisce nemmeno lui."),
+        "success_text": ("Qualcosa comincia, finalmente, a funzionare - non ancora perfetto, ma abbastanza "
+                          "vicino da farti intuire che la strada è quella giusta."),
+        "failure_text": ("Niente. Ancora niente. Troppo debole, o storto, o vuoto della scintilla del "
+                          "Cosmo che dovrebbe animarlo. {companion2} osserva e prova a darti consigli che, "
+                          "sospetti, non capisce nemmeno lui."),
     },
     {
         "type": "choice_check",
         "title": "La padronanza",
-        "text": "È il momento di dimostrare di aver davvero imparato {tech1}. Come ti presenti alla prova?",
+        "text": ("È il momento della verità: dimostrare, una volta per tutte, di aver fatto tua {tech1}. "
+                  "Come ti presenti alla prova che deciderà se hai davvero imparato qualcosa?"),
         "approaches": [
-            {"label": "Fidarti dell'istinto, senza pensarci troppo", "stat": "dex"},
-            {"label": "Applicare la tecnica con metodo, passo per passo", "stat": "tec"},
+            {"label": "Fidarti ciecamente dell'istinto", "stat": "dex"},
+            {"label": "Applicare ogni dettaglio con metodo assoluto", "stat": "tec"},
         ],
-        "success_text": ("Il movimento è giusto - il corpo, il Cosmo, l'intenzione, tutto insieme nello "
-                          "stesso istante. {tech1} lascia il segno che deve lasciare. {master} annuisce: "
-                          "\"Cominci a vedere quello che c'è oltre la superficie delle cose, adesso.\""),
-        "failure_text": ("Ancora no - manca quel qualcosa che rende {tech1} una tecnica vera, e non solo "
-                          "un gesto vuoto. Ci riproverai."),
+        "success_text": ("Il movimento è perfetto - corpo, Cosmo, intenzione, tutto fuso nello stesso "
+                          "istante irripetibile. {tech1} lascia il segno che deve lasciare, e per un "
+                          "momento il mondo intero sembra fermarsi a guardare. {master} annuisce, gli occhi "
+                          "che per un istante tradiscono qualcosa di simile all'orgoglio: \"Ora cominci a "
+                          "vedere oltre la superficie delle cose.\""),
+        "failure_text": ("Ancora no. Manca quella scintilla che rende {tech1} una vera arma, e non solo un "
+                          "gesto vuoto ripetuto a memoria. Ci riproverai, e questa volta sarà diverso."),
     },
     {
         "type": "narrative",
         "title": "Lo studio della seconda tecnica",
-        "text": ("Con la prima tecnica ormai nelle mani, {master} introduce {tech2} - più sottile della "
-                  "prima, dice, e per questo più difficile da controllare davvero, non solo da eseguire."),
+        "text": ("Con {tech1} ormai scolpita nelle mani, {master} introduce {tech2} - più sottile, più "
+                  "subdola della prima, dice, e proprio per questo molto più difficile da domare davvero, "
+                  "non solo da eseguire."),
     },
     {
         "type": "choice_check",
         "title": "La pratica",
-        "text": "{tech2} si rifiuta di venire naturale quanto la prima. Come insisti?",
+        "text": ("{tech2} si rifiuta di venire naturale quanto la prima, come se avesse una volontà tutta "
+                  "sua. {companion1} sembra impararla più in fretta di te. Come insisti?"),
         "approaches": [
-            {"label": "Insistere con la ripetizione", "stat": "tec"},
-            {"label": "Osservare {master} e imitarlo con calma", "stat": "vol"},
+            {"label": "Insistere fino a spezzarti pur di riuscire", "stat": "tec"},
+            {"label": "Osservare {master} in silenzio e imitarne ogni respiro", "stat": "vol"},
         ],
-        "success_text": ("Qualcosa si sblocca - {tech2} comincia ad avere senso, anche se resta più "
-                          "sottile e difficile da controllare della prima."),
-        "failure_text": ("{companion1} la impara più in fretta di te, e per un momento è difficile non "
-                          "lasciarsi mordere dall'invidia."),
+        "success_text": ("Qualcosa, finalmente, si sblocca - {tech2} comincia ad avere un senso, anche se "
+                          "resta più sfuggente e difficile da domare della prima."),
+        "failure_text": ("{companion1} continua a superarti in questo, e per un istante è impossibile non "
+                          "lasciarsi mordere dall'invidia più cruda."),
     },
     {
         "type": "choice_check",
         "title": "La seconda padronanza",
-        "text": "L'ultimo passo prima di poter dire di conoscere davvero {tech2}. Come chiudi il cerchio?",
+        "text": "L'ultimo, decisivo passo prima di poter dire di conoscere davvero {tech2}. Come chiudi il cerchio?",
         "approaches": [
-            {"label": "Fidarti della forza del corpo", "stat": "str"},
-            {"label": "Rifinire ogni dettaglio con precisione", "stat": "tec"},
+            {"label": "Fidarti della pura forza del corpo", "stat": "str"},
+            {"label": "Rifinire ogni dettaglio fino alla perfezione", "stat": "tec"},
         ],
-        "success_text": ("Arriva anche questa - {tech2} eseguita come deve essere, senza più doverci "
-                          "pensare ad ogni singolo passaggio. Due tecniche vere, ora, non più solo teoria "
-                          "raccontata da {master}."),
-        "failure_text": "{tech2} resta ostinata, un passo oltre la tua portata per oggi. Domani sarà un altro giorno.",
+        "success_text": ("Arriva anche questa, alla fine - {tech2} eseguita come deve essere, senza più "
+                          "doverci pensare, come se fosse sempre stata parte di te. Due tecniche vere, ora, "
+                          "non più solo teoria raccontata da {master}: due armi forgiate nel sangue e nel "
+                          "sudore."),
+        "failure_text": "{tech2} resta ostinata, un passo oltre la tua portata per oggi. Domani sarà un altro giorno di sangue e sudore.",
     },
     {
         "type": "choice_check",
         "title": "Il Sesto Senso",
-        "text": "\"C'è un modo di percepire il Cosmo altrui\", spiega {master}, \"prima ancora che un colpo arrivi.\" Come ci provi?",
+        "text": ("\"C'è un modo di percepire il Cosmo altrui\", spiega {master}, la voce che si fa quasi "
+                  "un sussurro carico di mistero, \"prima ancora che un colpo parta, prima ancora che un "
+                  "nemico si muova.\" Come cerchi di raggiungere questa soglia proibita ai più?"),
         "approaches": [
-            {"label": "Aprire la mente al Cosmo altrui", "stat": "vol"},
-            {"label": "Affinare i sensi fisici", "stat": "dex"},
+            {"label": "Aprire la mente al Cosmo che ti circonda", "stat": "vol"},
+            {"label": "Affinare all'estremo i sensi del corpo", "stat": "dex"},
         ],
-        "success_text": ("Per un istante, senti qualcosa muoversi nell'aria prima ancora di vederlo - un "
-                          "affinamento dell'attenzione che, ti accorgi, avevi già cominciato ad avere."),
-        "failure_text": "Non senti nulla, per ora - solo il vuoto silenzio di un'attenzione non ancora abbastanza affinata.",
+        "success_text": ("Per un solo istante, senti qualcosa muoversi nell'aria prima ancora di vederlo - "
+                          "un affinamento dell'attenzione che, ti accorgi con un brivido, avevi già "
+                          "cominciato a possedere senza saperlo."),
+        "failure_text": "Non senti nulla, per ora - solo il vuoto silenzio di un'attenzione ancora troppo acerba per varcare quella soglia.",
     },
     {
         "type": "choice_check",
         "title": "La prova del dolore",
-        "text": ("{master} non risparmia nessuno, in questa prova - il corpo che chiede di fermarsi, la "
-                  "mente che deve imparare a non ascoltarlo. Come resisti?"),
+        "text": ("{master} non concede sconti a nessuno, in questa prova: il corpo che implora di "
+                  "fermarsi, la mente che deve imparare a non ascoltarlo senza però smettere di proteggerlo "
+                  "dall'autodistruzione. Come resisti al dolore che ti vuole in ginocchio?"),
         "approaches": [
-            {"label": "Resistere con la forza di volontà", "stat": "vol"},
-            {"label": "Distrarre la mente dal dolore fisico", "stat": "con"},
+            {"label": "Aggrapparti alla forza pura della volontà", "stat": "vol"},
+            {"label": "Distrarre la mente lontano dal dolore del corpo", "stat": "con"},
         ],
-        "success_text": ("Resisti, oltre il punto in cui avresti voluto arrenderti. {companion2} non ce "
-                          "la fa al primo tentativo - tu sì."),
+        "success_text": ("Resisti, oltre il punto in cui avresti giurato di dover cedere. {companion2} non "
+                          "ce la fa al primo tentativo - tu sì, e per un istante ti senti quasi invincibile."),
         "failure_text": ("Il dolore vince, questa volta - ti fermi prima del necessario. Non è una "
-                          "sconfitta, solo un limite da spostare un po' più in là."),
+                          "sconfitta: è solo un limite che dovrai spostare più in là, con sangue e "
+                          "ostinazione."),
     },
     {
         "type": "spar",
         "title": "Fianco a fianco",
-        "text": ("Il primo vero allenamento a due contro uno, tu e {companion1} contro {companion2} a "
-                  "turno. Non è la Prova Finale - è solo pratica vera, con un avversario vero."),
+        "text": ("Il primo vero scontro fianco a fianco: tu e {companion1} contro {companion2}, a turno, "
+                  "in un allenamento che assomiglia sempre più a una battaglia vera. Non è la Prova Finale "
+                  "- ma il tuo Cosmo, oggi, non lo sa ancora distinguere."),
     },
     {
         "type": "choice",
         "title": "Il momento di dubbio",
-        "text": ("C'è un giorno, verso la fine, in cui ti chiedi seriamente se sei tagliato per questo. "
-                  "{master} se ne accorge, e ti lascia scegliere come affrontarlo."),
+        "text": ("C'è un giorno, verso la fine di questo cammino di sangue e fatica, in cui ti chiedi "
+                  "seriamente se sei degno di tutto questo. {master} se ne accorge, e ti lascia scegliere "
+                  "come affrontare il fantasma del dubbio."),
         "options": [
             {"label": "Parlarne apertamente con {master}", "bonus_stat": "vol",
-             "outcome_text": ("{master} ti ascolta senza interromperti, poi dice solo: \"Il dubbio non è "
-                               "debolezza. È debolezza smettere per colpa sua.\" Qualcosa dentro di te si assesta.")},
-            {"label": "Sfogarti allenandoti ancora più duramente", "bonus_stat": "con",
-             "outcome_text": "Non parli con nessuno - ti alleni finché il dubbio non ha più fiato per farsi sentire. Funziona, più o meno."},
+             "outcome_text": ("{master} ti ascolta senza interromperti nemmeno una volta, poi pronuncia "
+                               "solo una frase, come una sentenza: \"Il dubbio non è debolezza. È debolezza "
+                               "lasciare che ti fermi.\" Qualcosa, dentro di te, si assesta per sempre.")},
+            {"label": "Sfogarti allenandoti fino a cadere", "bonus_stat": "con",
+             "outcome_text": "Non parli con nessuno - ti alleni finché il dubbio non ha più fiato per farsi sentire sopra il rombo del tuo stesso cuore. Funziona, più o meno, come funziona sempre."},
             {"label": "Confidarti con {companion1}", "bonus_stat": None,
-             "outcome_text": "Scopri che anche {companion1} ha avuto lo stesso pensiero, la stessa notte. Non risolve nulla, ma pesa meno portato in due."},
+             "outcome_text": "Scopri, con un sollievo quasi doloroso, che anche {companion1} porta lo stesso identico fantasma addosso da settimane. Non risolve nulla. Ma pesa molto meno, portato in due."},
         ],
     },
     {
         "type": "choice",
         "title": "Lo stile personale",
-        "text": ("Le ultime settimane non aggiungono più nulla di nuovo da imparare - rifiniscono quello "
-                  "che c'è già. Come vuoi affinare il tuo modo di combattere?"),
+        "text": ("Le ultime settimane non aggiungono più nulla di nuovo da imparare - scolpiscono, "
+                  "rifiniscono, bruciano via ciò che è superfluo di quello che già possiedi. Come vuoi che "
+                  "il tuo Cosmo, da oggi, parli per te in battaglia?"),
         "options": [
-            {"label": "Colpire più forte, rischiare di più", "bonus_stat": "str",
-             "outcome_text": "Il tuo stile si fa più aggressivo, meno prudente - ogni colpo cerca di essere quello decisivo."},
+            {"label": "Colpire più forte, rischiare tutto", "bonus_stat": "str",
+             "outcome_text": "Il tuo stile si fa una lama sola, tagliente e senza esitazioni - ogni colpo cerca di essere quello decisivo, quello che chiude lo scontro per sempre."},
             {"label": "Restare in piedi più a lungo di chiunque altro", "bonus_stat": "con",
-             "outcome_text": "Impari a incassare, a resistere, a logorare l'avversario più che abbatterlo di colpo."},
+             "outcome_text": "Impari a incassare, a resistere, a logorare l'avversario invece di abbatterlo di colpo - una montagna che nessuna tempesta riesce a spostare."},
             {"label": "Anticipare invece di reagire", "bonus_stat": "dex",
-             "outcome_text": "Affini l'istinto, il tempismo - il modo in cui senti un colpo arrivare prima ancora che parta davvero."},
+             "outcome_text": "Affini l'istinto, il tempismo, il modo in cui senti un colpo arrivare prima ancora che parta davvero - un'ombra che nessuno riesce mai a colpire per prima."},
         ],
     },
     {
         "type": "narrative",
         "title": "L'annuncio",
-        "text": ("\"È tempo\", dice {master} una mattina, senza preamboli. \"L'addestramento non prova "
-                  "nulla finché non viene messo alla prova. Preparati: la Prova Finale è vicina.\""),
+        "text": ("\"È tempo\", dice {master} una mattina, senza preamboli, la voce che pesa come un "
+                  "macigno. \"L'addestramento non prova nulla finché non viene messo davanti alla morte, "
+                  "anche solo per finta. Preparati: la Prova Finale è vicina, e da essa non tornerai la "
+                  "stessa persona che sei oggi.\""),
     },
     {
         "type": "narrative",
         "title": "L'ultima notte",
-        "text": ("La notte prima della Prova Finale non dorme quasi nessuno. Ripassi ogni tecnica nella "
-                  "testa, ripensi ad ogni fatica delle ultime settimane, e ti chiedi se basterà. "
-                  "{companion1} e {companion2}, in silenzio, sembrano chiedersi la stessa cosa."),
+        "text": ("La notte prima della Prova Finale, nessuno dei tre dorme davvero. Ripassi ogni tecnica "
+                  "nella mente, ripensi a ogni fatica, a ogni caduta, a ogni volta che avresti voluto "
+                  "arrenderti e non l'hai fatto - e ti chiedi, con un nodo in gola, se tutto questo "
+                  "basterà. {companion1} e {companion2}, in silenzio, fissano lo stesso soffitto, "
+                  "chiedendosi la stessa identica cosa."),
     },
     {
         "type": "narrative",
         "title": "La Prova Finale",
-        "text": ("È il momento della verità: tutto quello che hai imparato messo alla prova in un solo "
-                  "scontro, senza reti di sicurezza."),
+        "text": ("È giunto il momento della verità assoluta: tutto quello che hai imparato, tutto quello "
+                  "che sei diventato, messo alla prova in un solo, decisivo scontro. Senza reti di "
+                  "sicurezza. Senza scuse. Solo il tuo Cosmo, contro tutto il resto."),
     },
 ]
 
@@ -402,26 +443,17 @@ def render_stage(stage_number: int, master_name: str, master_armor_name: str,
     return result
 
 
-def generate_trial_opponent(conn: sqlite3.Connection, opponent_is_master: bool, opponent_name: str,
-                             master_armor_name: str, player_armor: dict) -> dict:
-    """Costruisce un avversario VERO per il motore di combattimento
-    (richiesto in chat: "fammi combattere davvero", non un tiro di
-    dado narrato) - stessa forma di arena_manager.generate_opponent,
-    così la Prova Finale usa esattamente lo stesso motore di battaglia
-    di un normale scontro in Arena (movimento, tecniche, Contrattacco,
-    tutto).
-    Contro il Maestro: la SUA armatura vera, molto più forte.
-    Contro un compagno: la STESSA armatura per cui si sta addestrando
-    anche il personaggio (corretto in chat: fedeltà al canone - più
-    aspiranti competono per la stessa Cloth, non per armature diverse
-    - non più "un pari della tua fascia" con un'armatura a caso)."""
-    armor_name = master_armor_name if opponent_is_master else player_armor["name"]
-
+def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display_name: str) -> dict:
+    """Costruisce un avversario VERO per il motore di combattimento, a
+    partire da un'armatura reale del catalogo - stessa forma di
+    arena_manager.generate_opponent. Condivisa tra la Prova Finale
+    dell'apprendistato e i duelli delle Missioni (richiesto in chat),
+    invece di duplicare la stessa logica in più punti."""
     armor = get_armor(armor_name, conn)
     techniques = [dict(t) for t in get_techniques_for_armor(armor_name, conn)]
     cosmo = 100 + armor["level"]
     return {
-        "name": f"{opponent_name} di {armor_name}",
+        "name": f"{display_name} di {armor_name}",
         "armor_name": armor_name,
         "divinity": armor["divinity"],
         "faction": armor["faction"],
@@ -436,3 +468,18 @@ def generate_trial_opponent(conn: sqlite3.Connection, opponent_is_master: bool, 
         "origin": "",
         "techniques": techniques,
     }
+
+
+def generate_trial_opponent(conn: sqlite3.Connection, opponent_is_master: bool, opponent_name: str,
+                             master_armor_name: str, player_armor: dict) -> dict:
+    """Costruisce l'avversario della Prova Finale (richiesto in chat:
+    "fammi combattere davvero", non un tiro di dado narrato) - così la
+    Prova Finale usa esattamente lo stesso motore di battaglia di un
+    normale scontro in Arena (movimento, tecniche, Contrattacco, tutto).
+    Contro il Maestro: la SUA armatura vera, molto più forte.
+    Contro un compagno: la STESSA armatura per cui si sta addestrando
+    anche il personaggio (corretto in chat: fedeltà al canone - più
+    aspiranti competono per la stessa Cloth, non per armature diverse
+    - non più "un pari della tua fascia" con un'armatura a caso)."""
+    armor_name = master_armor_name if opponent_is_master else player_armor["name"]
+    return build_opponent_from_armor(conn, armor_name, opponent_name)
