@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS knights (
     master_armor_name TEXT NOT NULL DEFAULT '',
     companion1_name TEXT NOT NULL DEFAULT '',
     companion2_name TEXT NOT NULL DEFAULT '',
-    arena_background_path TEXT NOT NULL DEFAULT ''
+    arena_background_path TEXT NOT NULL DEFAULT '',
+    arena_backgrounds TEXT NOT NULL DEFAULT '{}'
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -231,6 +232,15 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN arena_background_path TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunta colonna arena_background_path a knights.")
+    if "arena_backgrounds" not in existing_columns:
+        # Sostituisce arena_background_path (richiesto in chat: uno
+        # sfondo SOLO ha poco senso, meglio uno per ciascuno dei 5 temi
+        # - un dizionario JSON tema->percorso invece di un unico
+        # campo). Il vecchio campo resta nello schema per compatibilità
+        # ma non è più usato da qui in avanti.
+        conn.execute("ALTER TABLE knights ADD COLUMN arena_backgrounds TEXT NOT NULL DEFAULT '{}'")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna arena_backgrounds a knights (dizionario JSON per tema).")
 
 
 def get_connection() -> sqlite3.Connection:
