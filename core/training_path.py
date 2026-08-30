@@ -270,14 +270,14 @@ TRAINING_STAGES = [
         "type": "choice_check",
         "title": "La pratica",
         "text": ("{tech2} si rifiuta di venire naturale quanto la prima, come se avesse una volontà tutta "
-                  "sua. {companion1} sembra impararla più in fretta di te. Come insisti?"),
+                  "sua. {companion2} sembra impararla più in fretta di te. Come insisti?"),
         "approaches": [
             {"label": "Insistere fino a spezzarti pur di riuscire", "stat": "tec"},
             {"label": "Osservare {master} in silenzio e imitarne ogni respiro", "stat": "vol"},
         ],
         "success_text": ("Qualcosa, finalmente, si sblocca - {tech2} comincia ad avere un senso, anche se "
                           "resta più sfuggente e difficile da domare della prima."),
-        "failure_text": ("{companion1} continua a superarti in questo, e per un istante è impossibile non "
+        "failure_text": ("{companion2} continua a superarti in questo, e per un istante è impossibile non "
                           "lasciarsi mordere dall'invidia più cruda."),
     },
     {
