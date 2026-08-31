@@ -1332,13 +1332,18 @@ async function uploadArenaBackground(file, theme) {
 }
 
 // Riga di descrizione di una tecnica, con l'etichetta Offensiva/
-// Difensiva ben visibile (richiesto in chat: prima si capiva solo
-// leggendo "Difensivo" dentro il tech_type, poco a colpo d'occhio) -
-// usata sia per le tecniche del catalogo sia per quelle personalizzate.
+// Difensiva/Entrambe ben visibile (richiesto in chat: prima si capiva
+// solo leggendo "Difensivo" dentro il tech_type, poco a colpo
+// d'occhio; "Entrambe" per le tecniche difensive canonicamente
+// utilizzabili anche in attacco, come il Crystal Wall dell'Ariete che
+// rimanda il colpo al mittente) - usata sia per le tecniche del
+// catalogo sia per quelle personalizzate.
 function techniqueLine(icon, t) {
-  const isDefensive = (t.tech_type || "").toLowerCase().includes("difensiv");
-  const roleLabel = isDefensive ? "🛡 Difensiva" : "⚔ Offensiva";
-  const cleanType = (t.tech_type || "").replace(/\/?difensiv[oa]/i, "").replace(/^\/|\/$/g, "");
+  const typeLower = (t.tech_type || "").toLowerCase();
+  const isDefensive = typeLower.includes("difensiv");
+  const isDual = typeLower.includes("entrambe");
+  const roleLabel = isDual ? "⚔🛡 Entrambe" : isDefensive ? "🛡 Difensiva" : "⚔ Offensiva";
+  const cleanType = (t.tech_type || "").replace(/\/?difensiv[oa]/i, "").replace(/\/?entrambe/i, "").replace(/^\/|\/$/g, "");
   return `${icon} ${t.name} — ${cleanType || "—"} · ${roleLabel} (potenza ${t.power})`;
 }
 
@@ -1849,17 +1854,24 @@ function appendBattleColumns(wrap) {
   // può arrivare in Arena senza mai aver aperto la Scheda Cavaliere.
   if (state.customTechniques === null) loadCustomTechniques();
   const isDefensive = (t) => (t.tech_type || "").toLowerCase().includes("difensiv");
+  // "Entrambe" (richiesto in chat, es. il Crystal Wall dell'Ariete che
+  // nel canone rimanda l'attacco al mittente): una tecnica difensiva
+  // può ANCHE essere marcata utilizzabile in attacco, non è più un
+  // aut-aut rigido.
+  const isDual = (t) => (t.tech_type || "").toLowerCase().includes("entrambe");
+  const isOffensiveEligible = (t) => !isDefensive(t) || isDual(t);
   const allMyTechniques = k.techniques.concat(state.customTechniques ? state.customTechniques.techniques : []);
-  const myDefensive = allMyTechniques.filter(isDefensive);
-  const myOffensive = [{ name: "Attacco Base", power: 20 }].concat(allMyTechniques.filter((t) => !isDefensive(t)));
-  // Le tecniche difensive proprie, mostrate come PULSANTI disabilitati
-  // ben visibili (richiesto in chat: prima erano solo una riga di
-  // testo piccola, facile da non notare, o secondo il giocatore
-  // addirittura invisibile) - stesso trattamento delle tecniche
-  // dell'avversario nel pannello a destra, così è impossibile non
-  // vederle: usate in automatico quando ci si difende, non cliccabili.
-  const defensiveButtons = () => myDefensive.map((t) =>
-    el("button", { disabled: "disabled", title: "Usata in automatico quando ti difendi" }, `🛡 ${t.name} (${t.power})`));
+  const myDefensive = allMyTechniques.filter(isDefensive);  // per il selettore di difesa - include anche le "Entrambe"
+  const myOffensive = [{ name: "Attacco Base", power: 20 }].concat(allMyTechniques.filter(isOffensiveEligible));
+  // Le tecniche PURAMENTE difensive (non "Entrambe"), mostrate come
+  // pulsanti disabilitati ben visibili nel pannello d'attacco
+  // (richiesto in chat: prima erano solo una riga di testo piccola,
+  // facile da non notare) - le "Entrambe" non compaiono qui perché
+  // sono già cliccabili tra le tecniche d'attacco sopra, mostrarle
+  // anche disabilitate sarebbe ridondante e confuso.
+  const purelyDefensive = allMyTechniques.filter((t) => isDefensive(t) && !isDual(t));
+  const defensiveButtons = () => purelyDefensive.map((t) =>
+    el("button", { disabled: "disabled", title: "Selezionabile quando ti difendi" }, `🛡 ${t.name} (${t.power})`));
 
   const columns = el("div", { class: "arena-columns" });
 
