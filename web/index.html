@@ -663,6 +663,8 @@ async function reactToAttack(action, technique) {
       body.defense_technique_name = technique.name;
       body.defense_technique_power = technique.power;
       body.defense_technique_type = technique.tech_type || null;
+      body.defense_technique_launch_desc = technique.launch_desc || null;
+      body.defense_technique_effect_desc = technique.effect_desc || null;
     }
     const result = await api(`/characters/${state.characterId}/arena/react`, {
       method: "POST",
