@@ -18,6 +18,7 @@ il chiamante (l'endpoint FastAPI) decide cosa farne (salvare su DB,
 restituire come risposta HTTP).
 """
 from typing import Optional
+import random
 
 from core.arena_manager import (
     generate_opponent, generate_opponent_candidates, resolve_turn, choose_opponent_action, opponent_reacts,
@@ -29,7 +30,7 @@ from core.arena_manager import (
     apply_flame_damage, apply_mud_penalty, pick_arena_theme, cycle_modifier, cycle_narrative,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
-    CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY,
+    CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY, DEFENSE_SUCCESS_FLAVORS,
 )
 from core.fm_manager import RosterManager, ARENA_ROUND_MINUTES
 
@@ -292,13 +293,12 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                     elif ice_mode == "svantaggio":
                         cause_phrase = "scivola sul ghiaccio, meno preciso"
 
-                if technique_name != "Attacco Base" and technique_launch_desc:
-                    log.append(f"⚡ {technique_name}: {technique_launch_desc}.")
-
                 dmg, msg = resolve_turn(
                     knight["raw_name"], knight["str"], knight["tec"], armor["level"],
                     opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
                     technique_name, technique_power, roll_mode=combined_mode, cause_phrase=cause_phrase,
+                    launch_desc=technique_launch_desc if technique_name != "Attacco Base" else None,
+                    effect_desc=technique_effect_desc if technique_name != "Attacco Base" else None,
                 )
                 dmg = round(dmg * range_power_mult)
                 # Affinità elementale di provenienza (richiesta in chat):
@@ -327,9 +327,6 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
                         log.append(msg)
                         battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
                         final_damage_dealt = dmg
-
-                    if technique_name != "Attacco Base" and technique_effect_desc:
-                        log.append(f"💥 Effetto: {technique_effect_desc}.")
 
                     # Effetti sul terreno (Fase 3): un colpo di Ghiaccio o
                     # abbastanza devastante lascia un segno sulla mappa,
@@ -446,13 +443,12 @@ def resolve_react(knight: dict, armor: dict, action: str,
     if roll_mode == "normale" and ice_mode == "svantaggio":
         cause_phrase = "scivola sul ghiaccio, meno preciso"
 
-    if t["name"] != "Attacco Base" and t.get("launch_desc"):
-        log.append(f"⚡ {t['name']}: {t['launch_desc']}.")
-
     dmg2, msg2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["tec"], opponent["armor_level"],
         knight["raw_name"], knight["dex"], knight["con"], armor["level"], t["name"], t["power"],
         roll_mode=combined_mode, cause_phrase=cause_phrase,
+        launch_desc=t.get("launch_desc") if t["name"] != "Attacco Base" else None,
+        effect_desc=t.get("effect_desc") if t["name"] != "Attacco Base" else None,
     )
     dmg2 = round(dmg2 * origin_affinity_modifier(opponent.get("origin", ""), t.get("tech_type", ""), as_attacker=True))
     dmg2 = round(dmg2 * origin_affinity_modifier(knight.get("origin", ""), t.get("tech_type", ""), as_attacker=False))
@@ -477,7 +473,17 @@ def resolve_react(knight: dict, armor: dict, action: str,
         reduced = max(0, round(reduced / cycle_mod))
         cycle_msg = cycle_narrative(defense_technique.get("tech_type", ""), t.get("tech_type", ""))
         knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
-        log.append(f"{msg2} — ti difendi con {defense_technique['name']}, il danno scende a {reduced}.")
+        # Intreccio lancio+effetto della tecnica difensiva (richiesto in
+        # chat: prima si vedeva solo il nome, "ti difendi con X" e
+        # basta - la descrizione propria della tecnica non veniva mai
+        # usata) - con più varianti drammatiche per non ripetersi.
+        if defense_technique.get("launch_desc"):
+            defense_clause = f"{defense_technique['name']} ({defense_technique['launch_desc']})"
+        else:
+            defense_clause = defense_technique["name"]
+        defense_flavor = random.choice(DEFENSE_SUCCESS_FLAVORS)
+        effect_note = f" - {defense_technique['effect_desc']}" if defense_technique.get("effect_desc") else ""
+        log.append(f"{msg2} — ti difendi con {defense_clause}: {defense_flavor}{effect_note}, il danno scende a {reduced}.")
         if cycle_msg:
             log.append(cycle_msg)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "blocked", "tech_type": t.get("tech_type", "")}
@@ -492,9 +498,6 @@ def resolve_react(knight: dict, armor: dict, action: str,
         final_damage_dealt2 = dmg2
 
     if dmg2 > 0:
-        if t["name"] != "Attacco Base" and t.get("effect_desc"):
-            log.append(f"💥 Effetto: {t['effect_desc']}.")
-
         terrain_effect2 = maybe_create_terrain_effect(
             battle_state["player_position"], t.get("tech_type", ""), final_damage_dealt2
         )
@@ -557,13 +560,12 @@ def resolve_react(knight: dict, armor: dict, action: str,
                 elif ice_mode3 == "svantaggio":
                     cause_phrase3 = "scivola sul ghiaccio, meno preciso"
 
-            if counter_technique_name != "Attacco Base" and counter_technique_launch_desc:
-                log.append(f"⚡ {counter_technique_name}: {counter_technique_launch_desc}.")
-
             dmg3, msg3 = resolve_turn(
                 knight["raw_name"], knight["str"], knight["tec"], armor["level"],
                 opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
                 counter_technique_name, counter_technique_power, roll_mode=combined_mode3, cause_phrase=cause_phrase3,
+                launch_desc=counter_technique_launch_desc if counter_technique_name != "Attacco Base" else None,
+                effect_desc=counter_technique_effect_desc if counter_technique_name != "Attacco Base" else None,
             )
             dmg3 = round(dmg3 * range_power_mult3)
             dmg3 = round(dmg3 * origin_affinity_modifier(knight.get("origin", ""), counter_technique_type, as_attacker=True))
@@ -594,9 +596,6 @@ def resolve_react(knight: dict, armor: dict, action: str,
                     log.append(msg3)
                     battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": counter_technique_type}
                     final_damage3 = dmg3
-
-                if counter_technique_name != "Attacco Base" and counter_technique_effect_desc:
-                    log.append(f"💥 Effetto: {counter_technique_effect_desc}.")
 
                 terrain_effect3 = maybe_create_terrain_effect(
                     battle_state["opponent_position"], counter_technique_type, final_damage3
