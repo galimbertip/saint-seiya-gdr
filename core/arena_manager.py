@@ -245,11 +245,19 @@ def format_damage_message(msg: str, actual_damage: int) -> str:
 
 def choose_opponent_technique(opponent: dict) -> tuple[str, int, str]:
     """Sceglie una tecnica a caso tra quelle dell'avversario, o l'Attacco
-    Base se non ne ha nessuna. Restituisce (nome, potenza, tech_type) -
-    il tech_type serve a maybe_apply_status per riconoscere le tecniche
-    che lasciano un effetto (Veleno, per ora)."""
-    if opponent["techniques"]:
-        t = random.choice(opponent["techniques"])
+    Base se non ne ha nessuna (o se le ha tutte puramente difensive -
+    bug corretto in chat: prima l'avversario poteva scegliere a caso
+    anche una tecnica solo difensiva per ATTACCARE, che non ha senso;
+    le tecniche marcate "Entrambe" restano invece candidate valide).
+    Restituisce (nome, potenza, tech_type) - il tech_type serve a
+    maybe_apply_status per riconoscere le tecniche che lasciano un
+    effetto (Veleno, per ora)."""
+    offensive_eligible = [
+        t for t in opponent["techniques"]
+        if "difensiv" not in (t.get("tech_type") or "").lower() or "entrambe" in (t.get("tech_type") or "").lower()
+    ]
+    if offensive_eligible:
+        t = random.choice(offensive_eligible)
         return t["name"], t["power"], t.get("tech_type", "")
     return "Attacco Base", BASE_ATTACK_POWER, ""
 
@@ -565,8 +573,18 @@ def clip_path_for_craters(current_pos: dict, target_pos: dict, effects: list[dic
     cratere, ci si ferma appena prima di entrarci - i crateri bloccano
     il passaggio (richiesto in chat). Approssimato campionando il
     segmento a piccoli passi (sufficiente alla scala della mappa,
-    non serve una vera intersezione geometrica cerchio-retta)."""
-    craters = [e for e in effects if e["kind"] == "cratere"]
+    non serve una vera intersezione geometrica cerchio-retta).
+
+    Bug corretto (richiesto in chat): se ci si trova GIÀ dentro un
+    cratere (es. l'avversario ne ha appena aperto uno proprio sotto i
+    piedi), quel cratere non deve bloccare il movimento - altrimenti
+    ogni tentativo di uscirne veniva fermato a distanza 0, intrappolando
+    il personaggio per sempre. Un cratere in cui non ci si trova già
+    continua invece a bloccare regolarmente l'ingresso."""
+    all_craters = [e for e in effects if e["kind"] == "cratere"]
+    # I crateri in cui ci si trova già non contano come ostacolo per
+    # QUESTO movimento - si può sempre uscire da dove si è intrappolati.
+    craters = [c for c in all_craters if distance_between(current_pos, c) > c["radius"]]
     if not craters:
         return target_pos
     steps = 24
