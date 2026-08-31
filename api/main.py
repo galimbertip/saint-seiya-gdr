@@ -43,7 +43,7 @@ from core.fm_manager import (
     serialize_weekly_schedule, TRAINING_FOCUS_OPTIONS,
 )
 from core.arena_manager import (
-    find_defensive_technique, get_unlocked_senses, calculate_movement_points, GEO_ORIGINS,
+    get_unlocked_senses, calculate_movement_points, GEO_ORIGINS,
     custom_technique_slots, calculate_custom_technique_power, allowed_custom_technique_elements,
 )
 from core.version import APP_VERSION
@@ -54,7 +54,7 @@ log = get_logger(__name__)
 from core.training_path import (
     render_stage, generate_trial_opponent, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
     KNIGHTHOOD_LEVEL, RETRY_STAGE_ON_FAILURE, TRAINING_STAGES, resolve_skill_check,
-    build_stage_context, build_opponent_from_armor,
+    build_stage_context, build_opponent_from_armor, get_training_location, DEFAULT_TRAINING_LOCATION,
 )
 from core.missions import (
     MISSION_ID, TOTAL_HOUSES, HOUSE_ORDER, COSMO_MAX_REWARD, DENARO_REWARD,
@@ -178,6 +178,13 @@ class ArenaReactRequest(BaseModel):
     counter_technique_type: Optional[str] = None
     counter_technique_launch_desc: Optional[str] = None
     counter_technique_effect_desc: Optional[str] = None
+    # La tecnica difensiva scelta dal giocatore (richiesto in chat: la
+    # difesa dev'essere una scelta, non qualcosa deciso in automatico
+    # dal sistema - stessa struttura di Attacco Base + tecniche del
+    # Contrattacco, applicata anche qui). None = Difesa Base generica.
+    defense_technique_name: Optional[str] = None
+    defense_technique_power: Optional[int] = None
+    defense_technique_type: Optional[str] = None
 
 
 # --------------------------- Serializzazione ---------------------------
@@ -461,18 +468,22 @@ def api_get_training_path(knight_id: int, conn=Depends(get_db)):
         return {"is_knight": True}
 
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
+        own_armor = get_armor(knight["armor_name"], conn)
+        own_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+        location = get_training_location(dict(own_armor), own_techniques) if own_armor else DEFAULT_TRAINING_LOCATION
         return {
             "is_knight": False, "ready_for_trial": True,
             "master_name": knight["master_name"], "master_armor_name": knight["master_armor_name"],
             "companion1_name": knight["companion1_name"], "companion2_name": knight["companion2_name"],
-            "your_armor_name": knight["armor_name"],
+            "your_armor_name": knight["armor_name"], "location": location,
         }
 
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    own_armor = get_armor(knight["armor_name"], conn)
     stage = render_stage(
         knight["training_stage"] + 1, knight["master_name"], knight["master_armor_name"],
         knight["companion1_name"], knight["companion2_name"], techniques,
-        your_armor_name=knight["armor_name"],
+        your_armor_name=knight["armor_name"], own_armor=dict(own_armor) if own_armor else None,
     )
     return {"is_knight": False, "ready_for_trial": False, "stage": stage}
 
@@ -533,9 +544,10 @@ def api_training_attempt(knight_id: int, req: TrainingChoiceRequest, conn=Depend
         raise HTTPException(status_code=400, detail="Approccio non valido.")
 
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    own_armor = get_armor(knight["armor_name"], conn)
     ctx = build_stage_context(
         knight["master_name"], knight["master_armor_name"], knight["companion1_name"],
-        knight["companion2_name"], techniques, knight["armor_name"],
+        knight["companion2_name"], techniques, knight["armor_name"], dict(own_armor) if own_armor else None,
     )
     stat = stage_def["approaches"][req.option_index]["stat"]
     success = resolve_skill_check(knight, stat)
@@ -574,9 +586,10 @@ def api_training_choose(knight_id: int, req: TrainingChoiceRequest, conn=Depends
         save_knight(conn, knight)
 
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
+    own_armor = get_armor(knight["armor_name"], conn)
     ctx = build_stage_context(
         knight["master_name"], knight["master_armor_name"], knight["companion1_name"],
-        knight["companion2_name"], techniques, knight["armor_name"],
+        knight["companion2_name"], techniques, knight["armor_name"], dict(own_armor) if own_armor else None,
     )
     return {"text": option["outcome_text"].format(**ctx)}
 
@@ -1154,12 +1167,18 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
     if req.battle_state.get("pending_opponent_technique") is None:
         raise HTTPException(status_code=400, detail="Nessun attacco in sospeso a cui reagire")
 
-    my_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
-    # Le tecniche difensive personalizzate (richiesto in chat) contano
-    # anche loro per la scelta automatica di "Difenditi" - prima
-    # venivano ignorate, solo quelle del catalogo erano considerate.
-    my_techniques += [dict(t) for t in get_custom_techniques(conn, knight_id)]
-    my_defense = find_defensive_technique(my_techniques)
+    # La difesa è ora una vera scelta del giocatore (richiesto in chat:
+    # "Difesa Base + tecniche di difesa", stessa struttura
+    # dell'attacco) - non più decisa in automatico dal sistema.
+    # Nessuna scelta esplicita = Difesa Base generica.
+    if req.defense_technique_name and req.defense_technique_name != "Difesa Base":
+        my_defense = {
+            "name": req.defense_technique_name,
+            "power": req.defense_technique_power or DEFAULT_DEFENSE_POWER,
+            "tech_type": req.defense_technique_type or "",
+        }
+    else:
+        my_defense = None
 
     log, fight_over, winner = resolve_react(
         knight, armor, req.action, my_defense, req.battle_state,
