@@ -250,8 +250,12 @@ COLONNE_NODES = {
                   "dall'oscurità dell'abisso - un tempio sommerso che sembra respirare di luce propria, "
                   "come se fosse vivo. Come vuoi avvicinarti?"),
         "options": [
-            {"label": "Entrare apertamente dalle Colonne principali", "next": "guardia_principale"},
-            {"label": "Cercare un passaggio nascosto sotto le correnti", "next": "passaggio_nascosto"},
+            {"label": "Entrare apertamente dalle Colonne principali", "next": "guardia_principale",
+             "outcome_text": ("Decidi di non nasconderti. Se il Regno di Poseidone vuole fermarti, dovrà "
+                               "farlo alla luce - o a quel poco di luce che filtra fin quaggiù.")},
+            {"label": "Cercare un passaggio nascosto sotto le correnti", "next": "passaggio_nascosto",
+             "outcome_text": ("La cautela, questa volta, ti sembra la scelta più saggia. Ti immergi più a "
+                               "fondo, lasciando che le correnti ti inghiottano nell'oscurità.")},
         ],
     },
     "guardia_principale": {
@@ -288,8 +292,13 @@ COLONNE_NODES = {
                   "quanto tempo - un marinaio, forse un Cavaliere caduto in disgrazia. Ti implora con gli "
                   "occhi, prima ancora che con le parole, di liberarlo."),
         "options": [
-            {"label": "Fermarti a liberarlo, a rischio di perdere tempo prezioso", "next": "duello_finale", "flag": "helped_prisoner"},
-            {"label": "Ignorarlo e proseguire verso il cuore del tempio", "next": "duello_finale"},
+            {"label": "Fermarti a liberarlo, a rischio di perdere tempo prezioso", "next": "duello_finale", "flag": "helped_prisoner",
+             "outcome_text": ("Ti fermi, nonostante il rischio, e spezzi le catene con un colpo secco. Il "
+                               "prigioniero ti guarda incredulo, poi sparisce tra le correnti senza una "
+                               "parola - ma qualcosa nei suoi occhi promette che non dimenticherà.")},
+            {"label": "Ignorarlo e proseguire verso il cuore del tempio", "next": "duello_finale",
+             "outcome_text": ("Ti volti dall'altra parte e prosegui. Non è il momento per le distrazioni, "
+                               "ti dici - anche se qualcosa, dentro, non ne è del tutto convinto.")},
         ],
     },
     "duello_finale": {
