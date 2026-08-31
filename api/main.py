@@ -185,6 +185,8 @@ class ArenaReactRequest(BaseModel):
     defense_technique_name: Optional[str] = None
     defense_technique_power: Optional[int] = None
     defense_technique_type: Optional[str] = None
+    defense_technique_launch_desc: Optional[str] = None
+    defense_technique_effect_desc: Optional[str] = None
 
 
 # --------------------------- Serializzazione ---------------------------
@@ -1176,6 +1178,8 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
             "name": req.defense_technique_name,
             "power": req.defense_technique_power or DEFAULT_DEFENSE_POWER,
             "tech_type": req.defense_technique_type or "",
+            "launch_desc": req.defense_technique_launch_desc or "",
+            "effect_desc": req.defense_technique_effect_desc or "",
         }
     else:
         my_defense = None
