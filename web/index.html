@@ -228,6 +228,11 @@
 
 <script>
 const $ = (sel) => document.querySelector(sel);
+// Potenza della Difesa Base generica (richiesto in chat: "Difesa Base
+// + tecniche di difesa", stessa struttura dell'Attacco Base) - deve
+// combaciare con DEFAULT_DEFENSE_POWER lato backend.
+const DEFAULT_DEFENSE_POWER = 10;
+
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -275,6 +280,7 @@ const state = {
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
+  showDefensePicker: false,  // sta scegliendo la tecnica per la Difesa? (richiesto in chat: prima era automatica)
   institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
   editingBackground: false,  // sta modificando il background nella Scheda Cavaliere?
   trainingPath: null,        // lo stato del percorso di Apprendistato del personaggio corrente, null finché non caricato
@@ -640,15 +646,23 @@ async function declareCharge() {
   }
 }
 
-async function reactToAttack(action, counterTechnique) {
+async function reactToAttack(action, technique) {
   try {
     const body = { action, battle_state: state.battle };
-    if (action === "contrattacca" && counterTechnique) {
-      body.counter_technique_name = counterTechnique.name;
-      body.counter_technique_power = counterTechnique.power;
-      body.counter_technique_type = counterTechnique.tech_type || null;
-      body.counter_technique_launch_desc = counterTechnique.launch_desc || null;
-      body.counter_technique_effect_desc = counterTechnique.effect_desc || null;
+    if (action === "contrattacca" && technique) {
+      body.counter_technique_name = technique.name;
+      body.counter_technique_power = technique.power;
+      body.counter_technique_type = technique.tech_type || null;
+      body.counter_technique_launch_desc = technique.launch_desc || null;
+      body.counter_technique_effect_desc = technique.effect_desc || null;
+    }
+    if (action === "difenditi" && technique) {
+      // La difesa è ora una vera scelta del giocatore (richiesto in
+      // chat: "Difesa Base + tecniche di difesa", stessa struttura
+      // dell'attacco) - non più decisa in automatico dal sistema.
+      body.defense_technique_name = technique.name;
+      body.defense_technique_power = technique.power;
+      body.defense_technique_type = technique.tech_type || null;
     }
     const result = await api(`/characters/${state.characterId}/arena/react`, {
       method: "POST",
@@ -667,6 +681,7 @@ async function retreat() {
     state.battle = null;
     state.opponentCandidates = null;
     state.showCounterPicker = false;
+    state.showDefensePicker = false;
     state.arenaLog = [...state.arenaLog, "Ti ritiri dallo scontro."];
     render();
   } catch (e) {
@@ -707,6 +722,7 @@ function applyArenaResult(result) {
   state.arenaLog = [...state.arenaLog, ...result.log];
   state.battle = result.fight_over ? null : result.battle_state;
   state.showCounterPicker = false;  // ogni round risolto riparte pulito
+  state.showDefensePicker = false;
   if (result.fight_over) {
     // Uno scontro concluso aggiunge sempre una voce al diario - stesso
     // fix di doTrain, invalido la cache per ricaricarla alla prossima
@@ -1857,12 +1873,17 @@ function appendBattleColumns(wrap) {
     const t = state.battle.pending_opponent_technique;
     leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
 
-    if (!state.showCounterPicker) {
-      for (const btn of defensiveButtons()) leftPanel.append(btn);
-      leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
-      leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
-      leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
-    } else {
+    if (state.showDefensePicker) {
+      // La difesa è ora una vera scelta del giocatore (richiesto in
+      // chat: "Difesa Base + tecniche di difesa", stessa struttura
+      // dell'attacco) - non più decisa in automatico dal sistema.
+      leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Con cosa ti difendi?"));
+      leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi", { name: "Difesa Base", power: DEFAULT_DEFENSE_POWER }) }, "🛡 Difesa Base"));
+      for (const dt of myDefensive) {
+        leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi", dt) }, `🛡 ${dt.name} (${dt.power})`));
+      }
+      leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showDefensePicker = false; render(); } }, "◄ Annulla"));
+    } else if (state.showCounterPicker) {
       // Contrattacco (richiesto in chat): il colpo avversario arriva
       // pieno, non ridotto per niente - in cambio, scegli TU con
       // quale delle tue tecniche rispondere, come un vero attacco.
@@ -1871,6 +1892,10 @@ function appendBattleColumns(wrap) {
         leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
       }
       leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
+    } else {
+      leftPanel.append(el("button", { onClick: () => { state.showDefensePicker = true; render(); } }, "🛡 Difenditi"));
+      leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
+      leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
     }
   } else {
     const senses = k.senses;
