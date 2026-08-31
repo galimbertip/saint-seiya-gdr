@@ -1562,11 +1562,15 @@ function renderTrainingPathTab() {
   // del Maestro e per chi ti stai addestrando non si vedevano mai
   // esplicitamente, solo dentro il testo della prima tappa).
   const infoLine = tp.ready_for_trial
-    ? { master: tp.master_name, masterArmor: tp.master_armor_name, yourArmor: tp.your_armor_name, c1: tp.companion1_name, c2: tp.companion2_name }
-    : { master: tp.stage.master_name, masterArmor: tp.stage.master_armor_name, yourArmor: tp.stage.your_armor_name, c1: tp.stage.companion1_name, c2: tp.stage.companion2_name };
+    ? { master: tp.master_name, masterArmor: tp.master_armor_name, yourArmor: tp.your_armor_name, c1: tp.companion1_name, c2: tp.companion2_name, location: tp.location }
+    : { master: tp.stage.master_name, masterArmor: tp.stage.master_armor_name, yourArmor: tp.stage.your_armor_name, c1: tp.stage.companion1_name, c2: tp.stage.companion2_name, location: tp.stage.location };
   const infoCard = el("div", { class: "card" });
   infoCard.append(el("p", {}, `🎓 Ti stai addestrando per diventare portatore di `, el("strong", {}, infoLine.yourArmor)));
   infoCard.append(el("p", { class: "hint" }, `Maestro: ${infoLine.master} (${infoLine.masterArmor}) · Compagni: ${infoLine.c1}, ${infoLine.c2}`));
+  // Location geografica dell'addestramento (richiesto in chat).
+  if (infoLine.location) {
+    infoCard.append(el("p", { class: "hint" }, `📍 ${infoLine.location}`));
+  }
   wrap.append(infoCard);
 
   if (tp.ready_for_trial) {
@@ -1768,20 +1772,16 @@ function renderArenaTab() {
     searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
     wrap.append(searchCard);
 
-    // Gallerie degli sfondi dell'Arena (richiesto in chat: uno sfondo
-    // solo, uguale per tutti, aveva poco senso - un'immagine per
-    // ciascuno dei 5 temi elementali, PIÙ una per ciascuna delle 13
-    // "sedi" di divinità, con priorità sul tema quando l'avversario
-    // appartiene a quella divinità).
+    // Un'unica galleria "per Regno" (richiesto in chat: prima erano
+    // due gallerie separate, per elemento e per divinità - ridondanti
+    // e confuse) - un'immagine per ciascuno dei 13 Regni, usata quando
+    // l'avversario appartiene a quella divinità.
     const k = state.character;
     const backgrounds = k.arena_backgrounds || {};
+    const realmLabels = Object.fromEntries(Object.entries(REALM_ARENAS).map(([key, r]) => [key, r.label]));
     wrap.append(buildBackgroundGalleryCard(
-      "Sfondi per elemento", "Un'immagine per ciascun tema elementale - senza immagine, quel tema usa semplicemente un colore.",
-      ARENA_THEME_LABELS, backgrounds,
-    ));
-    wrap.append(buildBackgroundGalleryCard(
-      "Sfondi per divinità", "Un'immagine per la \"sede\" di ciascuna divinità (richiesto in chat) - ha la precedenza sul tema elementale quando l'avversario appartiene a quella divinità.",
-      DIVINITY_ARENA_LABELS, backgrounds,
+      "Arene per Regno", "Un'immagine per il Regno di ciascuna divinità - senza immagine, quel Regno usa semplicemente un colore.",
+      realmLabels, backgrounds,
     ));
   } else if (!state.battle && state.opponentCandidates) {
     const waitingCard = el("div", { class: "card" });
@@ -1836,14 +1836,14 @@ function appendBattleColumns(wrap) {
   const allMyTechniques = k.techniques.concat(state.customTechniques ? state.customTechniques.techniques : []);
   const myDefensive = allMyTechniques.filter(isDefensive);
   const myOffensive = [{ name: "Attacco Base", power: 20 }].concat(allMyTechniques.filter((t) => !isDefensive(t)));
-  // La riga informativa sulla propria tecnica difensiva (richiesto in
-  // chat: prima non si vedeva MAI da nessuna parte, né quando si
-  // dichiara un attacco né - soprattutto - nel momento in cui conta
-  // davvero, cioè quando ci si difende) - un unico pezzo di interfaccia
-  // riusato in entrambi i punti sottostanti.
-  const defensiveInfoLine = () => myDefensive.length > 0
-    ? el("p", { class: "hint", style: "margin-top:10px;" }, `🛡 Tecnica difensiva (usata in automatico quando ti difendi): ${myDefensive.map((t) => t.name).join(", ")}`)
-    : null;
+  // Le tecniche difensive proprie, mostrate come PULSANTI disabilitati
+  // ben visibili (richiesto in chat: prima erano solo una riga di
+  // testo piccola, facile da non notare, o secondo il giocatore
+  // addirittura invisibile) - stesso trattamento delle tecniche
+  // dell'avversario nel pannello a destra, così è impossibile non
+  // vederle: usate in automatico quando ci si difende, non cliccabili.
+  const defensiveButtons = () => myDefensive.map((t) =>
+    el("button", { disabled: "disabled", title: "Usata in automatico quando ti difendi" }, `🛡 ${t.name} (${t.power})`));
 
   const columns = el("div", { class: "arena-columns" });
 
@@ -1858,8 +1858,7 @@ function appendBattleColumns(wrap) {
     leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
 
     if (!state.showCounterPicker) {
-      const defLine = defensiveInfoLine();
-      if (defLine) leftPanel.append(defLine);
+      for (const btn of defensiveButtons()) leftPanel.append(btn);
       leftPanel.append(el("button", { onClick: () => reactToAttack("difenditi") }, "🛡 Difenditi"));
       leftPanel.append(el("button", { onClick: () => { state.showCounterPicker = true; render(); } }, "⚔ Contrattacca"));
       leftPanel.append(el("button", { class: "secondary", onClick: () => reactToAttack("incassa") }, "😤 Incassa il colpo"));
@@ -1875,12 +1874,11 @@ function appendBattleColumns(wrap) {
     }
   } else {
     const senses = k.senses;
-    const defLine = defensiveInfoLine();
-    if (defLine) leftPanel.append(defLine);
     leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
     for (const t of myOffensive) {
       leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
     }
+    for (const btn of defensiveButtons()) leftPanel.append(btn);
     leftPanel.append(el("button", {
       onClick: declareCharge,
       class: "secondary",
@@ -1983,38 +1981,31 @@ function drawKnightFigure(ctx, x, y, color, label) {
   ctx.fillText(label, x, y - 16);
 }
 
-// Le 5 arene della Fase 4 (puramente estetiche, nessuna nuova
-// meccanica): solo un colore di sfondo diverso per tema, scelto dal
-// server in base alla provenienza dell'avversario (vedi
-// pick_arena_theme lato backend). Le decorazioni geometriche disegnate
-// a mano sono state tolte (richiesto in chat: non reggevano il
-// confronto) - resta il colore, sostituibile con un'immagine propria
-// per ciascun tema (richiesto in chat: una galleria, non un'unica
-// immagine uguale per tutti i temi - vedi arena_backgrounds sul
-// personaggio, e la card "Sfondi dell'Arena" nella scheda Arena).
-const ARENA_THEMES = {
-  atene: { bg: "linear-gradient(#26324a, #0B0F1A)" },
-  siberia: { bg: "linear-gradient(#cfe8f7, #7fa8c9)" },
-  deserto: { bg: "linear-gradient(#f6cf8e, #d98e3a)" },
-  colosseo: { bg: "linear-gradient(#9b9689, #4a453d)" },
-  piramidi: { bg: "linear-gradient(#6b4a7e, #d9a441)" },
+// Una sola galleria "per Regno" (richiesto in chat: prima erano due
+// gallerie separate, per elemento e per divinità - ridondanti e
+// confuse). Ogni Regno (una delle 13 divinità del catalogo) ha un
+// colore di sfondo predefinito, sostituibile con un'immagine propria
+// caricata nella card "Arene per Regno" della scheda Arena. La chiave
+// è anche quella usata per l'upload/il dizionario arena_backgrounds
+// sul personaggio; "black_saint" è l'unica con lo spazio sostituito,
+// per tutte le altre coincide con la versione minuscola del nome.
+const REALM_ARENAS = {
+  athena: { label: "Athena (Atene)", bg: "linear-gradient(#26324a, #0B0F1A)" },
+  odino: { label: "Odino (Asgard)", bg: "linear-gradient(#cfe8f7, #7fa8c9)" },
+  nettuno: { label: "Nettuno (Regno dei Sette Mari)", bg: "linear-gradient(#1a4a5e, #0d2b3d)" },
+  hades: { label: "Hades (Inferi)", bg: "linear-gradient(#3a2050, #14081f)" },
+  ares: { label: "Ares", bg: "linear-gradient(#5e1f1f, #2b0d0d)" },
+  zeus: { label: "Zeus (Olimpo)", bg: "linear-gradient(#e8d9a0, #b89b4a)" },
+  crono: { label: "Crono", bg: "linear-gradient(#7a6a4f, #3d3324)" },
+  saturno: { label: "Saturno", bg: "linear-gradient(#6b6b6b, #2e2e2e)" },
+  eris: { label: "Eris", bg: "linear-gradient(#4a1f4a, #1f0d1f)" },
+  lucifero: { label: "Lucifero", bg: "linear-gradient(#5e0f0f, #1a0505)" },
+  apollo: { label: "Apollo", bg: "linear-gradient(#f6cf8e, #d98e3a)" },
+  artemide: { label: "Artemide", bg: "linear-gradient(#2f5e3a, #14291a)" },
+  black_saint: { label: "Black Saint (Isola della Regina Nera)", bg: "linear-gradient(#3a3a3a, #0d0d0d)" },
 };
+const DEFAULT_REALM = "athena";
 
-const ARENA_THEME_LABELS = {
-  atene: "Atene", siberia: "Siberia", deserto: "Deserto", colosseo: "Colosseo", piramidi: "Piramidi",
-};
-
-// Una "sede" per ciascuna delle 13 divinità del catalogo (richiesto in
-// chat, oltre ai 5 temi elementali) - la chiave usata per l'upload/il
-// dizionario arena_backgrounds a sinistra, il nome vero della divinità
-// (per il confronto con battle.opponent.divinity) e l'etichetta
-// mostrata a destra.
-const DIVINITY_ARENA_LABELS = {
-  athena: "Athena", hades: "Hades", nettuno: "Nettuno", odino: "Odino",
-  ares: "Ares", artemide: "Artemide", zeus: "Zeus", crono: "Crono",
-  eris: "Eris", saturno: "Saturno", lucifero: "Lucifero",
-  black_saint: "Black Saint", apollo: "Apollo",
-};
 // Da nome vero della divinità (come arriva da battle.opponent.divinity)
 // alla chiave "sicura" usata nel dizionario/URL - serve solo per
 // "Black Saint", che ha uno spazio; per tutte le altre coincide con la
@@ -2026,8 +2017,12 @@ function divinityToKey(divinityName) {
 function renderArenaMap() {
   const SIZE = 340;
   const battle = state.battle;
-  const themeKey = (battle && battle.arena_theme) || "atene";
-  const theme = ARENA_THEMES[themeKey] || ARENA_THEMES.atene;
+  // Una sola chiave organizzativa ora: il Regno (la divinità)
+  // dell'avversario (richiesto in chat: prima elemento e divinità
+  // erano due sistemi separati e ridondanti) - niente avversario in
+  // corso, si ricade su Athena come Regno predefinito.
+  const realmKey = battle && battle.opponent ? divinityToKey(battle.opponent.divinity) : DEFAULT_REALM;
+  const realm = REALM_ARENAS[realmKey] || REALM_ARENAS[DEFAULT_REALM];
 
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
@@ -2036,19 +2031,16 @@ function renderArenaMap() {
   canvas.style.maxWidth = `${SIZE}px`;
   canvas.style.display = "block";
   canvas.style.margin = "0 auto";
-  // La priorità è: 1) un'immagine caricata per la DIVINITÀ
-  // dell'avversario (richiesto in chat: più significativo di un
-  // colore legato solo all'elemento), 2) un'immagine caricata per il
-  // tema elementale, 3) il semplice colore del tema.
+  // Un'immagine caricata per il Regno dell'avversario ha la precedenza
+  // sul colore predefinito, se il giocatore ne ha caricata una.
   const backgrounds = (state.character && state.character.arena_backgrounds) || {};
-  const opponentDivinityKey = battle && battle.opponent ? divinityToKey(battle.opponent.divinity) : null;
-  const customBg = (opponentDivinityKey && backgrounds[opponentDivinityKey]) || backgrounds[themeKey];
+  const customBg = backgrounds[realmKey];
   if (customBg) {
     canvas.style.backgroundImage = `url(${customBg})`;
     canvas.style.backgroundSize = "cover";
     canvas.style.backgroundPosition = "center";
   } else {
-    canvas.style.background = theme.bg;
+    canvas.style.background = realm.bg;
   }
   canvas.style.border = "1px solid var(--border)";
   canvas.style.borderRadius = "8px";
