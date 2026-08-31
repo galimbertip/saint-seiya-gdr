@@ -288,6 +288,11 @@ const state = {
   sparResult: null,          // il risultato appena arrivato dello scontro leggero d'allenamento, da mostrare prima di procedere
   stageAttemptResult: null,  // il risultato appena arrivato di una prova a dado di una tappa, da mostrare prima di procedere
   stageChoiceResult: null,   // l'esito appena arrivato di una scelta di una tappa, da mostrare prima di procedere
+  missionStatus: null,       // lo stato della missione in corso (o {active:false}), null finché non caricato
+  missionActionResult: null, // l'esito di un tentativo di persuasione o di una prova a dado di un nodo, da mostrare prima di procedere
+  missionChoiceResult: null, // l'esito di una scelta di un nodo delle Colonne, da mostrare prima di procedere
+  missionEndingResult: null, // il risultato di missione completata/fallita via duello, da mostrare prima di tornare all elenco
+  confirmingAbandon: false,  // sta confermando l'abbandono di una missione?
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -355,6 +360,11 @@ async function selectCharacter(id) {
   state.sparResult = null;
   state.stageAttemptResult = null;
   state.stageChoiceResult = null;
+  state.missionStatus = null;
+  state.missionActionResult = null;
+  state.missionChoiceResult = null;
+  state.missionEndingResult = null;
+  state.confirmingAbandon = false;
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -720,6 +730,7 @@ function applyArenaResult(result) {
   // che state.battle venga sovrascritto.
   const wasTrial = state.battle && state.battle.is_trial;
   const wasSpar = state.battle && state.battle.is_spar;
+  const wasMission = state.battle && state.battle.is_mission;
   state.character = result.character;
   state.arenaLog = [...state.arenaLog, ...result.log];
   state.battle = result.fight_over ? null : result.battle_state;
@@ -739,6 +750,18 @@ function applyArenaResult(result) {
       // tornare al percorso, non solo un messaggio di passaggio.
       state.sparResult = { won: result.won };
       state.trainingPath = null;
+    } else if (wasMission) {
+      // Un duello delle Missioni concluso (richiesto in chat) - se ha
+      // completato l'intera missione, mostra la ricompensa/il finale;
+      // altrimenti si torna semplicemente allo stato della missione
+      // (Casa/nodo successivo se vinto, la stessa se perso - si
+      // sceglierà se ritentare o abbandonare).
+      if (result.mission_completed) {
+        state.missionEndingResult = { text: result.mission_ending_text };
+      } else {
+        state.arenaLog.push(result.won ? "Hai vinto lo scontro." : "Sei stato sconfitto - puoi ritentare, o abbandonare la missione.");
+      }
+      state.missionStatus = null;
     } else {
       state.arenaLog.push(result.won ? "🏆 Vittoria!" : "💀 Sconfitta...");
     }
@@ -1003,7 +1026,7 @@ function renderGameScreen() {
   // sostituiti da un'unica scheda "Percorso" - non ha senso mostrarli
   // se sono comunque bloccati lato server.
   const tabDefs = k.is_knight
-    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]]
+    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"]]
     : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
   // Allenamento e Arena ora restano visibili anche da Apprendista
   // (richiesto in chat: prima sparivano del tutto dalla barra, e senza
@@ -1040,6 +1063,7 @@ function renderGameScreen() {
   else if (state.gameTab === "percorso") wrap.append(renderTrainingPathTab());
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
+  else if (state.gameTab === "missions") wrap.append(renderMissionsTab());
   else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
 
   wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
@@ -1192,6 +1216,94 @@ function closeSparResult() {
   state.sparResult = null;
   state.trainingPath = null;  // si ricarica da sola, già avanzata alla tappa successiva
   render();
+}
+
+async function loadMissionStatus() {
+  try {
+    state.missionStatus = await api(`/characters/${state.characterId}/mission`);
+  } catch (e) {
+    showError(e.message);
+    state.missionStatus = { active: false };
+  }
+  render();
+}
+
+async function startMission(missionId) {
+  try {
+    await api(`/characters/${state.characterId}/mission/start`, {
+      method: "POST",
+      body: JSON.stringify({ mission_id: missionId }),
+    });
+    state.missionStatus = null;  // si ricarica da sola con la missione avviata
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function attemptPersuade() {
+  // La Scalata delle Dodici Case (richiesto in chat): un vero
+  // tentativo di persuasione ad ogni Casa, prima di dover per forza
+  // combattere.
+  try {
+    state.missionActionResult = await api(`/characters/${state.characterId}/mission/persuade`, { method: "POST" });
+    if (state.missionActionResult.mission_completed) {
+      await refreshCharacter();  // Cosmo massimo e denaro sono cambiati
+    }
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function chooseMissionOption(optionIndex) {
+  // Le Colonne dei Sette Mari (richiesto in chat): bivi che portano
+  // DAVVERO a strade diverse.
+  try {
+    state.missionChoiceResult = await api(`/characters/${state.characterId}/mission/choose`, {
+      method: "POST",
+      body: JSON.stringify({ option_index: optionIndex }),
+    });
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function attemptMissionSkillCheck() {
+  try {
+    state.missionActionResult = await api(`/characters/${state.characterId}/mission/attempt`, { method: "POST" });
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function startMissionDuel() {
+  // Sia per la Scalata (contro il Guardiano della Casa attuale) sia
+  // per le Colonne (contro chi popola il nodo attuale) - stesso motore
+  // di battaglia già usato per la Prova Finale e gli scontri di
+  // allenamento.
+  try {
+    const result = await api(`/characters/${state.characterId}/mission/duel/start`, { method: "POST" });
+    state.battle = result.battle_state;
+    state.arenaLog = result.intro ? [result.intro] : [];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function abandonMission() {
+  try {
+    await api(`/characters/${state.characterId}/mission/abandon`, { method: "POST" });
+    state.missionStatus = null;
+    state.missionActionResult = null;
+    state.missionChoiceResult = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
 }
 
 async function createCustomTechnique(name, techType, isDefensive, launchDesc, effectDesc) {
@@ -1842,6 +1954,142 @@ function renderArenaTab() {
 // narrato, e riusa esattamente questa stessa interfaccia dell'Arena,
 // invece di duplicarla) - riceve il contenitore a cui aggiungere le
 // colonne.
+function renderMissionsTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Missioni"));
+
+  // Un combattimento di missione è in corso (richiesto in chat) -
+  // stessa interfaccia di battaglia già usata per la Prova Finale e
+  // l'Arena.
+  if (state.battle && state.battle.is_mission) {
+    wrap.append(el("h2", {}, "⚔ Scontro"));
+    appendBattleColumns(wrap);
+    const logCard = el("div", { class: "card" });
+    logCard.append(el("h2", {}, "Cronaca dello scontro"));
+    const logBox = el("div", { class: "log-box" });
+    for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+    logCard.append(logBox);
+    wrap.append(logCard);
+    return wrap;
+  }
+
+  // Il risultato di una missione appena completata via duello
+  // (richiesto in chat: prima non arrivava nessun segnale al
+  // frontend).
+  if (state.missionEndingResult) {
+    const card = el("div", { class: "card" });
+    card.append(el("h2", {}, "🏆 Missione completata!"));
+    if (state.missionEndingResult.text) {
+      card.append(el("p", {}, state.missionEndingResult.text));
+    }
+    card.append(el("p", { class: "hint" }, `Denaro: ${state.character.denaro} · Cosmo massimo: ${state.character.cosmo_max}`));
+    card.append(el("button", { onClick: () => { state.missionEndingResult = null; render(); } }, "Continua"));
+    wrap.append(card);
+    return wrap;
+  }
+
+  if (state.missionStatus === null) {
+    loadMissionStatus();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento del percorso...")));
+    return wrap;
+  }
+
+  const ms = state.missionStatus;
+
+  if (!ms.active) {
+    const card1 = el("div", { class: "card" });
+    card1.append(el("h2", {}, "La Scalata delle Dodici Case"));
+    card1.append(el("p", {}, "Affronta in ordine i dodici Guardiani del Santuario - convincili a lasciarti passare senza combattere, o sfidali a duello. Fedele al canone: l'ordine è sempre lo stesso."));
+    card1.append(el("button", { onClick: () => startMission("dodici_case") }, "⛩️ Inizia la Scalata"));
+    wrap.append(card1);
+
+    const card2 = el("div", { class: "card" });
+    card2.append(el("h2", {}, "Le Colonne dei Sette Mari"));
+    card2.append(el("p", {}, "Infiltrati nel Regno di Poseidone. Le tue scelte portano DAVVERO a strade diverse - e a finali diversi."));
+    card2.append(el("button", { onClick: () => startMission("colonne_sette_mari") }, "🌊 Inizia Le Colonne"));
+    wrap.append(card2);
+    return wrap;
+  }
+
+  if (ms.mission_id === "dodici_case") {
+    wrap.append(renderScalataHouse(ms.house));
+  } else if (ms.mission_id === "colonne_sette_mari") {
+    wrap.append(renderColonneNode(ms.node));
+  }
+
+  const abandonCard = el("div", { class: "card" });
+  if (state.confirmingAbandon) {
+    abandonCard.append(el("p", {}, "Sicuro di voler abbandonare? Tornerai libero, ma senza nessuna ricompensa - diverso dal semplice uscire dal gioco, che invece congela la missione dov'è."));
+    const row = el("div", { class: "row" });
+    row.append(el("button", { onClick: () => { state.confirmingAbandon = false; abandonMission(); } }, "Sì, abbandona"));
+    row.append(el("button", { class: "secondary", onClick: () => { state.confirmingAbandon = false; render(); } }, "No, continua"));
+    abandonCard.append(row);
+  } else {
+    abandonCard.append(el("button", { class: "secondary", onClick: () => { state.confirmingAbandon = true; render(); } }, "Abbandona la missione"));
+  }
+  wrap.append(abandonCard);
+  return wrap;
+}
+
+function renderScalataHouse(house) {
+  const card = el("div", { class: "card" });
+  card.append(el("p", { class: "hint" }, `Casa ${house.house_number} di ${house.total_houses}: ${house.house_name}`));
+  card.append(el("h2", {}, house.house_name));
+  card.append(el("p", {}, house.arrival));
+
+  if (state.missionActionResult) {
+    const r = state.missionActionResult;
+    card.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
+    if (r.success) {
+      card.append(el("button", { onClick: () => { state.missionActionResult = null; state.missionStatus = null; render(); } }, "Continua"));
+    } else {
+      const row = el("div", { class: "row" });
+      row.append(el("button", { onClick: attemptPersuade }, "🗣 Riprova a convincerlo"));
+      row.append(el("button", { onClick: startMissionDuel }, "⚔ Sfidalo a duello"));
+      card.append(row);
+    }
+  } else {
+    card.append(el("p", { class: "hint", style: "margin-top:10px;" }, house.persuade_prompt));
+    const row = el("div", { class: "row" });
+    row.append(el("button", { onClick: attemptPersuade }, "🗣 Tenta di convincerlo"));
+    row.append(el("button", { onClick: startMissionDuel }, "⚔ Sfidalo a duello"));
+    card.append(row);
+  }
+  return card;
+}
+
+function renderColonneNode(node) {
+  const card = el("div", { class: "card" });
+
+  if (node.type === "choice") {
+    card.append(el("p", {}, node.text));
+    if (state.missionChoiceResult) {
+      card.append(el("p", { style: "font-style:italic;margin-top:8px;" }, state.missionChoiceResult.text));
+      card.append(el("button", { onClick: () => { state.missionChoiceResult = null; state.missionStatus = null; render(); } }, "Continua"));
+    } else {
+      for (const opt of node.options) {
+        card.append(el("button", { onClick: () => chooseMissionOption(opt.index) }, opt.label));
+      }
+    }
+  } else if (node.type === "skill_check") {
+    card.append(el("p", {}, node.text));
+    if (state.missionActionResult) {
+      const r = state.missionActionResult;
+      card.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
+      card.append(el("button", { onClick: () => { state.missionActionResult = null; state.missionStatus = null; render(); } }, "Continua"));
+    } else {
+      card.append(el("button", { onClick: attemptMissionSkillCheck }, "🎲 Prova"));
+    }
+  } else if (node.type === "duel") {
+    card.append(el("h2", {}, "Uno scontro ti attende"));
+    card.append(el("p", { class: "hint" }, "Non sai ancora chi affronterai, finché non lo inizi."));
+    card.append(el("button", { onClick: startMissionDuel }, "⚔ Inizia lo scontro"));
+  } else if (node.type === "ending") {
+    card.append(el("p", {}, node.text));
+  }
+  return card;
+}
+
 function appendBattleColumns(wrap) {
   const k = state.character;
   const o = state.battle.opponent;
