@@ -204,7 +204,7 @@ def _record_fight_outcome(conn, knight: dict, opponent_name: str, winner: str) -
     add_biography_entry(conn, knight["id"], knight["game_minutes"], entry)
 
 
-def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str) -> None:
+def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str) -> dict:
     """Gestisce la conclusione di uno scontro - normale (Arena) o la
     Prova Finale (riconosciuta dal flag is_trial nel battle_state,
     impostato da .../training-path/trial/start) in modo diverso
@@ -212,9 +212,14 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
     non un tiro di dado narrato - la sua conclusione va gestita qui,
     non più in un endpoint a parte). Chiama finalize_fight e
     save_knight al posto del chiamante, non serve richiamarli anche
-    fuori da qui."""
+    fuori da qui. Restituisce un dict con eventuali informazioni extra
+    per il chiamante - per ora solo se una Missione è stata completata
+    proprio in questo duello (bug corretto in chat: prima veniva
+    scartato, il frontend non aveva modo di saperlo e di mostrare la
+    ricompensa/il finale)."""
     opponent_name = battle_state["opponent"]["name"]
     finalize_fight(knight)
+    extra: dict = {}
 
     if battle_state.get("is_trial"):
         cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
@@ -250,17 +255,23 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
         if knight["mission_id"] == MISSION_ID:
             if winner == "player":
                 knight["mission_stage"] += 1
-                _complete_scalata_if_done(conn, knight)
+                if _complete_scalata_if_done(conn, knight):
+                    extra["mission_completed"] = True
+                    extra["mission_ending_text"] = None
         elif knight["mission_id"] == COLONNE_MISSION_ID:
             node_id = knight["mission_node"] or COLONNE_START_NODE
             node = COLONNE_NODES[node_id]
             knight["mission_node"] = node["win_next"] if winner == "player" else node["lose_next"]
             if winner == "player":
-                _complete_colonne_if_done(conn, knight)
+                completed, ending_text = _complete_colonne_if_done(conn, knight)
+                if completed:
+                    extra["mission_completed"] = True
+                    extra["mission_ending_text"] = ending_text
     else:
         _record_fight_outcome(conn, knight, opponent_name, winner)
 
     save_knight(conn, knight)
+    return extra
 
 
 def _knight_payload(conn, knight: dict) -> dict:
@@ -787,7 +798,7 @@ def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(g
         knight["mission_flags"] = ",".join(sorted(flags))
     knight["mission_node"] = option["next"]
     save_knight(conn, knight)
-    return {"next_node": option["next"]}
+    return {"next_node": option["next"], "text": option.get("outcome_text", "")}
 
 
 @app.post("/characters/{knight_id}/mission/attempt")
@@ -1146,10 +1157,11 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
     )
 
     if fight_over:
-        _handle_fight_conclusion(conn, knight, req.battle_state, winner)
+        extra = _handle_fight_conclusion(conn, knight, req.battle_state, winner)
         return {
             "log": log, "fight_over": True, "won": winner == "player",
             "character": _knight_payload(conn, knight), "battle_state": None,
+            **extra,
         }
 
     save_knight(conn, knight)
@@ -1192,10 +1204,11 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
     )
 
     if fight_over:
-        _handle_fight_conclusion(conn, knight, req.battle_state, winner)
+        extra = _handle_fight_conclusion(conn, knight, req.battle_state, winner)
         return {
             "log": log, "fight_over": True, "won": winner == "player",
             "character": _knight_payload(conn, knight), "battle_state": None,
+            **extra,
         }
 
     save_knight(conn, knight)
