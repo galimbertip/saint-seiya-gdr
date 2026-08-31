@@ -158,19 +158,76 @@ CRITICAL_FUMBLE_FLAVORS = [
     "il colpo gli si ritorce contro: una fitta improvvisa lo blocca",
     "scivola e sbatte a terra, mancando il bersaglio di netto",
     "il Cosmo si ribella per un istante, disorientandolo completamente",
+    "un crampo improvviso gli irrigidisce il braccio nel momento peggiore",
+    "il terreno cede sotto il suo stesso peso, rovinando la mira",
+    "perde per un istante il controllo del proprio Cosmo, tradito dal suo stesso corpo",
+    "un ricordo doloroso gli attraversa la mente proprio mentre colpisce",
+    "il fiato gli manca a metà movimento, lasciandolo scoperto",
+    "il polso gira male e il colpo si perde nel vuoto",
+    "un fulmine di dolore da una ferita vecchia lo blocca sul più bello",
+    "la propria stessa energia gli si rivolta contro, disperdendosi senza controllo",
+    "si muove un istante troppo presto, tradendo l'intera sequenza",
+    "l'avversario legge il movimento prima ancora che si completi, e lui lo sa già",
+    "il colpo perde ogni forza a un soffio dal bersaglio, come se il Cosmo stesso si fosse spento",
 ]
 
 CRITICAL_HIT_FLAVORS = [
     "trova un varco perfetto nella difesa avversaria",
     "scarica tutta la potenza del Cosmo in un colpo devastante",
     "centra in pieno il punto debole dell'avversario",
+    "il tempo sembra rallentare nell'istante esatto dell'impatto",
+    "ogni fibra del corpo converge in un solo, imparabile momento",
+    "il Cosmo brucia più intensamente che mai, e il colpo lo dimostra",
+    "l'avversario non ha nemmeno il tempo di capire cosa lo abbia colpito",
+    "settimane di addestramento si condensano in un singolo istante perfetto",
+    "il colpo arriva esattamente dove doveva, senza un briciolo di esitazione",
+    "qualcosa di più profondo del semplice talento guida il gesto fino in fondo",
+    "l'aria stessa sembra vibrare intorno all'impatto",
+    "è il colpo che ricorderà per il resto della sua vita, vinca o perda",
+    "il Cosmo esplode in una fiammata che nemmeno lui si aspettava",
+    "ogni dubbio svanisce nel momento esatto in cui il pugno trova il bersaglio",
+    "la Cloth stessa sembra amplificare quella furia in un unico, perfetto istante",
+]
+
+NORMAL_HIT_FLAVORS = [
+    "il colpo arriva dritto a segno",
+    "non c'è tempo per schivare: il colpo si abbatte in pieno",
+    "l'avversario incassa senza riuscire a spostarsi in tempo",
+    "il Cosmo si scarica sul bersaglio con tutta la forza voluta",
+    "un colpo pulito, senza fronzoli, che lascia il segno",
+    "il gesto si completa esattamente come previsto, e fa male",
+    "l'avversario capisce troppo tardi da dove sarebbe arrivato il colpo",
+    "il corpo obbedisce perfettamente all'intenzione, senza sbavature",
+    "non è il colpo più spettacolare, ma è quello giusto, al momento giusto",
+    "il Cosmo accompagna il gesto fino in fondo, senza disperdersi",
+]
+
+DODGE_FLAVORS = [
+    "un movimento all'ultimo istante basta a lasciare il colpo nel vuoto",
+    "il corpo si sposta per istinto puro, un attimo prima che sia troppo tardi",
+    "l'aria fischia a un soffio dalla pelle, ma il colpo non trova nulla da colpire",
+    "un balzo laterale trasforma quello che poteva essere un colpo pesante in niente",
+    "il Sesto Senso, se c'è, sussurra il pericolo un istante prima che diventi reale",
+    "il colpo si perde a pochi centimetri dal bersaglio, che ormai non c'è più",
+    "una torsione del busto basta a far scivolare via il pericolo",
+    "il terreno stesso sembra offrire l'appoggio giusto per l'unico passo che serviva",
+]
+
+DEFENSE_SUCCESS_FLAVORS = [
+    "regge l'urto senza cedere di un passo",
+    "assorbe il colpo lasciando che il Cosmo ne disperda buona parte della furia",
+    "il danno arriva comunque, ma molto meno di quanto avrebbe potuto",
+    "la difesa tiene, anche se il contraccolpo si fa sentire",
+    "riesce a smorzare il colpo appena in tempo",
+    "il corpo incassa meno di quanto l'avversario sperasse",
 ]
 
 
 def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attacker_armor_level: int,
                   defender_name: str, defender_dex: int, defender_con: int, defender_armor_level: int,
                   technique_name: str, technique_power: int,
-                  roll_mode: str = "normale", cause_phrase: str | None = None) -> tuple[int, str]:
+                  roll_mode: str = "normale", cause_phrase: str | None = None,
+                  launch_desc: str | None = None, effect_desc: str | None = None) -> tuple[int, str]:
     """Risolve un turno d'attacco riusando DnDEngine (CA, tiro per
     colpire, danno) - qui si orchestra soltanto, nessuna nuova formula.
     attacker_tec/defender_con: Tecnica di chi attacca aumenta il danno
@@ -183,6 +240,12 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
     dal sole") - se non fornita, si usa una frase generica. Deciso in
     chat: niente più etichette nude tipo '[SVANTAGGIO]', la causa entra
     dentro la frase del colpo.
+    launch_desc/effect_desc: la descrizione propria della tecnica, già
+    scritta per ognuna nel catalogo (richiesto in chat: prima veniva
+    mostrata a parte, secca, prima del numero - ora è intrecciata nella
+    stessa frase dell'esito, e l'effetto - mai usato finora - compare
+    accanto al danno). Se assenti (Attacco Base), si ricade su un
+    messaggio più semplice.
     Un 1 naturale è sempre un fallimento critico (una disgrazia fisica
     vera, pescata a caso - non solo un'etichetta); un 20 naturale è
     sempre un successo e raddoppia il danno (colpo critico) - regole
@@ -200,28 +263,45 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
     else:
         prefix_note = ""
 
+    # La descrizione di lancio, intrecciata nella frase invece che
+    # mostrata a parte (richiesto in chat) - solo per le tecniche vere,
+    # l'Attacco Base resta semplice per non appesantire ogni singolo
+    # round con una frase fissa ripetuta all'infinito. Un trattino,
+    # non un altro due punti, per non appesantire la lettura quando
+    # più tardi arriva quello che introduce l'esito.
+    launch_clause = f" — {launch_desc}" if launch_desc else ""
+
     if not hit:
         if dice_roll == 1:
             flavor = random.choice(CRITICAL_FUMBLE_FLAVORS)
-            return 0, f"{attacker_name} lancia {technique_name}{prefix_note}... {flavor}! (1 naturale)"
+            return 0, f"{attacker_name} tenta {technique_name}{launch_clause}{prefix_note}... {flavor}! (1 naturale)"
         # "ma" implica un contrasto (aveva un aiuto ma ha fallito comunque -
         # ha senso con il Vantaggio); con lo Svantaggio la schivata non è
         # una sorpresa, è la conseguenza diretta della causa - "e" invece
         # di "ma" (corretto in chat).
         connector = "e" if roll_mode == "svantaggio" else "ma"
-        return 0, f"{attacker_name} lancia {technique_name}{prefix_note}, {connector} {defender_name} schiva! ({attack_total} vs CA {defender_ac})"
+        dodge_flavor = random.choice(DODGE_FLAVORS)
+        return 0, (f"{attacker_name} scaglia {technique_name}{launch_clause}{prefix_note}, {connector} "
+                    f"{dodge_flavor}: {defender_name} schiva! ({attack_total} vs CA {defender_ac})")
 
     attacker_tec_mod = DnDEngine.get_modifier(attacker_tec)
     defender_con_mod = DnDEngine.get_modifier(defender_con)
     _, damage = DnDEngine.resolve_technique_damage(
         technique_power, attacker_armor_level, attacker_tec_mod=attacker_tec_mod, defender_con_mod=defender_con_mod
     )
+    # L'effetto della tecnica (mai usato finora, richiesto in chat) va
+    # PRIMA del marcatore "— Danno: " - format_damage_message (vedi
+    # sotto) cancella tutto ciò che segue quel marcatore quando
+    # riallinea il numero dopo Carica/portata/affinità, quindi qualunque
+    # cosa dopo andrebbe persa.
+    effect_clause = f" - {effect_desc}" if effect_desc else ""
     if dice_roll == 20:
         damage *= 2
         flavor = random.choice(CRITICAL_HIT_FLAVORS)
-        return damage, (f"{attacker_name} colpisce con {technique_name}{prefix_note}: {flavor}! "
-                         f"({attack_total} vs CA {defender_ac}) — Danno: {damage} (raddoppiato)")
-    return damage, (f"{attacker_name} colpisce con {technique_name}{prefix_note}! "
+        return damage, (f"{attacker_name} scatena {technique_name}{launch_clause}{prefix_note}: {flavor}!{effect_clause} "
+                         f"({attack_total} vs CA {defender_ac}, colpo raddoppiato) — Danno: {damage}")
+    flavor = random.choice(NORMAL_HIT_FLAVORS)
+    return damage, (f"{attacker_name} colpisce con {technique_name}{launch_clause}{prefix_note}: {flavor}.{effect_clause} "
                      f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
 
 
