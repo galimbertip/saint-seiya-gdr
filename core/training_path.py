@@ -139,14 +139,15 @@ TRAINING_STAGES = [
     {
         "type": "narrative",
         "title": "Il primo giorno",
-        "text": ("{master} - che porta l'armatura {master_armor} come un manto di stelle - ti accoglie "
-                  "senza una sola parola di troppo: sarà lui a forgiarti, giorno dopo giorno, nel Cavaliere "
-                  "che sei destinato a diventare, se il tuo Cosmo saprà ardere abbastanza da meritare "
-                  "l'armatura {your_armor}. Al suo fianco, due ombre incerte quanto la tua: {companion1} e "
-                  "{companion2}, altri due aspiranti chiamati dallo stesso destino verso la stessa armatura "
-                  "- solo uno di voi tre, quando tutto sarà finito, la indosserà davvero. \"Da oggi\", dice "
-                  "{master}, con una voce che non ammette repliche, \"non siete più chi eravate. O "
-                  "diventerete Cavalieri, o non sarete stati nulla.\""),
+        "text": ("Il tuo viaggio termina tra {location} - lì, {master}, che porta l'armatura "
+                  "{master_armor} come un manto di stelle, ti accoglie senza una sola parola di troppo: "
+                  "sarà lui a forgiarti, giorno dopo giorno, nel Cavaliere che sei destinato a diventare, "
+                  "se il tuo Cosmo saprà ardere abbastanza da meritare l'armatura {your_armor}. Al suo "
+                  "fianco, due ombre incerte quanto la tua: {companion1} e {companion2}, altri due "
+                  "aspiranti chiamati dallo stesso destino verso la stessa armatura - solo uno di voi tre, "
+                  "quando tutto sarà finito, la indosserà davvero. \"Da oggi\", dice {master}, con una voce "
+                  "che non ammette repliche, \"non siete più chi eravate. O diventerete Cavalieri, o non "
+                  "sarete stati nulla.\""),
     },
     {
         "type": "choice_check",
@@ -400,35 +401,42 @@ def _fill_placeholders(text: str, ctx: dict) -> str:
 
 
 def build_stage_context(master_name: str, master_armor_name: str, companion1: str,
-                         companion2: str, techniques: list[dict], your_armor_name: str = "") -> dict:
+                         companion2: str, techniques: list[dict], your_armor_name: str = "",
+                         own_armor: dict | None = None) -> dict:
     """Costruisce il dizionario dei segnaposto per una tappa - condiviso
     tra render_stage e i nuovi endpoint di prova/scelta (richiesto in
     chat: tutto l'addestramento dev'essere interattivo), così non si
-    duplica la stessa logica in più punti."""
+    duplica la stessa logica in più punti. `own_armor`, se fornita,
+    aggiunge anche {location} - la location geografica
+    dell'addestramento (richiesto in chat)."""
     tech1_name = techniques[0]["name"] if len(techniques) > 0 else "la prima tecnica"
     tech2_name = techniques[1]["name"] if len(techniques) > 1 else "la seconda tecnica"
+    location = get_training_location(own_armor, techniques) if own_armor else DEFAULT_TRAINING_LOCATION
     return {
         "master": master_name, "master_armor": master_armor_name, "companion1": companion1,
         "companion2": companion2, "tech1": tech1_name, "tech2": tech2_name, "your_armor": your_armor_name,
+        "location": location,
     }
 
 
 def render_stage(stage_number: int, master_name: str, master_armor_name: str,
                   companion1: str, companion2: str, techniques: list[dict],
-                  your_armor_name: str = "") -> dict:
+                  your_armor_name: str = "", own_armor: dict | None = None) -> dict:
     """Restituisce il contenuto della tappa `stage_number` (1-indicizzata),
     con i nomi veri del personaggio al posto dei segnaposto - la forma
     del contenuto dipende dal 'type' della tappa (narrative/skill_check/
     choice/spar, richiesto in chat: tutto l'addestramento dev'essere
-    interattivo, non solo testo da leggere)."""
+    interattivo, non solo testo da leggere). `own_armor`, se fornita,
+    aggiunge anche la location geografica dell'addestramento."""
     stage = TRAINING_STAGES[stage_number - 1]
-    ctx = build_stage_context(master_name, master_armor_name, companion1, companion2, techniques, your_armor_name)
+    ctx = build_stage_context(master_name, master_armor_name, companion1, companion2, techniques, your_armor_name, own_armor)
 
     result = {
         "stage_number": stage_number, "total_stages": TOTAL_STAGES, "type": stage["type"],
         "title": stage["title"], "text": _fill_placeholders(stage["text"], ctx),
         "master_name": master_name, "master_armor_name": master_armor_name,
         "companion1_name": companion1, "companion2_name": companion2, "your_armor_name": your_armor_name,
+        "location": ctx["location"],
     }
     if stage["type"] == "choice_check":
         result["approaches"] = [
@@ -441,6 +449,55 @@ def render_stage(stage_number: int, master_name: str, master_armor_name: str,
             for i, opt in enumerate(stage["options"])
         ]
     return result
+
+
+# --- Location geografica dell'addestramento (richiesto in chat) -----------
+# Prima i casi speciali per divinità/fazione (fedeltà al canone dove
+# esiste un legame forte e noto), poi si ricade sull'elemento
+# prevalente delle tecniche dell'armatura - stessa logica concettuale
+# già usata per i temi dell'Arena (Ghiaccio->Siberia ecc.), qui
+# applicata all'armatura per cui ci si addestra, non alla provenienza
+# del personaggio.
+FACTION_TRAINING_LOCATIONS = {}
+DIVINITY_TRAINING_LOCATIONS = {
+    "Black Saint": "l'Isola della Regina Nera, avvolta in una nebbia che non si dirada mai",
+    "Hades": "le gelide profondità ai confini del Regno dei Morti",
+    "Nettuno": "gli abissi sommersi del Regno dei Sette Mari",
+    "Odino": "le lande ghiacciate di Asgard, sferzate dal vento del nord",
+    "Zeus": "le vette perennemente innevate dell'Olimpo",
+    "Crono": "un tempio dimenticato dal tempo, ai margini del mondo conosciuto",
+    "Saturno": "una fortezza scavata nella roccia più antica della Terra",
+    "Eris": "una landa desolata dove regna solo la discordia",
+    "Lucifero": "un abisso di fuoco e ombra, lontano da ogni luce",
+    "Apollo": "le rive assolate dell'Egeo, dove nasce ogni alba",
+    "Artemide": "una foresta sacra dove nessun cacciatore osa entrare",
+    "Ares": "un campo di battaglia dimenticato, ancora fumante",
+}
+ELEMENT_TRAINING_LOCATIONS = {
+    "ghiaccio": "le distese ghiacciate della Siberia",
+    "fuoco": "le dune infuocate di un deserto senza nome",
+    "cosmico": "le colline sacre nei pressi di Atene",
+    "fisico": "le rovine di un antico colosseo di pietra",
+    "psichico": "l'ombra millenaria di antiche piramidi",
+}
+DEFAULT_TRAINING_LOCATION = "un luogo la cui posizione esatta nessuno, al di fuori del Santuario, conosce davvero"
+
+
+def get_training_location(armor: dict, techniques: list[dict]) -> str:
+    """La location geografica dell'addestramento per una data armatura
+    (richiesto in chat) - fedele al canone dove il legame è forte e
+    noto (fazione o divinità), altrimenti dedotta dall'elemento
+    prevalente delle sue tecniche vere."""
+    if armor["faction"] in FACTION_TRAINING_LOCATIONS:
+        return FACTION_TRAINING_LOCATIONS[armor["faction"]]
+    if armor["divinity"] in DIVINITY_TRAINING_LOCATIONS:
+        return DIVINITY_TRAINING_LOCATIONS[armor["divinity"]]
+    for t in techniques:
+        tech_type = (t.get("tech_type") or "").lower()
+        for element, location in ELEMENT_TRAINING_LOCATIONS.items():
+            if element in tech_type:
+                return location
+    return DEFAULT_TRAINING_LOCATION
 
 
 def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display_name: str) -> dict:
