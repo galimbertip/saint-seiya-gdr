@@ -21,7 +21,7 @@ from typing import Optional
 
 from core.arena_manager import (
     generate_opponent, generate_opponent_candidates, resolve_turn, choose_opponent_action, opponent_reacts,
-    resolve_defense, find_defensive_technique, get_unlocked_senses,
+    resolve_defense, get_unlocked_senses,
     format_damage_message, maybe_trigger_event, maybe_apply_status, tick_statuses, status_applied_message,
     status_resisted, calculate_movement_points, try_move, wander_opponent,
     check_attack_range, movement_uses_turn, range_effect, combine_roll_modes, distance_between,
@@ -465,7 +465,7 @@ def resolve_react(knight: dict, armor: dict, action: str,
         log.append(msg2)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "miss", "tech_type": t.get("tech_type", "")}
     elif action == "difenditi":
-        defense_technique = my_defensive_technique or {"name": "Parata", "power": DEFAULT_DEFENSE_POWER}
+        defense_technique = my_defensive_technique or {"name": "Difesa Base", "power": DEFAULT_DEFENSE_POWER}
         reduced = resolve_defense(dmg2, defense_technique["power"])
         # Ciclo elementale (richiesto in chat): se la tua tecnica
         # difensiva ha un elemento del ciclo, viene confrontata con
