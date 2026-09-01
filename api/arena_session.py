@@ -30,7 +30,8 @@ from core.arena_manager import (
     apply_flame_damage, apply_mud_penalty, pick_arena_theme, cycle_modifier, cycle_narrative,
     PLAYER_START_POSITION, OPPONENT_START_POSITION,
     DEFAULT_DEFENSE_POWER, SEVENTH_SENSE_COSMO_RATIO, SEVENTH_SENSE_MULTIPLIER,
-    CHARGE_COSMO_COST, CHARGE_DAMAGE_MULTIPLIER, DEFAULT_DIFFICULTY, DEFENSE_SUCCESS_FLAVORS,
+    CHARGE_TURNS_DURATION, CHARGE_COSMO_RESTORE, CHARGE_POWER_BONUS, DEFAULT_DIFFICULTY, DEFENSE_SUCCESS_FLAVORS,
+    BASE_ATTACK_POWER, technique_cosmo_cost,
 )
 from core.fm_manager import RosterManager, ARENA_ROUND_MINUTES
 
@@ -57,6 +58,8 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "opponent": opponent,
         "player_charge_multiplier": 1.0,
         "opponent_charge_multiplier": 1.0,
+        "player_charged_turns": 0,   # le tre barre (richiesto in chat): quanti turni restano al bonus di Carica
+        "opponent_charged_turns": 0,
         "seventh_sense_used": False,
         "eighth_sense_used": False,
         "pending_opponent_technique": None,
@@ -121,34 +124,54 @@ def move_player(knight: dict, battle_state: dict, target_x: float, target_y: flo
 
 
 def apply_charge(damage: int, is_player: bool, battle_state: dict) -> int:
-    """Se chi attacca aveva un bonus di carica attivo (Carica normale o
-    Settimo Senso), lo applica e lo consuma - MA SOLO se l'attacco è
-    andato a segno. Prima, un colpo mancato consumava comunque la
-    carica senza che servisse a nulla (bug segnalato in chat: 15 di
-    Cosmo spesi per una carica sprecata su una schivata) - ora la
-    carica resta valida finché non centra davvero un colpo."""
+    """Se chi attacca aveva un bonus di carica attivo (Settimo Senso,
+    da un colpo solo, o il bonus pluri-turno di Carica - richiesto in
+    chat, le tre barre), lo applica - il Settimo Senso si consuma, il
+    bonus di Carica NO (dura più turni, scade da solo - vedi
+    tick_charge_turns). MA SOLO se l'attacco è andato a segno: un
+    colpo mancato non deve sprecare nulla."""
     if damage == 0:
-        return damage  # schivata: la carica NON si consuma, resta per il prossimo tentativo
+        return damage  # schivata: nessun bonus si consuma, resta per il prossimo tentativo
 
     key = "player_charge_multiplier" if is_player else "opponent_charge_multiplier"
     if battle_state[key] > 1.0:
         multiplier = battle_state[key]
         battle_state[key] = 1.0
-        return round(damage * multiplier)
+        damage = round(damage * multiplier)
+
+    turns_key = "player_charged_turns" if is_player else "opponent_charged_turns"
+    if battle_state.get(turns_key, 0) > 0:
+        damage = round(damage * CHARGE_POWER_BONUS)
+    return damage
+
+
+def apply_charge_defense(damage: int, is_player_defending: bool, battle_state: dict) -> int:
+    """Il lato difensivo del bonus di Carica (richiesto in chat, le tre
+    barre: 'sia attacco che difesa') - riduce il danno SUBITO se chi
+    incassa il colpo ha un bonus di Carica attivo, indipendentemente
+    dall'aver usato o meno una tecnica difensiva vera (si sommano)."""
+    if damage <= 0:
+        return damage
+    turns_key = "player_charged_turns" if is_player_defending else "opponent_charged_turns"
+    if battle_state.get(turns_key, 0) > 0:
+        return max(0, round(damage / CHARGE_POWER_BONUS))
     return damage
 
 
 def check_seventh_sense(knight: dict, battle_state: dict, log: list[str]) -> None:
-    """Si risveglia da solo sotto una soglia critica di Cosmo, una
-    volta a combattimento (non un pulsante - vedi discussione in chat
-    sul canone di Saint Seiya)."""
+    """Si risveglia da solo sotto una soglia critica di VITA (corretto
+    in chat: prima controllava il Cosmo, ma con le tre barre separate
+    è la Vita a rappresentare "vicino alla morte" - il Cosmo è solo
+    una risorsa per le tecniche, non ha più senso narrativo bruciarlo
+    per risvegliare un Senso), una volta a combattimento (non un
+    pulsante - vedi discussione in chat sul canone di Saint Seiya)."""
     if battle_state["seventh_sense_used"]:
         return
     senses = get_unlocked_senses(knight["player_level"])
     if not senses["settimo"]:
         return
-    threshold = knight["cosmo_max"] * SEVENTH_SENSE_COSMO_RATIO
-    if 0 < knight["cosmo_cur"] <= threshold:
+    threshold = knight["vita_max"] * SEVENTH_SENSE_COSMO_RATIO
+    if 0 < knight["vita_cur"] <= threshold:
         battle_state["player_charge_multiplier"] = max(
             battle_state["player_charge_multiplier"], SEVENTH_SENSE_MULTIPLIER
         )
@@ -160,23 +183,25 @@ def check_seventh_sense(knight: dict, battle_state: dict, log: list[str]) -> Non
 
 
 def check_eighth_sense(knight: dict, battle_state: dict, log: list[str]) -> None:
-    """Trascende la morte, una volta a combattimento."""
-    if knight["cosmo_cur"] > 0:
+    """Trascende la morte, una volta a combattimento - controlla la
+    VITA ora, non più il Cosmo (stessa correzione di check_seventh_sense
+    qui sopra)."""
+    if knight["vita_cur"] > 0:
         return
     senses = get_unlocked_senses(knight["player_level"])
     if senses["ottavo"] and not battle_state["eighth_sense_used"]:
         battle_state["eighth_sense_used"] = True
-        knight["cosmo_cur"] = 1
+        knight["vita_cur"] = 1
         log.append(
             f"✨ {knight['raw_name']} trascende la morte con l'OTTAVO SENSO "
-            f"e resta in piedi con l'ultimo respiro di Cosmo!"
+            f"e resta in piedi con l'ultimo respiro di Vita!"
         )
 
 
 def check_fight_over(knight: dict, opponent: dict) -> tuple[bool, Optional[str]]:
-    if opponent["cosmo_cur"] <= 0:
+    if opponent["vita_cur"] <= 0:
         return True, "player"
-    if knight["cosmo_cur"] <= 0:
+    if knight["vita_cur"] <= 0:
         return True, "opponent"
     return False, None
 
@@ -213,6 +238,14 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
     # toccati qui. Nessun messaggio quando scadono, sarebbe rumore: la
     # mappa li mostra già sparire da sola.
     tick_terrain_effects(terrain_effects)
+
+    # Il bonus di Carica scade di un turno ad ogni round, per entrambi
+    # (richiesto in chat, le tre barre) - un conto alla rovescia
+    # semplice, non un'altra tecnica coinvolta.
+    if battle_state.get("player_charged_turns", 0) > 0:
+        battle_state["player_charged_turns"] -= 1
+    if battle_state.get("opponent_charged_turns", 0) > 0:
+        battle_state["opponent_charged_turns"] -= 1
 
     # L'avversario si muove un po' a caso ad ogni round (Fase 1: solo
     # per "sembrare vivo" sulla mappa, nessun effetto tattico - vedi
@@ -259,9 +292,26 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
             out_of_range = not moved_too_much and not check_attack_range(
                 battle_state["player_position"], battle_state["opponent_position"], technique_name
             )
+            # Il Cosmo come risorsa per le tecniche (richiesto in chat,
+            # le tre barre): l'Attacco Base resta sempre gratuito, le
+            # tecniche vere costano Cosmo proporzionale alla potenza -
+            # senza abbastanza, si ricade sull'Attacco Base invece di
+            # bloccare il turno (il frontend dovrebbe già disabilitare
+            # il pulsante, questo resta solo un controllo di sicurezza).
+            cosmo_cost = technique_cosmo_cost(technique_name, technique_power)
+            insufficient_cosmo = cosmo_cost > 0 and knight["cosmo_cur"] < cosmo_cost
+            if insufficient_cosmo:
+                # Non abbastanza Cosmo per la tecnica scelta (richiesto
+                # in chat) - si ricade sull'Attacco Base invece di
+                # sprecare il turno; il frontend dovrebbe già impedire
+                # di arrivare qui disabilitando il pulsante.
+                technique_name, technique_power, technique_type = "Attacco Base", BASE_ATTACK_POWER, None
+                technique_launch_desc = technique_effect_desc = None
+                cosmo_cost = 0
         else:
             moved_too_much = False
             out_of_range = False
+            insufficient_cosmo = False
 
         # L'azzeramento vale per QUALUNQUE azione dichiarata (attacca O
         # carica) - bug corretto in chat: prima avveniva solo dentro il
@@ -279,6 +329,11 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
                 log.append(f"{knight['raw_name']} è troppo lontano per colpire con {technique_name} da qui!")
                 battle_state["last_effect"] = None
             else:
+                # Il Cosmo si spende nel momento in cui si tenta la
+                # tecnica, colpisca o meno (richiesto in chat, le tre
+                # barre) - hai comunque "acceso" il tuo Cosmo per quel
+                # gesto.
+                knight["cosmo_cur"] -= cosmo_cost
                 distance = distance_between(battle_state["player_position"], battle_state["opponent_position"])
                 range_mode, range_power_mult = range_effect(distance, technique_name)
                 # Ghiaccio (Fase 3): se sei TU a stare sulla chiazza quando
@@ -318,12 +373,15 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
                     defense = opponent_reacts(opponent)
                     if defense:
                         reduced = resolve_defense(dmg, defense["power"])
-                        opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced)
+                        reduced = apply_charge_defense(reduced, False, battle_state)
+                        opponent["vita_cur"] = max(0, opponent["vita_cur"] - reduced)
                         log.append(f"{msg} — {opponent['name']} para con {defense['name']}, il danno scende a {reduced}.")
                         battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": technique_type}
                         final_damage_dealt = reduced
                     else:
-                        opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg)
+                        dmg = apply_charge_defense(dmg, False, battle_state)
+                        msg = format_damage_message(msg, dmg)  # riallinea di nuovo: la Carica difensiva ha appena cambiato il danno
+                        opponent["vita_cur"] = max(0, opponent["vita_cur"] - dmg)
                         log.append(msg)
                         battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": technique_type}
                         final_damage_dealt = dmg
@@ -349,11 +407,21 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
                             battle_state.setdefault("opponent_statuses", []).append(status)
                             log.append(status_applied_message(opponent["name"], technique_name, status))
         else:  # carica
-            knight["cosmo_cur"] = max(1, knight["cosmo_cur"] - CHARGE_COSMO_COST)
-            battle_state["player_charge_multiplier"] = max(
-                battle_state["player_charge_multiplier"], CHARGE_DAMAGE_MULTIPLIER
-            )
-            log.append(f"{knight['raw_name']} carica il Cosmo, pronto a colpire più forte.")
+            # Le tre barre (richiesto in chat): Carica non spende più
+            # Cosmo per un bonus da un colpo solo - ora recupera Cosmo
+            # e concede un bonus di potenza (attacco E difesa) per
+            # alcuni turni, con un raffreddamento: non si può
+            # ricaricare finché il bonus precedente non è scaduto.
+            if battle_state["player_charged_turns"] > 0:
+                log.append(f"{knight['raw_name']} è già carico - il bonus non è ancora scaduto, non serve ricaricare.")
+            else:
+                restored = min(knight["cosmo_max"] - knight["cosmo_cur"], CHARGE_COSMO_RESTORE)
+                knight["cosmo_cur"] += restored
+                battle_state["player_charged_turns"] = CHARGE_TURNS_DURATION
+                log.append(
+                    f"{knight['raw_name']} carica il Cosmo (+{restored} Cosmo) - più forte in attacco e "
+                    f"in difesa per i prossimi {CHARGE_TURNS_DURATION} turni."
+                )
             battle_state["last_effect"] = None
 
         aging_msg = RosterManager.spend_time(conn, knight, ARENA_ROUND_MINUTES)
@@ -380,16 +448,31 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
 
     opp_action, detail = choose_opponent_action(opponent)
     if opp_action == "carica":
-        opponent["cosmo_cur"] = max(1, opponent["cosmo_cur"] - CHARGE_COSMO_COST)
-        battle_state["opponent_charge_multiplier"] = max(
-            battle_state["opponent_charge_multiplier"], CHARGE_DAMAGE_MULTIPLIER
-        )
-        log.append(f"{opponent['name']} carica il proprio Cosmo per il prossimo colpo.")
+        # Stesso raffreddamento del giocatore (richiesto in chat) - se
+        # l'IA "vorrebbe" ricaricare ma è già carica, il turno va
+        # comunque sprecato (stessa penalità che avrebbe un giocatore
+        # umano che clicca Carica per errore mentre è già attivo).
+        if battle_state["opponent_charged_turns"] > 0:
+            log.append(f"{opponent['name']} è già carico - il turno passa senza effetto.")
+        else:
+            restored = min(opponent["cosmo_max"] - opponent["cosmo_cur"], CHARGE_COSMO_RESTORE)
+            opponent["cosmo_cur"] += restored
+            battle_state["opponent_charged_turns"] = CHARGE_TURNS_DURATION
+            log.append(f"{opponent['name']} carica il proprio Cosmo (+{restored}) - più forte per alcuni turni.")
         aging_msg = RosterManager.spend_time(conn, knight, ARENA_ROUND_MINUTES)
         if aging_msg:
             log.append(aging_msg)
         battle_state["pending_opponent_technique"] = None
     else:
+        # Il Cosmo come risorsa vale anche per l'avversario (richiesto
+        # in chat, le tre barre: "l'IA deve rispettare lo stesso
+        # vincolo") - se non può permettersi la tecnica scelta, ricade
+        # sull'Attacco Base, gratuito.
+        opp_cosmo_cost = technique_cosmo_cost(detail["name"], detail["power"])
+        if opp_cosmo_cost > 0 and opponent["cosmo_cur"] < opp_cosmo_cost:
+            detail = {"name": "Attacco Base", "power": BASE_ATTACK_POWER, "tech_type": ""}
+            opp_cosmo_cost = 0
+        opponent["cosmo_cur"] -= opp_cosmo_cost
         battle_state["pending_opponent_technique"] = detail
         log.append(f"⚔ {opponent['name']} si prepara a colpire con {detail['name']}!")
 
@@ -471,8 +554,9 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
         # 1.0, invariata).
         cycle_mod = cycle_modifier(defense_technique.get("tech_type", ""), t.get("tech_type", ""))
         reduced = max(0, round(reduced / cycle_mod))
+        reduced = apply_charge_defense(reduced, True, battle_state)
         cycle_msg = cycle_narrative(defense_technique.get("tech_type", ""), t.get("tech_type", ""))
-        knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - reduced)
+        knight["vita_cur"] = max(0, knight["vita_cur"] - reduced)
         # Intreccio lancio+effetto della tecnica difensiva (richiesto in
         # chat: prima si vedeva solo il nome, "ti difendi con X" e
         # basta - la descrizione propria della tecnica non veniva mai
@@ -490,9 +574,14 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
         final_damage_dealt2 = reduced
     else:
         # 'contrattacca' e 'incassa' prendono il colpo PIENO, senza
-        # riduzione - il contrattacco non protegge, è tutto rischio in
-        # cambio della possibilità di ferire (richiesto in chat).
-        knight["cosmo_cur"] = max(0, knight["cosmo_cur"] - dmg2)
+        # riduzione da tecnica difensiva - il contrattacco non
+        # protegge, è tutto rischio in cambio della possibilità di
+        # ferire (richiesto in chat). Il bonus difensivo di Carica
+        # (richiesto in chat, le tre barre) si applica comunque: essere
+        # carichi rende più solidi a prescindere da come si reagisce.
+        dmg2 = apply_charge_defense(dmg2, True, battle_state)
+        msg2 = format_damage_message(msg2, dmg2)  # riallinea di nuovo: la Carica difensiva ha appena cambiato il danno
+        knight["vita_cur"] = max(0, knight["vita_cur"] - dmg2)
         log.append(msg2)
         battle_state["last_effect"] = {"attacker": "opponent", "outcome": "hit", "tech_type": t.get("tech_type", "")}
         final_damage_dealt2 = dmg2
@@ -530,6 +619,18 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
     # affinità elementale, effetti sul terreno) - solo che avviene qui,
     # subito dopo aver incassato il colpo avversario per intero.
     if action == "contrattacca" and counter_technique_name:
+        # Il Cosmo come risorsa vale anche per il contrattacco
+        # (richiesto in chat, le tre barre) - stesso trattamento
+        # dell'attacco dichiarato: senza abbastanza, ricade
+        # sull'Attacco Base.
+        counter_cosmo_cost = technique_cosmo_cost(counter_technique_name, counter_technique_power)
+        if counter_cosmo_cost > 0 and knight["cosmo_cur"] < counter_cosmo_cost:
+            counter_technique_name = "Attacco Base"
+            counter_technique_power = BASE_ATTACK_POWER
+            counter_technique_type = None
+            counter_technique_launch_desc = counter_technique_effect_desc = None
+            counter_cosmo_cost = 0
+
         roll_mode3 = "normale"
         cause_phrase3 = None
         event3 = maybe_trigger_event(knight, opponent)
@@ -548,6 +649,9 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
         if out_of_range3:
             log.append(f"{knight['raw_name']} è troppo lontano per colpire con {counter_technique_name} in contrattacco!")
         else:
+            # Il Cosmo si spende nel tentativo, colpisca o meno
+            # (richiesto in chat, stessa logica dell'attacco dichiarato).
+            knight["cosmo_cur"] -= counter_cosmo_cost
             distance3 = distance_between(battle_state["player_position"], battle_state["opponent_position"])
             range_mode3, range_power_mult3 = range_effect(distance3, counter_technique_name)
             ice_mode3 = "svantaggio" if position_in_ice_patch(
@@ -587,12 +691,15 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
                 opp_defense = opponent_reacts(opponent)
                 if opp_defense:
                     reduced3 = resolve_defense(dmg3, opp_defense["power"])
-                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - reduced3)
+                    reduced3 = apply_charge_defense(reduced3, False, battle_state)
+                    opponent["vita_cur"] = max(0, opponent["vita_cur"] - reduced3)
                     log.append(f"{msg3} — {opponent['name']} para con {opp_defense['name']}, il danno scende a {reduced3}.")
                     battle_state["last_effect"] = {"attacker": "player", "outcome": "blocked", "tech_type": counter_technique_type}
                     final_damage3 = reduced3
                 else:
-                    opponent["cosmo_cur"] = max(0, opponent["cosmo_cur"] - dmg3)
+                    dmg3 = apply_charge_defense(dmg3, False, battle_state)
+                    msg3 = format_damage_message(msg3, dmg3)  # riallinea di nuovo: la Carica difensiva ha appena cambiato il danno
+                    opponent["vita_cur"] = max(0, opponent["vita_cur"] - dmg3)
                     log.append(msg3)
                     battle_state["last_effect"] = {"attacker": "player", "outcome": "hit", "tech_type": counter_technique_type}
                     final_damage3 = dmg3
@@ -631,6 +738,12 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
 
 
 def finalize_fight(knight: dict) -> None:
-    """Placeholder come nella versione desktop: recupero completo del
-    Cosmo a fine scontro, in attesa di un sistema di recupero graduale."""
-    knight["cosmo_cur"] = knight["cosmo_max"]
+    """Le tre barre (richiesto in chat) - niente più guarigione
+    istantanea a fine scontro: Vita, Cosmo e Stamina si recuperano ora
+    gradualmente col tempo (riposo, allenamento - vedi
+    RosterManager.apply_daily_training), non di colpo. Il vecchio
+    comportamento era esplicitamente un placeholder "in attesa di un
+    sistema di recupero graduale" - quel sistema ora esiste. Funzione
+    lasciata vuota (non rimossa) per non dover toccare tutti i punti
+    che la richiamano a fine combattimento."""
+    pass
