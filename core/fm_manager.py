@@ -193,7 +193,7 @@ class RosterManager:
         # loro ultimo ricalcolo.
         last_tick = get_last_npc_tick_minutes(conn)
         if knight["game_minutes"] - last_tick >= WORLD_TICK_MINUTES_PER_DAY:
-            tick_world_events(conn, knight["game_minutes"] - last_tick)
+            tick_world_events(conn, knight["game_minutes"] - last_tick, knight["game_minutes"])
             set_last_npc_tick_minutes(conn, knight["game_minutes"])
 
         if new_year > previous_year:
