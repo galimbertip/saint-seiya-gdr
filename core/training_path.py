@@ -30,7 +30,7 @@ import random
 import sqlite3
 
 from database.db_manager import get_roster_entry, get_armor, get_techniques_for_armor
-from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
+from core.arena_manager import generate_full_name, generate_distinct_full_names
 
 TOTAL_STAGES = 20
 
@@ -94,7 +94,7 @@ def select_master(conn: sqlite3.Connection, divinity: str, faction: str) -> tupl
 
     armatura_maestro = random.choice(per_fazione[fascia_maestro])["name"]
     roster_entry = get_roster_entry(conn, armatura_maestro)
-    nome_maestro = roster_entry["npc_name"] if roster_entry else f"{random.choice(OPPONENT_FIRST_NAMES)} {random.choice(OPPONENT_SURNAMES)}"
+    nome_maestro = roster_entry["npc_name"] if roster_entry else generate_full_name()
     return nome_maestro, armatura_maestro
 
 
@@ -102,17 +102,12 @@ def generate_companions(exclude_name: str = "") -> tuple[str, str]:
     """Genera due compagni di addestramento (richiesto in chat: fin
     dall'inizio, non solo per la Prova Finale) - nessuna armatura
     propria, sono aspiranti come il personaggio. Stesso generatore di
-    nomi già usato per gli avversari in Arena. `exclude_name` evita che
-    un compagno finisca per chiamarsi esattamente come il Maestro -
-    pescando dallo stesso piccolo elenco di nomi, è capitato per puro
-    caso durante i test."""
-    for _ in range(20):  # tentativi ampiamente sufficienti, la collisione è rara
-        nomi = random.sample(OPPONENT_FIRST_NAMES, 2)
-        cognomi = random.sample(OPPONENT_SURNAMES, 2)
-        c1, c2 = f"{nomi[0]} {cognomi[0]}", f"{nomi[1]} {cognomi[1]}"
-        if exclude_name not in (c1, c2):
-            return c1, c2
-    return c1, c2  # non dovrebbe mai arrivarci, ma non blocchiamo la creazione per questo
+    nomi già usato per gli avversari in Arena (coerenti per gruppo
+    culturale - richiesto in chat). `exclude_name` evita che un
+    compagno finisca per chiamarsi esattamente come il Maestro."""
+    exclude = (exclude_name,) if exclude_name else ()
+    c1, c2 = generate_distinct_full_names(2, exclude=exclude)
+    return c1, c2
 
 
 # Le 20 tappe (richiesto in chat: tutto l'addestramento dev'essere
