@@ -19,7 +19,7 @@ from datetime import datetime
 
 from database.db_manager import (
     get_armor, list_armors_for_player_level, get_roster_entry, insert_roster_entry, claim_roster_slot,
-    add_biography_entry,
+    add_biography_entry, get_world_minutes,
 )
 from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
 from core.training_path import select_master, generate_companions
@@ -114,10 +114,15 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     cosmo = STARTING_COSMO_BASE + armor["level"]
     full_display_name = f"{raw_name} {surname}".strip()
     formal_name = f"{full_display_name} di {armor_name}"
-    # Calendario reale (richiesto in chat): il personaggio "nasce" nel
-    # momento vero in cui viene creato - il calendario di gioco parte
-    # da qui, non da un "Anno 1" fittizio.
+    # Calendario UNICO condiviso da tutti (richiesto in chat, stile
+    # Football Manager) - il personaggio "nasce" alla data ATTUALE del
+    # mondo condiviso, non al giorno zero di un proprio conteggio
+    # personale: se il mondo è già "avanti" per via di altri
+    # personaggi/PNG, il nuovo nasce comunque allineato a tutti.
+    # created_at resta salvato solo come nota (quando in REALTÀ è stato
+    # creato questo record) - non più usato per il calendario di gioco.
     created_at = datetime.now().isoformat()
+    world_minutes_at_birth = get_world_minutes(conn)
 
     # Apprendistato (richiesto in chat): un personaggio che nasce a
     # livello 1 è un vero esordiente - deve completare l'addestramento
@@ -137,13 +142,15 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
         INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
                               str, dex, con, tec, vol, player_level, xp, stamina, age,
                               surname, gender, origin, build, biography, skin_tone, hair_color, created_at,
-                              is_knight, master_name, master_armor_name, companion1_name, companion2_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              is_knight, master_name, master_armor_name, companion1_name, companion2_name,
+                              game_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (formal_name, raw_name, armor_name, cosmo, cosmo,
          stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
          age, surname, gender, origin, build, biography, skin_tone, hair_color, created_at,
-         is_knight, master_name, master_armor_name, companion1_name, companion2_name),
+         is_knight, master_name, master_armor_name, companion1_name, companion2_name,
+         world_minutes_at_birth),
     )
     conn.commit()
 
@@ -153,9 +160,9 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
         # Diario auto-scritto (richiesto in chat): il momento in cui
         # inizia l'addestramento merita una voce, con Maestro/armatura e
         # compagni - prima non c'era traccia di questo nel Diario.
-        cal = get_calendar_display(created_at, 0)
+        cal = get_calendar_display(world_minutes_at_birth)
         add_biography_entry(
-            conn, cur.lastrowid, 0,
+            conn, cur.lastrowid, world_minutes_at_birth,
             f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {raw_name} inizia il proprio "
             f"addestramento sotto la guida di {master_name} ({master_armor_name}), "
             f"insieme a {companion1_name} e {companion2_name}.",
