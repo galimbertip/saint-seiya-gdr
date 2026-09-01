@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS world_clock (
     minutes INTEGER NOT NULL DEFAULT 0,
     last_npc_tick_minutes INTEGER NOT NULL DEFAULT 0
 );
-INSERT OR IGNORE INTO world_clock (id, minutes, last_npc_tick_minutes) VALUES (1, 0, 0);
+INSERT OR IGNORE INTO world_clock (id, minutes) VALUES (1, 0);
 
 CREATE TABLE IF NOT EXISTS armors (
     name TEXT PRIMARY KEY,
