@@ -25,9 +25,10 @@ DB_PATH = Path(__file__).resolve().parent.parent / "database" / "saint_seiya.db"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS world_clock (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    minutes INTEGER NOT NULL DEFAULT 0
+    minutes INTEGER NOT NULL DEFAULT 0,
+    last_npc_tick_minutes INTEGER NOT NULL DEFAULT 0
 );
-INSERT OR IGNORE INTO world_clock (id, minutes) VALUES (1, 0);
+INSERT OR IGNORE INTO world_clock (id, minutes, last_npc_tick_minutes) VALUES (1, 0, 0);
 
 CREATE TABLE IF NOT EXISTS armors (
     name TEXT PRIMARY KEY,
@@ -136,6 +137,10 @@ CREATE TABLE IF NOT EXISTS roster (
     armor_name TEXT PRIMARY KEY,
     npc_name TEXT NOT NULL,
     claimed_by_knight_id INTEGER,
+    npc_alive INTEGER NOT NULL DEFAULT 1,
+    npc_generation INTEGER NOT NULL DEFAULT 1,
+    npc_fate TEXT NOT NULL DEFAULT '',
+    last_world_event_minutes INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
@@ -306,6 +311,24 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.commit()
         log.info("Migrazione: aggiunte colonne vita_cur/vita_max a knights (le tre barre).")
 
+    # Stessa logica di migrazione, ma per il roster (richiesto in chat:
+    # il mondo che vive per conto suo) - i PNG ora possono morire ed
+    # essere sostituiti, non sono più nomi statici.
+    roster_columns = {row["name"] for row in conn.execute("PRAGMA table_info(roster)")}
+    if "npc_alive" not in roster_columns:
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_alive INTEGER NOT NULL DEFAULT 1")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_generation INTEGER NOT NULL DEFAULT 1")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_fate TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE roster ADD COLUMN last_world_event_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne npc_alive/npc_generation/npc_fate/last_world_event_minutes a roster.")
+
+    world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
+    if "last_npc_tick_minutes" not in world_clock_columns:
+        conn.execute("ALTER TABLE world_clock ADD COLUMN last_npc_tick_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna last_npc_tick_minutes a world_clock.")
+
 
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -345,6 +368,21 @@ def advance_world_minutes(conn: sqlite3.Connection, minutes: int) -> int:
     conn.execute("UPDATE world_clock SET minutes = minutes + ? WHERE id = 1", (minutes,))
     conn.commit()
     return get_world_minutes(conn)
+
+
+def get_last_npc_tick_minutes(conn: sqlite3.Connection) -> int:
+    """Il mondo che vive per conto suo (richiesto in chat) - l'ultimo
+    punto dell'orologio del mondo fino a cui i PNG sono già stati
+    simulati, per non doverli ricalcolare tutti ad ogni minuscolo
+    avanzamento (sarebbe sprecato farlo ad ogni round di
+    combattimento)."""
+    row = conn.execute("SELECT last_npc_tick_minutes FROM world_clock WHERE id = 1").fetchone()
+    return row["last_npc_tick_minutes"] if row else 0
+
+
+def set_last_npc_tick_minutes(conn: sqlite3.Connection, minutes: int) -> None:
+    conn.execute("UPDATE world_clock SET last_npc_tick_minutes = ? WHERE id = 1", (minutes,))
+    conn.commit()
 
 
 def refresh_armors_catalog(conn: sqlite3.Connection | None = None) -> int:
@@ -458,7 +496,7 @@ def get_roster(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     livello, così la pagina può raggrupparle a colpo d'occhio."""
     return conn.execute(
         """
-        SELECT r.armor_name, r.npc_name, r.claimed_by_knight_id,
+        SELECT r.armor_name, r.npc_name, r.claimed_by_knight_id, r.npc_generation, r.npc_fate,
                a.divinity, a.faction, a.level,
                k.raw_name AS claimed_by_raw_name, k.surname AS claimed_by_surname,
                k.player_level AS claimed_by_level
