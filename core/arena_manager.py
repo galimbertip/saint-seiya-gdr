@@ -40,35 +40,186 @@ DEFAULT_DIFFICULTY = "medio"
 # usato per il giocatore) ammorbidisce la frase in ogni caso. Elenco
 # volutamente piccolo e generico, non collegato a nessuna provenienza
 # specifica (quella è una scelta narrativa del giocatore, non qui).
-OPPONENT_FIRST_NAMES = [
-    # Ampliato molto (richiesto in chat: troppi doppioni con solo 15
-    # nomi pescati a ripetizione per Maestri, compagni, avversari e
-    # Guardiani delle missioni) - mix internazionale ampio, senza
-    # legame con un genere specifico (i PNG di questo gioco non hanno
-    # un campo sesso assegnato).
-    "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri",
-    "Amara", "Sofia", "Yuki", "Elena", "Priya", "Kenji", "Wei", "Hiroshi", "Ivan",
-    "Carlos", "Giulia", "Anastasia", "Mateus", "Fatima", "Omar", "Ines", "Nikolai",
-    "Sven", "Astrid", "Bjorn", "Freya", "Hans", "Greta", "Pierre", "Camille", "Antoine",
-    "Isabelle", "Klaus", "Ingrid", "Stefan", "Katarina", "Mikhail", "Olga", "Boris",
-    "Tatiana", "Ravi", "Ananya", "Arjun", "Meera", "Jin", "Hana", "Ryo", "Sakura",
-    "Min-jun", "So-yeon", "Tae-woo", "Ji-eun", "Ahmed", "Layla", "Yusuf", "Zara",
-    "Adaeze", "Kwame", "Chidinma", "Kofi", "Thabo", "Naledi", "Sipho", "Lucas", "Beatriz",
-    "Rodrigo", "Valentina", "Santiago", "Camila", "Mateo", "Lucia", "Alejandro", "Paula",
-    "Nikos", "Despina", "Dimitri", "Calista", "Costas", "Xanthe", "Alexandros", "Eleni",
-]
-OPPONENT_SURNAMES = [
-    "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau",
-    "Petrova", "Takeda", "Zhang", "Yamamoto", "Ivanov", "Garcia", "Muller", "Dubois",
-    "Andersson", "Kowalski", "Hernandez", "Sato", "Suzuki", "Nakamura", "Kim", "Park",
-    "Lee", "Singh", "Sharma", "Kumar", "Al-Rashid", "Hassan", "Ibrahim", "Diallo",
-    "Okafor", "Mensah", "Ndlovu", "Dlamini", "Adeyemi", "Popescu", "Nowak", "Novak",
-    "Kovac", "Horvat", "Larsen", "Hansen", "Berg", "Lindqvist", "Rousseau", "Lefebvre",
-    "Bernard", "Martin", "Schmidt", "Weber", "Wagner", "Fischer", "Romano", "Bianchi",
-    "Ferrari", "Esposito", "Alves", "Pereira", "Santos", "Oliveira", "Souza", "Reyes",
-    "Torres", "Ramirez", "Vasquez", "Castro", "Morales", "Chen", "Liu", "Huang",
-    "Wu", "Watanabe", "Kobayashi", "Inoue",
-]
+NAME_POOLS = {
+    # Nomi e cognomi raggruppati per area culturale (corretto in chat:
+    # prima erano due liste piatte mescolate del tutto a caso, capitava
+    # di ottenere accostamenti senza senso come "Andrei Rodriguez" -
+    # ogni nome generato ora pesca nome E cognome dallo STESSO gruppo.
+    # Ampliato molto rispetto a prima, e con qualche gruppo nuovo.
+    "Italia": {
+        "first": ["Marco", "Andrea", "Luca", "Giulia", "Sofia", "Alessandro", "Francesca",
+                   "Matteo", "Chiara", "Davide", "Elena", "Simone", "Valentina", "Riccardo",
+                   "Martina", "Lorenzo", "Federica", "Gabriele", "Alessia", "Tommaso"],
+        "last": ["Rossi", "Romano", "Bianchi", "Ferrari", "Esposito", "Russo", "Colombo",
+                  "Ricci", "Marino", "Greco", "Bruno", "Gallo", "Conti", "De Luca", "Mancini",
+                  "Costa", "Giordano", "Rizzo", "Lombardi", "Moretti"],
+    },
+    "Russia": {
+        "first": ["Aleksei", "Dmitri", "Ivan", "Elena", "Anastasia", "Nikolai", "Mikhail",
+                   "Olga", "Boris", "Tatiana", "Sergei", "Natalia", "Viktor", "Yelena",
+                   "Pavel", "Irina", "Andrei", "Ksenia", "Vladimir", "Marina"],
+        "last": ["Volkov", "Petrova", "Ivanov", "Sokolov", "Kuznetsova", "Popov", "Novikova",
+                  "Morozov", "Volkova", "Fedorov", "Orlova", "Belov", "Zaitseva", "Egorov",
+                  "Golubev", "Sorokina", "Vasiliev", "Kozlova", "Antonov", "Baranova"],
+    },
+    "Spagna": {
+        "first": ["Diego", "Carlos", "Isabel", "Javier", "Lucia", "Miguel", "Marta",
+                   "Sergio", "Elena", "Pablo", "Cristina", "Alvaro", "Nuria", "Ruben",
+                   "Beatriz", "Adrian", "Rocio", "Ivan", "Pilar", "Hugo"],
+        "last": ["Fernandez", "Garcia", "Lopez", "Martinez", "Gonzalez", "Sanchez",
+                  "Perez", "Gomez", "Diaz", "Alvarez", "Moreno", "Munoz", "Romero",
+                  "Navarro", "Iglesias", "Vega", "Serrano", "Blanco", "Suarez", "Cano"],
+    },
+    "America Latina": {
+        "first": ["Rafael", "Rodrigo", "Valentina", "Santiago", "Camila", "Mateo", "Paula",
+                   "Alejandro", "Gabriela", "Emiliano", "Ximena", "Nicolas", "Renata",
+                   "Sebastian", "Daniela", "Joaquin", "Fernanda", "Tomas", "Antonella", "Bruno"],
+        "last": ["Hernandez", "Torres", "Ramirez", "Vasquez", "Castro", "Morales", "Reyes",
+                  "Flores", "Gutierrez", "Jimenez", "Ortiz", "Chavez", "Mendoza", "Aguilar",
+                  "Vargas", "Contreras", "Rojas", "Guerrero", "Paredes", "Salazar"],
+    },
+    "Brasile/Portogallo": {
+        "first": ["Lucas", "Beatriz", "Mateus", "Ana", "Rafael", "Juliana", "Gustavo",
+                   "Larissa", "Thiago", "Camila", "Bruno", "Fernanda", "Diego", "Patricia",
+                   "Felipe", "Vitoria", "Andre", "Carolina", "Rodrigo", "Amanda"],
+        "last": ["Silva", "Alves", "Pereira", "Santos", "Oliveira", "Souza", "Costa",
+                  "Ferreira", "Rodrigues", "Almeida", "Nascimento", "Carvalho", "Araujo",
+                  "Ribeiro", "Barbosa", "Cardoso", "Correia", "Teixeira", "Monteiro", "Pinto"],
+    },
+    "Cina": {
+        "first": ["Chen", "Wei", "Jin", "Mei", "Tao", "Xiu", "Feng", "Lian", "Hao", "Ying",
+                   "Bo", "Fang", "Jian", "Xia", "Qiang", "Na", "Yun", "Peng", "Lan", "Rong"],
+        "last": ["Wang", "Zhang", "Chen", "Liu", "Huang", "Wu", "Li", "Yang", "Zhao",
+                  "Xu", "Sun", "Ma", "Zhu", "Hu", "Guo", "He", "Gao", "Lin", "Luo", "Zheng"],
+    },
+    "Giappone": {
+        "first": ["Yuki", "Kenji", "Hiroshi", "Ryo", "Sakura", "Hana", "Kazuki", "Akira",
+                   "Yumi", "Daiki", "Rina", "Sota", "Emi", "Haruto", "Nanami", "Kaito",
+                   "Yui", "Shota", "Aoi", "Ren"],
+        "last": ["Takeda", "Yamamoto", "Sato", "Suzuki", "Nakamura", "Watanabe", "Kobayashi",
+                  "Inoue", "Kimura", "Hayashi", "Saito", "Shimizu", "Yamaguchi", "Matsumoto",
+                  "Ikeda", "Yoshida", "Yamada", "Sasaki", "Endo", "Fujita"],
+    },
+    "Corea": {
+        "first": ["Min-jun", "So-yeon", "Tae-woo", "Ji-eun", "Hyun-woo", "Yu-jin", "Seo-yun",
+                   "Jun-ho", "Ha-eun", "Do-yoon", "Eun-ji", "Jae-min", "Su-bin", "Min-seo",
+                   "Woo-jin", "Ye-jin", "Sung-min", "Ga-eun"],
+        "last": ["Kim", "Park", "Lee", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim",
+                  "Han", "Oh", "Seo", "Shin", "Kwon", "Hwang", "Ahn", "Song", "Yoo", "Hong"],
+    },
+    "Scandinavia": {
+        "first": ["Sven", "Astrid", "Bjorn", "Freya", "Erik", "Ingrid", "Lars", "Sigrid",
+                   "Magnus", "Elin", "Oskar", "Maja", "Anders", "Karin", "Gustav", "Nora",
+                   "Henrik", "Linnea", "Filip", "Saga"],
+        "last": ["Nilsson", "Andersson", "Larsen", "Hansen", "Berg", "Lindqvist", "Karlsson",
+                  "Johansson", "Eriksson", "Olsen", "Pedersen", "Nielsen", "Svensson",
+                  "Gustafsson", "Holm", "Lund", "Dahl", "Bergstrom", "Sandberg", "Lindgren"],
+    },
+    "Germania": {
+        "first": ["Hans", "Greta", "Klaus", "Stefan", "Katarina", "Ingrid", "Wolfgang",
+                   "Ursula", "Dieter", "Helga", "Jurgen", "Monika", "Werner", "Brigitte",
+                   "Frank", "Sabine", "Rainer", "Petra", "Uwe", "Karin"],
+        "last": ["Muller", "Schmidt", "Weber", "Wagner", "Fischer", "Becker", "Hoffmann",
+                  "Schulz", "Koch", "Bauer", "Richter", "Klein", "Wolf", "Schroeder",
+                  "Neumann", "Braun", "Zimmermann", "Krause", "Lange", "Werner"],
+    },
+    "Francia": {
+        "first": ["Pierre", "Camille", "Antoine", "Isabelle", "Jean", "Marie", "Nicolas",
+                   "Sophie", "Julien", "Claire", "Thomas", "Celine", "Laurent", "Aurelie",
+                   "Vincent", "Manon", "Olivier", "Charlotte", "Mathieu", "Louise"],
+        "last": ["Moreau", "Dubois", "Rousseau", "Lefebvre", "Bernard", "Martin", "Petit",
+                  "Durand", "Leroy", "Simon", "Laurent", "Michel", "Garnier", "Faure",
+                  "Andre", "Mercier", "Blanc", "Guerin", "Boyer", "Fontaine"],
+    },
+    "India": {
+        "first": ["Priya", "Ravi", "Ananya", "Arjun", "Meera", "Vikram", "Kavya", "Rohan",
+                   "Divya", "Aditya", "Neha", "Karan", "Pooja", "Sanjay", "Anjali", "Rahul",
+                   "Shreya", "Vikas", "Deepika", "Amit"],
+        "last": ["Singh", "Sharma", "Kumar", "Patel", "Gupta", "Reddy", "Rao", "Nair",
+                  "Iyer", "Menon", "Chopra", "Malhotra", "Verma", "Joshi", "Desai",
+                  "Kapoor", "Mehta", "Bhat", "Pillai", "Choudhury"],
+    },
+    "Mondo Arabo": {
+        "first": ["Ahmed", "Layla", "Yusuf", "Zara", "Omar", "Fatima", "Karim", "Amira",
+                   "Hassan", "Nadia", "Tariq", "Yasmin", "Khalid", "Rania", "Samir",
+                   "Leila", "Bilal", "Noor", "Malik", "Salma"],
+        "last": ["Al-Rashid", "Hassan", "Ibrahim", "Khoury", "Farouk", "Mansour", "Saleh",
+                  "Haddad", "Aziz", "Karam", "Nasser", "Qureshi", "Zaidi", "Rahman",
+                  "Sultan", "Habib", "Karimi", "Youssef", "Fares", "Jaber"],
+    },
+    "Africa Occidentale": {
+        "first": ["Adaeze", "Kwame", "Chidinma", "Kofi", "Amara", "Ifeoma", "Kwabena",
+                   "Ngozi", "Yaw", "Chinelo", "Kojo", "Adaobi", "Emeka", "Efua", "Obinna",
+                   "Akosua", "Chukwu", "Ama", "Nnamdi", "Abena"],
+        "last": ["Okafor", "Mensah", "Adeyemi", "Diallo", "Okonkwo", "Boateng", "Eze",
+                  "Owusu", "Nwosu", "Asante", "Chukwu", "Osei", "Balogun", "Appiah",
+                  "Uche", "Danso", "Adebayo", "Yeboah", "Nnamdi", "Agyeman"],
+    },
+    "Africa Meridionale": {
+        "first": ["Thabo", "Naledi", "Sipho", "Lindiwe", "Themba", "Nomvula", "Bongani",
+                   "Zanele", "Sizwe", "Thandiwe", "Mandla", "Nokuthula", "Vusi", "Precious",
+                   "Lwazi", "Ntombi", "Sibusiso", "Zodwa"],
+        "last": ["Ndlovu", "Dlamini", "Nkosi", "Khumalo", "Mokoena", "Sithole", "Zulu",
+                  "Mahlangu", "Radebe", "Ngcobo", "Mthembu", "Sibeko", "Molefe", "Tshabalala",
+                  "Nkomo", "Mabaso", "Cele", "Buthelezi"],
+    },
+    "Grecia": {
+        "first": ["Nikos", "Despina", "Dimitri", "Calista", "Costas", "Xanthe", "Alexandros",
+                   "Eleni", "Yannis", "Sofia", "Apostolos", "Ariadne", "Stavros", "Ioanna",
+                   "Petros", "Katerina", "Vasilis", "Theodora"],
+        "last": ["Papadopoulos", "Georgiadis", "Konstantinidis", "Nikolopoulos",
+                  "Christopoulos", "Antoniou", "Antonopoulos", "Anastasiou", "Alexiou",
+                  "Savvidis", "Vasiliadis", "Stavridis", "Andreou", "Angelopoulos",
+                  "Dimitriou", "Papadakis", "Moraitis", "Karagiannis"],
+    },
+    "Polonia": {
+        "first": ["Kacper", "Zofia", "Tomasz", "Agnieszka", "Wojciech", "Magdalena",
+                   "Krzysztof", "Anna", "Pawel", "Katarzyna", "Michal", "Ewa", "Piotr",
+                   "Joanna", "Grzegorz", "Barbara"],
+        "last": ["Kowalski", "Nowak", "Wisniewski", "Wojcik", "Kaminski", "Lewandowski",
+                  "Zielinski", "Szymanski", "Dabrowski", "Kozlowski", "Jankowski",
+                  "Mazur", "Kwiatkowski", "Krawczyk", "Piotrowski", "Grabowski"],
+    },
+    "Vietnam": {
+        "first": ["Minh", "Linh", "Hoang", "Mai", "Duc", "Huong", "Nam", "Thao", "Tuan",
+                   "Trang", "Khanh", "Anh", "Phuong", "Long", "Ngoc", "Quang"],
+        "last": ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Phan", "Vu", "Dang", "Bui",
+                  "Do", "Ho", "Ngo", "Duong", "Ly"],
+    },
+    "Turchia": {
+        "first": ["Emre", "Elif", "Mehmet", "Zeynep", "Burak", "Aylin", "Can", "Selin",
+                   "Kerem", "Deniz", "Baris", "Ipek", "Yusuf", "Ceren", "Onur", "Gizem"],
+        "last": ["Yilmaz", "Kaya", "Demir", "Sahin", "Celik", "Yildiz", "Aydin", "Ozturk",
+                  "Arslan", "Dogan", "Kilic", "Aslan", "Cetin", "Ozdemir"],
+    },
+}
+
+
+def generate_full_name() -> str:
+    """Un nome completo, coerente (richiesto in chat) - pesca nome E
+    cognome dallo STESSO gruppo culturale, non più due liste piatte
+    mescolate a caso."""
+    group = random.choice(list(NAME_POOLS.values()))
+    return f"{random.choice(group['first'])} {random.choice(group['last'])}"
+
+
+def generate_distinct_full_names(n: int, exclude: tuple[str, ...] = ()) -> list[str]:
+    """`n` nomi completi, ciascuno del proprio gruppo scelto a parte,
+    evitando ripetizioni esatte tra loro o con `exclude` (richiesto in
+    chat: capitava per puro caso che un compagno finisse per chiamarsi
+    come il Maestro, pescando da liste piccole)."""
+    names: list[str] = []
+    attempts = 0
+    while len(names) < n and attempts < n * 20:
+        attempts += 1
+        candidate = generate_full_name()
+        if candidate not in names and candidate not in exclude:
+            names.append(candidate)
+    while len(names) < n:  # non dovrebbe mai servire, con pool così ampi
+        names.append(generate_full_name())
+    return names
+
+
 
 # PLACEHOLDER: bonus di "sintonia cosmica" alla Classe Armatura.
 # calculate_ac si aspettava un valore piccolo (0-100 circa), ma qui il
@@ -114,7 +265,7 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
     con_value = 10 + armor["level"] // 10
     vita = 100 + con_value * 2  # stessa formula di VITA_BASE/VITA_PER_CON in character_factory.py
 
-    opponent_full_name = f"{random.choice(OPPONENT_FIRST_NAMES)} {random.choice(OPPONENT_SURNAMES)}"
+    opponent_full_name = generate_full_name()
     return {
         "name": f"{opponent_full_name} di {armor['name']}",
         "armor_name": armor["name"],
