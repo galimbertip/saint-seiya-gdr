@@ -293,6 +293,10 @@ const state = {
   missionChoiceResult: null, // l'esito di una scelta di un nodo delle Colonne, da mostrare prima di procedere
   missionEndingResult: null, // il risultato di missione completata/fallita via duello, da mostrare prima di tornare all elenco
   confirmingAbandon: false,  // sta confermando l'abbandono di una missione?
+  confirmingFateChoice: null, // sta confermando una delle alternative al fallimento della Prova Finale?
+  deathResult: null,         // l'ultimo ricordo del personaggio appena morto (richiesto in chat), prima di tornare alla Sala dei Cavalieri
+  soldierStatus: null,       // lo stato del Soldato Semplice (attività disponibili), null finché non caricato
+  soldierActivityResult: null, // l'esito appena arrivato di un'attività da Soldato, da mostrare prima di procedere
   geoOrigins: null,          // albero Continente -> Macrozona -> Nazione per la Provenienza, null finché non caricato
   showTutorial: false,       // il tutorial iniziale è aperto in questo momento?
   tutorialStep: 0,           // a che passo del tutorial siamo
@@ -365,6 +369,10 @@ async function selectCharacter(id) {
   state.missionChoiceResult = null;
   state.missionEndingResult = null;
   state.confirmingAbandon = false;
+  state.confirmingFateChoice = null;
+  state.deathResult = null;
+  state.soldierStatus = null;
+  state.soldierActivityResult = null;
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -742,8 +750,13 @@ function applyArenaResult(result) {
     // apertura della Scheda Cavaliere.
     state.biography = null;
     if (wasTrial) {
-      state.trialResult = { passed: result.won };
-      state.trainingPath = null;  // si ricarica da sola (tappa di ripreparazione, o nulla se ora è Cavaliere)
+      // Le alternative al fallimento (richiesto in chat) - non si
+      // resetta più da sola la tappa di ripreparazione: la scelta
+      // (ritenta, riaddestrati altrove, diventa Soldato Semplice,
+      // muori) spetta ora al giocatore, gestita dentro
+      // renderTrainingPathTab finché sceglie - trainingPath non si
+      // ricarica ancora qui, solo dopo la scelta.
+      state.trialResult = { passed: result.won, companionFates: result.companion_fates || null };
     } else if (wasSpar) {
       // Lo scontro leggero avanza comunque, vinca o perda (richiesto
       // in chat) - ma merita comunque un riscontro chiaro prima di
@@ -1025,8 +1038,11 @@ function renderGameScreen() {
   // Finché è Apprendista (richiesto in chat), Allenamento e Arena sono
   // sostituiti da un'unica scheda "Percorso" - non ha senso mostrarli
   // se sono comunque bloccati lato server.
+  const isSoldier = !k.is_knight && k.apprentice_status === "soldier";
   const tabDefs = k.is_knight
     ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"]]
+    : isSoldier
+    ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"]]
     : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
   // Allenamento e Arena ora restano visibili anche da Apprendista
   // (richiesto in chat: prima sparivano del tutto dalla barra, e senza
@@ -1064,6 +1080,7 @@ function renderGameScreen() {
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
   else if (state.gameTab === "missions") wrap.append(renderMissionsTab());
+  else if (state.gameTab === "soldier") wrap.append(renderSoldierTab());
   else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
 
   wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
@@ -1198,6 +1215,54 @@ async function startFinalTrial() {
     const result = await api(`/characters/${state.characterId}/training-path/trial/start`, { method: "POST" });
     state.battle = result.battle_state;
     state.arenaLog = [];
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function retryTrial() {
+  try {
+    await api(`/characters/${state.characterId}/training-path/trial/retry`, { method: "POST" });
+    state.trialResult = null;
+    state.trainingPath = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function retrainForNewArmor() {
+  try {
+    await api(`/characters/${state.characterId}/training-path/trial/retrain`, { method: "POST" });
+    await refreshCharacter();
+    state.trialResult = null;
+    state.trainingPath = null;
+    state.confirmingFateChoice = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function becomeSoldier() {
+  try {
+    await api(`/characters/${state.characterId}/training-path/trial/become-soldier`, { method: "POST" });
+    await refreshCharacter();
+    state.trialResult = null;
+    state.trainingPath = null;
+    state.confirmingFateChoice = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function killCharacterAfterTrial() {
+  try {
+    state.deathResult = await api(`/characters/${state.characterId}/training-path/trial/die`, { method: "POST" });
+    state.trialResult = null;
+    state.confirmingFateChoice = null;
     render();
   } catch (e) {
     showError(e.message);
@@ -1649,6 +1714,23 @@ function renderTrainingPathTab() {
   // parte prima di procedere (richiesto in chat: dev'essere possibile
   // fallire, e il fallimento va raccontato, non solo un numero che
   // cambia) - la cronaca dello scontro appena finito resta in vista.
+  // La morte del personaggio (richiesto in chat: un'alternativa vera
+  // al fallimento) - mostrata a parte perché a questo punto il
+  // personaggio non esiste più nel database, non ha senso ricaricare
+  // nient'altro.
+  if (state.deathResult) {
+    const card = el("div", { class: "card" });
+    card.append(el("h2", {}, "💀 Fine del cammino"));
+    card.append(el("p", {}, `${state.deathResult.raw_name} non ce l'ha fatta. L'armatura ${state.deathResult.armor_name}, per cui aveva dato tutto se stesso, tornerà a cercare qualcun altro degno di indossarla.`));
+    if (state.deathResult.companion_fates) {
+      card.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Nel frattempo:"));
+      for (const fate of state.deathResult.companion_fates) card.append(el("p", { class: "hint" }, fate));
+    }
+    card.append(el("button", { onClick: goToKnightsHall }, "Torna alla Sala dei Cavalieri"));
+    wrap.append(card);
+    return wrap;
+  }
+
   if (state.trialResult) {
     const resultCard = el("div", { class: "card" });
     if (state.trialResult.passed) {
@@ -1658,14 +1740,44 @@ function renderTrainingPathTab() {
       resultCard.append(el("h2", {}, "🏆 Sei un Cavaliere"));
       resultCard.append(el("p", {}, `Il tuo Cosmo esplode in un'ultima, incontenibile fiammata - e quando si placa, non sei più l'aspirante che ha varcato quella soglia settimane fa. ${state.character.armor.name}, per cui hai sanguinato e sudato, è finalmente tua da indossare. Non è solo un'armatura: è la prova vivente che ogni singola caduta, ogni fallimento, ogni notte insonne è servita a qualcosa.`));
       resultCard.append(el("p", { class: "hint" }, "Allenamento e Arena sono ora sbloccati."));
+      if (state.trialResult.companionFates) {
+        resultCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Nel frattempo, per i tuoi compagni:"));
+        for (const fate of state.trialResult.companionFates) resultCard.append(el("p", { class: "hint" }, fate));
+      }
+      const logBox = el("div", { class: "log-box" });
+      for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+      resultCard.append(logBox);
+      resultCard.append(el("button", { onClick: closeTrialResult }, "⚔ Indossa l'Armatura"));
     } else {
       resultCard.append(el("h2", {}, "Prova Finale non superata"));
-      resultCard.append(el("p", { class: "hint" }, "Non oggi. Torna a prepararti: potrai riprovare quando vuoi."));
+      const logBox = el("div", { class: "log-box" });
+      for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
+      resultCard.append(logBox);
+
+      // Le alternative al fallimento (richiesto in chat): compaiono
+      // ad OGNI fallimento, non solo dopo un certo numero di tentativi
+      // - le tre più drastiche chiedono conferma prima di procedere.
+      const FATE_CONFIRM_TEXT = {
+        retrain: "Rinuncerai a quest'armatura per sempre, e con essa ai tuoi compagni d'addestramento - il loro destino si deciderà insieme al tuo. Confermi?",
+        soldier: "Rinuncerai all'armatura per diventare Soldato Semplice - un percorso diverso, ma pur sempre un percorso. Anche i tuoi compagni avranno il loro destino deciso adesso. Confermi?",
+        death: "Questa scelta è definitiva: il personaggio smetterà di esistere. Confermi?",
+      };
+      const FATE_CONFIRM_ACTION = { retrain: retrainForNewArmor, soldier: becomeSoldier, death: killCharacterAfterTrial };
+
+      if (state.confirmingFateChoice) {
+        resultCard.append(el("p", { style: "margin-top:10px;" }, FATE_CONFIRM_TEXT[state.confirmingFateChoice]));
+        const row = el("div", { class: "row" });
+        row.append(el("button", { onClick: FATE_CONFIRM_ACTION[state.confirmingFateChoice] }, "Sì, confermo"));
+        row.append(el("button", { class: "secondary", onClick: () => { state.confirmingFateChoice = null; render(); } }, "No, torna indietro"));
+        resultCard.append(row);
+      } else {
+        resultCard.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Non oggi. Cosa vuoi fare adesso?"));
+        resultCard.append(el("button", { onClick: retryTrial }, "🔁 Ritenta"));
+        resultCard.append(el("button", { class: "secondary", onClick: () => { state.confirmingFateChoice = "retrain"; render(); } }, "🔀 Riaddestrati per un'altra armatura"));
+        resultCard.append(el("button", { class: "secondary", onClick: () => { state.confirmingFateChoice = "soldier"; render(); } }, "🎖️ Diventa Soldato Semplice"));
+        resultCard.append(el("button", { class: "secondary", onClick: () => { state.confirmingFateChoice = "death"; render(); } }, "💀 Il personaggio muore"));
+      }
     }
-    const logBox = el("div", { class: "log-box" });
-    for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
-    resultCard.append(logBox);
-    resultCard.append(el("button", { onClick: closeTrialResult }, state.trialResult.passed ? "⚔ Indossa l'Armatura" : "Torna a prepararti"));
     wrap.append(resultCard);
     return wrap;
   }
@@ -1777,6 +1889,13 @@ function renderTrainingTab() {
   // Bloccato per gli Apprendisti (richiesto in chat: ora la scheda
   // resta visibile, ma con un messaggio chiaro sul perché non è
   // ancora accessibile, invece di sparire del tutto dalla barra).
+  if (state.character.apprentice_status === "soldier") {
+    wrap.append(el("div", { class: "card" },
+      el("p", {}, "🔒 Sei un Soldato Semplice - il Centro Allenamento non fa più parte del tuo percorso."),
+      el("button", { onClick: () => { state.gameTab = "soldier"; render(); } }, "Vai al tuo Servizio"),
+    ));
+    return wrap;
+  }
   if (!state.character.is_knight) {
     wrap.append(el("div", { class: "card" },
       el("p", {}, "🔒 Sei ancora un Apprendista - ti stai già addestrando, ed è quello il tuo allenamento per ora."),
@@ -1882,6 +2001,13 @@ function renderArenaTab() {
 
   // Bloccato per gli Apprendisti (richiesto in chat: stesso principio
   // del Centro Allenamento - visibile, ma con un messaggio chiaro).
+  if (state.character.apprentice_status === "soldier") {
+    wrap.append(el("div", { class: "card" },
+      el("p", {}, "🔒 Sei un Soldato Semplice - l'Arena non fa più parte del tuo percorso."),
+      el("button", { onClick: () => { state.gameTab = "soldier"; render(); } }, "Vai al tuo Servizio"),
+    ));
+    return wrap;
+  }
   if (!state.character.is_knight) {
     wrap.append(el("div", { class: "card" },
       el("p", {}, "🔒 Sei ancora un Apprendista - l'Arena si sblocca quando superi la Prova Finale."),
@@ -1954,6 +2080,61 @@ function renderArenaTab() {
 // narrato, e riusa esattamente questa stessa interfaccia dell'Arena,
 // invece di duplicarla) - riceve il contenitore a cui aggiungere le
 // colonne.
+async function loadSoldierStatus() {
+  try {
+    state.soldierStatus = await api(`/characters/${state.characterId}/soldier`);
+  } catch (e) {
+    showError(e.message);
+    state.soldierStatus = { activities: [], denaro: 0 };
+  }
+  render();
+}
+
+async function doSoldierActivity(activityKey) {
+  try {
+    state.soldierActivityResult = await api(`/characters/${state.characterId}/soldier/activity`, {
+      method: "POST",
+      body: JSON.stringify({ activity_key: activityKey }),
+    });
+    state.character.denaro = state.soldierActivityResult.denaro_total;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function renderSoldierTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Servizio da Soldato Semplice"));
+  wrap.append(el("p", { class: "hint" }, `Denaro: ${state.character.denaro}`));
+
+  if (state.soldierActivityResult) {
+    const card = el("div", { class: "card" });
+    const r = state.soldierActivityResult;
+    card.append(el("p", {}, r.text));
+    card.append(el("p", { class: "hint" }, `+${r.denaro_earned} denaro (totale: ${r.denaro_total})`));
+    if (r.aging_message) card.append(el("p", { class: "hint" }, r.aging_message));
+    card.append(el("button", { onClick: () => { state.soldierActivityResult = null; render(); } }, "Continua"));
+    wrap.append(card);
+    return wrap;
+  }
+
+  if (state.soldierStatus === null) {
+    loadSoldierStatus();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento...")));
+    return wrap;
+  }
+
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, "Le tue attività"));
+  card.append(el("p", {}, "La vita del Santuario non si ferma per chi non porta un'armatura - c'è sempre qualcosa da fare, e ogni tanto qualcosa da guadagnare."));
+  for (const activity of state.soldierStatus.activities) {
+    card.append(el("button", { onClick: () => doSoldierActivity(activity.key) }, activity.label));
+  }
+  wrap.append(card);
+  return wrap;
+}
+
 function renderMissionsTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Missioni"));
