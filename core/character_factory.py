@@ -21,7 +21,7 @@ from database.db_manager import (
     get_armor, list_armors_for_player_level, get_roster_entry, insert_roster_entry, claim_roster_slot,
     add_biography_entry, get_world_minutes,
 )
-from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
+from core.arena_manager import generate_full_name
 from core.training_path import select_master, generate_companions
 from core.fm_manager import get_calendar_display
 
@@ -190,7 +190,7 @@ def ensure_roster_populated(conn: sqlite3.Connection) -> int:
     creati = 0
     for row in all_armors:
         if get_roster_entry(conn, row["name"]) is None:
-            npc_name = f"{random.choice(OPPONENT_FIRST_NAMES)} {random.choice(OPPONENT_SURNAMES)}"
+            npc_name = generate_full_name()
             insert_roster_entry(conn, row["name"], npc_name)
             creati += 1
     conn.commit()
