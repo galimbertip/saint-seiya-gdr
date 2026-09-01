@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS knights (
     armor_name TEXT NOT NULL REFERENCES armors(name),
     cosmo_cur INTEGER NOT NULL,
     cosmo_max INTEGER NOT NULL,
+    vita_cur INTEGER NOT NULL DEFAULT 100,
+    vita_max INTEGER NOT NULL DEFAULT 100,
     str INTEGER NOT NULL,
     dex INTEGER NOT NULL,
     con INTEGER NOT NULL,
@@ -290,6 +292,19 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN apprentice_status TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunta colonna apprentice_status a knights.")
+    if "vita_cur" not in existing_columns:
+        # Le tre barre (richiesto in chat): il Cosmo smette di fare
+        # doppio lavoro (risorsa E vita) - ora la Vita è il vero
+        # indicatore di salute in combattimento, il Cosmo diventa
+        # puramente una risorsa che le tecniche consumano. I salvataggi
+        # esistenti partono a Vita piena (100/100) - un valore
+        # ragionevole finché non si allena/combatte, dopodiché la
+        # formula vera (legata a Costituzione) prende il sopravvento
+        # al prossimo save_knight.
+        conn.execute("ALTER TABLE knights ADD COLUMN vita_cur INTEGER NOT NULL DEFAULT 100")
+        conn.execute("ALTER TABLE knights ADD COLUMN vita_max INTEGER NOT NULL DEFAULT 100")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne vita_cur/vita_max a knights (le tre barre).")
 
 
 def get_connection() -> sqlite3.Connection:
