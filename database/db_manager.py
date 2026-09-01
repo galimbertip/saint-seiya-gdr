@@ -144,6 +144,13 @@ CREATE TABLE IF NOT EXISTS roster (
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS world_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_minutes INTEGER NOT NULL,
+    armor_name TEXT NOT NULL,
+    entry TEXT NOT NULL
+);
 """
 
 
@@ -550,6 +557,28 @@ def add_biography_entry(conn: sqlite3.Connection, knight_id: int, game_minutes: 
         (knight_id, game_minutes, entry),
     )
     conn.commit()
+
+
+def add_world_event(conn: sqlite3.Connection, world_minutes: int, armor_name: str, entry: str) -> None:
+    """La Cronaca del Mondo (richiesto in chat) - una riga per ogni
+    evento accaduto ai PNG nel tempo condiviso (morte, ritiro,
+    sparizione, sostituzione), leggibile da tutti indipendentemente da
+    quale personaggio si stia giocando in quel momento - a differenza
+    del diario, che è personale per ciascun personaggio."""
+    conn.execute(
+        "INSERT INTO world_events (world_minutes, armor_name, entry) VALUES (?, ?, ?)",
+        (world_minutes, armor_name, entry),
+    )
+    conn.commit()
+
+
+def get_world_chronicle(conn: sqlite3.Connection, limit: int = 100) -> list[sqlite3.Row]:
+    """Le voci più recenti della Cronaca del Mondo (richiesto in chat) -
+    dalla più recente alla meno recente, limitate a `limit` per non
+    restituire un elenco enorme dopo mesi di gioco."""
+    return conn.execute(
+        "SELECT * FROM world_events ORDER BY world_minutes DESC, id DESC LIMIT ?", (limit,)
+    ).fetchall()
 
 
 def get_biography_entries(conn: sqlite3.Connection, knight_id: int) -> list[sqlite3.Row]:
