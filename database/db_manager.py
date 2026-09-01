@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS knights (
     mission_id TEXT NOT NULL DEFAULT '',
     mission_stage INTEGER NOT NULL DEFAULT 0,
     mission_node TEXT NOT NULL DEFAULT '',
-    mission_flags TEXT NOT NULL DEFAULT ''
+    mission_flags TEXT NOT NULL DEFAULT '',
+    apprentice_status TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario del cavaliere (richiesto in chat): l'abbozzo scritto dal
@@ -270,6 +271,19 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN mission_flags TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunte colonne mission_node/mission_flags a knights (per missioni a grafo).")
+    if "apprentice_status" not in existing_columns:
+        # Alternative al fallimento della Prova Finale (richiesto in
+        # chat) - vuoto vuol dire "addestramento normale in corso",
+        # "soldier" vuol dire "diventato soldato semplice" (uno stato
+        # vero, con attività dedicate proprie - vedi core/soldier.py).
+        # Il riaddestramento per un'altra armatura e la morte del
+        # personaggio non hanno bisogno di un campo a parte: il primo
+        # resetta semplicemente i campi già esistenti dell'apprendistato
+        # (stessa forma di una nuova creazione), la seconda cancella
+        # la riga stessa.
+        conn.execute("ALTER TABLE knights ADD COLUMN apprentice_status TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna apprentice_status a knights.")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -433,6 +447,16 @@ def claim_roster_slot(conn: sqlite3.Connection, armor_name: str, knight_id: int)
     PNG 'si fa da parte' (resta nel database ma non compare più come
     occupante finché lo slot è reclamato)."""
     conn.execute("UPDATE roster SET claimed_by_knight_id = ? WHERE armor_name = ?", (knight_id, armor_name))
+    conn.commit()
+
+
+def release_roster_slot(conn: sqlite3.Connection, armor_name: str) -> None:
+    """L'opposto di claim_roster_slot (richiesto in chat: riaddestrarsi
+    per un'altra armatura, o la morte del personaggio, rilasciano
+    quella vecchia) - torna disponibile per un altro personaggio, il
+    PNG fisso ricompare come occupante finché nessuno la reclama di
+    nuovo."""
+    conn.execute("UPDATE roster SET claimed_by_knight_id = NULL WHERE armor_name = ?", (armor_name,))
     conn.commit()
 
 
