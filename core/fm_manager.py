@@ -30,6 +30,7 @@ valori definitivi - li tariamo insieme quando affrontiamo il
 bilanciamento vero e proprio. La struttura è quella buona.
 """
 import random
+from database.db_manager import advance_world_minutes
 from datetime import datetime, timedelta
 
 from core.arena_manager import get_unlocked_senses
@@ -130,17 +131,24 @@ def serialize_weekly_schedule(days: list[str]) -> str:
     return ",".join(days[:7])
 
 
-def get_calendar_display(created_at: str, game_minutes: int) -> dict:
-    """Calendario REALE (richiesto in chat, stile Football Manager): il
-    personaggio nasce nel momento vero in cui è stato creato
-    (created_at, timestamp salvato alla creazione - vedi
-    core.character_factory.create_knight), e game_minutes vengono
-    sommati a quello con l'aritmetica reale di datetime - niente più
-    calendario fittizio a 360 giorni: mesi di lunghezza vera, anni
-    bisestili compresi, gratis grazie a datetime. I nomi dei mesi
-    restano quelli scritti a mano in MONTH_NAMES (in italiano) invece
-    di strftime('%B'), che dipenderebbe dalla lingua del sistema."""
-    current = datetime.fromisoformat(created_at) + timedelta(minutes=game_minutes)
+# Il calendario del mondo (richiesto in chat, come in Football Manager:
+# un solo calendario condiviso da tutti i personaggi e i PNG, non più
+# uno personale a testa) parte da questa data fissa - "l'inizio del
+# mondo" del gioco. world_minutes (vedi database.db_manager) sono i
+# minuti trascorsi da qui, condivisi da chiunque.
+WORLD_EPOCH = "2026-01-06T08:00:00"
+
+
+def get_calendar_display(world_minutes: int) -> dict:
+    """Calendario REALE, condiviso da tutti (richiesto in chat, stile
+    Football Manager: giocare la propria partita fa avanzare il tempo
+    per tutti, non solo per te) - world_minutes sommati a WORLD_EPOCH
+    con l'aritmetica reale di datetime - niente più calendario fittizio
+    a 360 giorni: mesi di lunghezza vera, anni bisestili compresi,
+    gratis grazie a datetime. I nomi dei mesi restano quelli scritti a
+    mano in MONTH_NAMES (in italiano) invece di strftime('%B'), che
+    dipenderebbe dalla lingua del sistema."""
+    current = datetime.fromisoformat(WORLD_EPOCH) + timedelta(minutes=world_minutes)
 
     return {
         "year": current.year,
@@ -156,17 +164,23 @@ def get_calendar_display(created_at: str, game_minutes: int) -> dict:
 class RosterManager:
 
     @staticmethod
-    def spend_time(knight: dict, minutes: int) -> str:
-        """Fa avanzare l'orologio di gioco di `minutes` minuti - la
-        funzione che TUTTE le azioni del gioco chiamano ora (allenamento,
+    def spend_time(conn, knight: dict, minutes: int) -> str:
+        """Fa avanzare l'orologio del MONDO (richiesto in chat, stile
+        Football Manager: un solo calendario condiviso da tutti, non
+        più uno personale a testa) di `minutes` minuti - la funzione
+        che TUTTE le azioni del gioco chiamano ora (allenamento,
         combattimento, in futuro qualsiasi altra cosa), ciascuna con la
-        propria durata, invece del vecchio 'ogni azione = 1 giorno fisso'.
-        Gestisce l'invecchiamento quando si supera un anno. Restituisce
-        un messaggio SOLO se scatta un compleanno, stringa vuota
-        altrimenti. Muta `knight` in place."""
-        previous_year = get_calendar_display(knight["created_at"], knight["game_minutes"])["year"]
-        knight["game_minutes"] += minutes
-        new_year = get_calendar_display(knight["created_at"], knight["game_minutes"])["year"]
+        propria durata, invece del vecchio 'ogni azione = 1 giorno
+        fisso'. `knight["game_minutes"]` resta aggiornato per
+        compatibilità con tutto il codice esistente che lo legge, ma
+        ora rispecchia sempre lo stesso valore condiviso da chiunque -
+        non è più un conteggio personale. Gestisce l'invecchiamento
+        quando si supera un anno. Restituisce un messaggio SOLO se
+        scatta un compleanno, stringa vuota altrimenti. Muta `knight`
+        in place."""
+        previous_year = get_calendar_display(knight["game_minutes"])["year"]
+        knight["game_minutes"] = advance_world_minutes(conn, minutes)
+        new_year = get_calendar_display(knight["game_minutes"])["year"]
 
         if new_year > previous_year:
             knight["age"] += (new_year - previous_year)
@@ -174,7 +188,7 @@ class RosterManager:
         return ""
 
     @staticmethod
-    def apply_daily_training(knight: dict, focus: str) -> str:
+    def apply_daily_training(conn, knight: dict, focus: str) -> str:
         """Una sessione di allenamento: consuma stamina, migliora una
         statistica (o riposa), assegna un po' di XP, e fa passare il
         tempo corrispondente a QUEL focus (non più un giorno fisso per
@@ -223,7 +237,7 @@ class RosterManager:
             knight["cosmo_cur"] += cosmo_recovered
             msg = f"{msg} (+{cosmo_recovered} Cosmo recuperato)"
 
-        aging_msg = RosterManager.spend_time(knight, minutes)
+        aging_msg = RosterManager.spend_time(conn, knight, minutes)
         if aging_msg:
             msg = f"{msg} {aging_msg}"
 
@@ -262,7 +276,7 @@ class RosterManager:
                 f"{_STAT_LABELS[column]} -{loss}.")
 
     @staticmethod
-    def advance_week(knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
+    def advance_week(conn, knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
         """Applica 7 sessioni di allenamento di fila (una per 'giorno'
         della griglia settimanale). ATTENZIONE (cambiato in questo giro):
         con l'orologio a minuti, 7 sessioni NON corrispondono più
@@ -274,12 +288,12 @@ class RosterManager:
         promessa esatta di 7 giorni di calendario."""
         results = []
         for day_name, focus in zip(WEEKDAY_NAMES, schedule):
-            msg = RosterManager.apply_daily_training(knight, focus)
+            msg = RosterManager.apply_daily_training(conn, knight, focus)
             results.append((day_name, focus, msg))
         return results
 
     @staticmethod
-    def advance_month(knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
+    def advance_month(conn, knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
         """Applica 30 sessioni di allenamento di fila (stesso programma
         settimanale ripetuto), stessa nota di advance_week sul tempo
         reale che ne consegue."""
@@ -289,7 +303,7 @@ class RosterManager:
         while sessions_done < DAYS_PER_MONTH:
             sessions_this_round = min(7, DAYS_PER_MONTH - sessions_done)
             for day_name, focus in zip(WEEKDAY_NAMES[:sessions_this_round], schedule[:sessions_this_round]):
-                msg = RosterManager.apply_daily_training(knight, focus)
+                msg = RosterManager.apply_daily_training(conn, knight, focus)
                 results.append((f"Sett.{week_num} {day_name}", focus, msg))
             sessions_done += sessions_this_round
             week_num += 1
