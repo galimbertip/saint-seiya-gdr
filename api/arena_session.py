@@ -181,7 +181,7 @@ def check_fight_over(knight: dict, opponent: dict) -> tuple[bool, Optional[str]]
     return False, None
 
 
-def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Optional[str],
+def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name: Optional[str],
                      technique_power: Optional[int], battle_state: dict,
                      technique_type: Optional[str] = None, technique_launch_desc: Optional[str] = None,
                      technique_effect_desc: Optional[str] = None) -> tuple[list[str], bool, Optional[str]]:
@@ -234,7 +234,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     if player_blocked:
         log.append(f"{knight['raw_name']} non riesce ad agire questo turno!")
         battle_state["last_effect"] = None
-        aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
+        aging_msg = RosterManager.spend_time(conn, knight, ARENA_ROUND_MINUTES)
         if aging_msg:
             log.append(aging_msg)
         fight_over, winner = check_fight_over(knight, opponent)
@@ -356,7 +356,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
             log.append(f"{knight['raw_name']} carica il Cosmo, pronto a colpire più forte.")
             battle_state["last_effect"] = None
 
-        aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
+        aging_msg = RosterManager.spend_time(conn, knight, ARENA_ROUND_MINUTES)
         if aging_msg:
             log.append(aging_msg)
 
@@ -385,7 +385,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
             battle_state["opponent_charge_multiplier"], CHARGE_DAMAGE_MULTIPLIER
         )
         log.append(f"{opponent['name']} carica il proprio Cosmo per il prossimo colpo.")
-        aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
+        aging_msg = RosterManager.spend_time(conn, knight, ARENA_ROUND_MINUTES)
         if aging_msg:
             log.append(aging_msg)
         battle_state["pending_opponent_technique"] = None
@@ -396,7 +396,7 @@ def resolve_declare(knight: dict, armor: dict, action: str, technique_name: Opti
     return log, False, None
 
 
-def resolve_react(knight: dict, armor: dict, action: str,
+def resolve_react(conn, knight: dict, armor: dict, action: str,
                    my_defensive_technique: Optional[dict],
                    battle_state: dict, counter_technique_name: Optional[str] = None,
                    counter_technique_power: Optional[int] = None, counter_technique_type: Optional[str] = None,
@@ -620,7 +620,7 @@ def resolve_react(knight: dict, armor: dict, action: str,
                 battle_state["pending_opponent_technique"] = None
                 return log, True, winner
 
-    aging_msg = RosterManager.spend_time(knight, ARENA_ROUND_MINUTES)
+    aging_msg = RosterManager.spend_time(conn, knight, ARENA_ROUND_MINUTES)
     if aging_msg:
         log.append(aging_msg)
 
