@@ -1460,7 +1460,15 @@ function renderHierarchyTab() {
           ? el("td", {}, `${playerDisplayName} (livello ${entry.claimed_by_level})`)
           : el("td", {}, entry.npc_name, el("span", {
               style: "background:var(--gold);color:#1a1a1a;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;font-weight:700;",
-            }, "PNG"));
+            }, "PNG"),
+            // Il mondo che vive per conto suo (richiesto in chat): se
+            // questo PNG non è il primo ad indossare quest'armatura,
+            // un piccolo indicatore lo segnala, col destino del
+            // predecessore visibile al passaggio del mouse.
+            entry.npc_generation > 1 ? el("span", {
+              title: entry.npc_fate,
+              style: "color:var(--text-secondary);font-size:10px;margin-left:6px;cursor:help;",
+            }, `(${entry.npc_generation}ª generazione)`) : null);
         const row = el("tr", {}, el("td", {}, entry.armor_name), el("td", {}, String(entry.level)), occupantCell);
         table.append(row);
       }
