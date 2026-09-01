@@ -200,7 +200,7 @@ def _record_fight_outcome(conn, knight: dict, opponent_name: str, winner: str) -
     conclusa (richiesto in chat) - chiamata da entrambi i punti in cui
     uno scontro può finire (declare e react), invece di duplicare la
     stessa logica due volte."""
-    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    cal = get_calendar_display(knight["game_minutes"])
     if winner == "player":
         entry = f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} sconfigge {opponent_name} nell'Arena."
     else:
@@ -226,7 +226,7 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
     extra: dict = {}
 
     if battle_state.get("is_trial"):
-        cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+        cal = get_calendar_display(knight["game_minutes"])
         if winner == "player":
             knight["training_stage"] = FINAL_TRIAL_STAGE
             knight["is_knight"] = 1
@@ -297,7 +297,7 @@ def _knight_payload(conn, knight: dict) -> dict:
     cinque."""
     armor = get_armor(knight["armor_name"], conn)
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
-    calendar = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    calendar = get_calendar_display(knight["game_minutes"])
     senses = get_unlocked_senses(knight["player_level"])
     movement_points = calculate_movement_points(knight["player_level"], knight["age"])
     return {
@@ -538,7 +538,7 @@ def api_advance_training(knight_id: int, conn=Depends(get_db)):
     leveled_up_to = LEVEL_UP_AFTER_STAGE.get(knight["training_stage"])
     if leveled_up_to:
         knight["player_level"] = leveled_up_to
-        cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+        cal = get_calendar_display(knight["game_minutes"])
         add_biography_entry(
             conn, knight["id"], knight["game_minutes"],
             f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
@@ -729,7 +729,7 @@ def _complete_scalata_if_done(conn, knight: dict) -> bool:
     knight["denaro"] += DENARO_REWARD
     knight["mission_id"] = ""
     knight["mission_stage"] = 0
-    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    cal = get_calendar_display(knight["game_minutes"])
     add_biography_entry(
         conn, knight["id"], knight["game_minutes"],
         f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} completa "
@@ -752,7 +752,7 @@ def _complete_colonne_if_done(conn, knight: dict) -> tuple[bool, str]:
     knight["mission_id"] = ""
     knight["mission_node"] = ""
     knight["mission_flags"] = ""
-    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    cal = get_calendar_display(knight["game_minutes"])
     add_biography_entry(
         conn, knight["id"], knight["game_minutes"],
         f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} completa "
@@ -953,7 +953,7 @@ def api_trial_retrain(knight_id: int, conn=Depends(get_db)):
     old_companion1, old_companion2 = knight["companion1_name"], knight["companion2_name"]
     old_armor_name = knight["armor_name"]
     fates = resolve_companions_fates(old_companion1, old_companion2)
-    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    cal = get_calendar_display(knight["game_minutes"])
     add_biography_entry(
         conn, knight["id"], knight["game_minutes"],
         f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} rinuncia "
@@ -982,7 +982,7 @@ def api_trial_become_soldier(knight_id: int, conn=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
 
     fates = resolve_companions_fates(knight["companion1_name"], knight["companion2_name"])
-    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    cal = get_calendar_display(knight["game_minutes"])
     add_biography_entry(
         conn, knight["id"], knight["game_minutes"],
         f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} rinuncia "
@@ -1049,7 +1049,7 @@ def api_do_soldier_activity(knight_id: int, req: SoldierActivityRequest, conn=De
 
     text, denaro = resolve_soldier_activity(req.activity_key)
     knight["denaro"] += denaro
-    aging_msg = RosterManager.spend_time(knight, SOLDIER_ACTIVITY_MINUTES)
+    aging_msg = RosterManager.spend_time(conn, knight, SOLDIER_ACTIVITY_MINUTES)
     save_knight(conn, knight)
     return {"text": text, "denaro_earned": denaro, "denaro_total": knight["denaro"], "aging_message": aging_msg}
 
@@ -1189,9 +1189,9 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
     knight["weekly_schedule"] = serialize_weekly_schedule(schedule)
 
     if req.mode == "settimana":
-        results = RosterManager.advance_week(knight, schedule)
+        results = RosterManager.advance_week(conn, knight, schedule)
     else:
-        results = RosterManager.advance_month(knight, schedule)
+        results = RosterManager.advance_month(conn, knight, schedule)
 
     save_knight(conn, knight)
 
@@ -1218,7 +1218,7 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
         # nuovo Senso risvegliato diventano una voce del diario, non
         # solo un messaggio nel log dell'allenamento che sparisce alla
         # sessione successiva.
-        cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+        cal = get_calendar_display(knight["game_minutes"])
         add_biography_entry(
             conn, knight["id"], knight["game_minutes"],
             f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} raggiunge il livello {new_level}.",
@@ -1300,7 +1300,7 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
         raise HTTPException(status_code=400, detail="Serve una tecnica (nome e potenza) per attaccare")
 
     log, fight_over, winner = resolve_declare(
-        knight, armor, req.action, req.technique_name, req.technique_power, req.battle_state,
+        conn, knight, armor, req.action, req.technique_name, req.technique_power, req.battle_state,
         technique_type=req.technique_type,
         technique_launch_desc=req.technique_launch_desc, technique_effect_desc=req.technique_effect_desc,
     )
@@ -1346,7 +1346,7 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
         my_defense = None
 
     log, fight_over, winner = resolve_react(
-        knight, armor, req.action, my_defense, req.battle_state,
+        conn, knight, armor, req.action, my_defense, req.battle_state,
         counter_technique_name=req.counter_technique_name, counter_technique_power=req.counter_technique_power,
         counter_technique_type=req.counter_technique_type, counter_technique_launch_desc=req.counter_technique_launch_desc,
         counter_technique_effect_desc=req.counter_technique_effect_desc,
