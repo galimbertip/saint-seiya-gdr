@@ -16,6 +16,7 @@ round di combattimento) sarebbe inutilmente costoso."""
 import random
 
 from core.arena_manager import generate_full_name
+from database.db_manager import add_world_event
 
 WORLD_TICK_MINUTES_PER_DAY = 1440
 
@@ -50,14 +51,20 @@ def resolve_npc_fate() -> str:
     return NPC_FATE_OPTIONS[-1][0]
 
 
-def tick_world_events(conn, elapsed_minutes: int) -> list[dict]:
+def tick_world_events(conn, elapsed_minutes: int, current_world_minutes: int) -> list[dict]:
     """Simula quello che succede ai PNG non reclamati nel tempo
     condiviso appena trascorso (richiesto in chat) - restituisce
     l'elenco degli eventi accaduti in QUESTA chiamata (quasi sempre
-    vuoto), utile per un'eventuale bacheca/cronaca del mondo in futuro.
-    Chi viene sostituito lascia comunque una Cloth abitata subito da un
-    successore (fedele al canone: le armature raramente restano vacanti
-    a lungo) - il PNG precedente resta solo come nota in npc_fate."""
+    vuoto), e li scrive anche nella Cronaca del Mondo persistente
+    (richiesto in chat: prima venivano solo restituiti al volo, senza
+    lasciare traccia consultabile in seguito). Chi viene sostituito
+    lascia comunque una Cloth abitata subito da un successore (fedele
+    al canone: le armature raramente restano vacanti a lungo) - il PNG
+    precedente resta come nota in npc_fate e come riga della Cronaca.
+    `current_world_minutes`: il punto ASSOLUTO dell'orologio del mondo
+    in cui si sta verificando l'evento, per la data della Cronaca -
+    diverso da `elapsed_minutes`, che è solo la durata trascorsa dal
+    controllo precedente."""
     if elapsed_minutes <= 0:
         return []
     days = elapsed_minutes / WORLD_TICK_MINUTES_PER_DAY
@@ -76,12 +83,14 @@ def tick_world_events(conn, elapsed_minutes: int) -> list[dict]:
             continue
         fate = resolve_npc_fate()
         new_name = generate_full_name()
+        chronicle_entry = f"{row['npc_name']} di {row['armor_name']} {fate} {new_name} ne raccoglie l'eredità."
         conn.execute(
             """UPDATE roster SET npc_name = ?, npc_generation = npc_generation + 1,
                npc_fate = ?, last_world_event_minutes = last_world_event_minutes + ?
                WHERE armor_name = ?""",
             (new_name, f"{row['npc_name']} {fate}", elapsed_minutes, row["armor_name"]),
         )
+        add_world_event(conn, current_world_minutes, row["armor_name"], chronicle_entry)
         events.append({
             "armor_name": row["armor_name"],
             "old_name": row["npc_name"],
