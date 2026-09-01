@@ -33,6 +33,7 @@ from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
     get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster,
     add_biography_entry, get_biography_entries, get_custom_techniques, add_custom_technique,
+    release_roster_slot,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -61,6 +62,9 @@ from core.missions import (
     get_house_guardian, get_house_content, resolve_persuasion,
     COLONNE_MISSION_ID, COLONNE_START_NODE, COLONNE_NODES,
     get_colonne_node_content, pick_duel_armor_for_node, resolve_colonne_ending,
+)
+from core.apprentice_fates import (
+    resolve_companions_fates, resolve_soldier_activity, retrain_for_new_armor, SOLDIER_ACTIVITIES,
 )
 from api.arena_session import (
     start_battle, list_opponent_candidates, resolve_declare, resolve_react, finalize_fight, move_player,
@@ -232,12 +236,24 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
                 f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
                 f"supera la Prova Finale contro {opponent_name} e diventa Cavaliere.",
             )
+            # La tua vicenda con questa armatura si conclude qui
+            # (richiesto in chat) - i compagni non ottengono la Cloth,
+            # il loro destino si decide adesso, insieme al tuo.
+            fates = resolve_companions_fates(knight["companion1_name"], knight["companion2_name"])
+            for fate in fates:
+                add_biography_entry(conn, knight["id"], knight["game_minutes"], fate)
+            extra["companion_fates"] = fates
         else:
-            knight["training_stage"] = RETRY_STAGE_ON_FAILURE
+            # Non si imposta più da sola la tappa di ripreparazione
+            # (richiesto in chat: la scelta - ritenta, riaddestrati
+            # altrove, diventa Soldato Semplice, o muori - spetta ora
+            # al giocatore, ad ogni singolo fallimento) - il frontend
+            # la presenterà, e chiamerà uno degli endpoint dedicati in
+            # base alla scelta.
             add_biography_entry(
                 conn, knight["id"], knight["game_minutes"],
                 f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
-                f"non supera la Prova Finale contro {opponent_name} - dovrà prepararsi meglio prima di riprovare.",
+                f"non supera la Prova Finale contro {opponent_name}.",
             )
     elif battle_state.get("is_spar"):
         # Lo scontro leggero della tappa "Fianco a fianco" (richiesto
@@ -479,6 +495,11 @@ def api_get_training_path(knight_id: int, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
     if knight["is_knight"]:
         return {"is_knight": True}
+    if knight["apprentice_status"] == "soldier":
+        # Diventato Soldato Semplice dopo un fallimento della Prova
+        # Finale (richiesto in chat) - non è più "in addestramento" in
+        # questo senso, ha un suo percorso a parte (vedi .../soldier/*).
+        return {"is_knight": False, "is_soldier": True}
 
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
         own_armor = get_armor(knight["armor_name"], conn)
@@ -903,6 +924,134 @@ def api_start_trial(knight_id: int, conn=Depends(get_db)):
     battle_state = start_battle(conn, knight, armor, opponent=trial_opponent)
     battle_state["is_trial"] = True
     return {"battle_state": battle_state}
+
+
+@app.post("/characters/{knight_id}/training-path/trial/retry")
+def api_trial_retry(knight_id: int, conn=Depends(get_db)):
+    """Una delle alternative al fallimento della Prova Finale (richiesto
+    in chat, compare ad OGNI fallimento): ritenta, come si faceva
+    prima in automatico - ora è una scelta esplicita, non più imposta."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+    knight["training_stage"] = RETRY_STAGE_ON_FAILURE
+    save_knight(conn, knight)
+    return {"training_stage": knight["training_stage"]}
+
+
+@app.post("/characters/{knight_id}/training-path/trial/retrain")
+def api_trial_retrain(knight_id: int, conn=Depends(get_db)):
+    """Un'altra alternativa al fallimento (richiesto in chat):
+    riaddestrarsi per un'armatura diversa, libera - rilascia quella
+    vecchia, ne reclama una nuova, nuovo Maestro e nuovi compagni. I
+    compagni di PRIMA non ottengono la Cloth abbandonata: il loro
+    destino si decide adesso, insieme alla tua scelta."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+
+    old_companion1, old_companion2 = knight["companion1_name"], knight["companion2_name"]
+    old_armor_name = knight["armor_name"]
+    fates = resolve_companions_fates(old_companion1, old_companion2)
+    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    add_biography_entry(
+        conn, knight["id"], knight["game_minutes"],
+        f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} rinuncia "
+        f"all'armatura {old_armor_name} per riaddestrarsi altrove.",
+    )
+    for fate in fates:
+        add_biography_entry(conn, knight["id"], knight["game_minutes"], fate)
+
+    try:
+        knight = retrain_for_new_armor(conn, knight)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    save_knight(conn, knight)
+    return {"new_armor_name": knight["armor_name"], "companion_fates": fates}
+
+
+@app.post("/characters/{knight_id}/training-path/trial/become-soldier")
+def api_trial_become_soldier(knight_id: int, conn=Depends(get_db)):
+    """Un'altra alternativa al fallimento (richiesto in chat): diventare
+    Soldato Semplice - uno stato di gioco vero, con attività dedicate
+    proprie (vedi .../soldier/*), non solo narrativo. Rilascia
+    l'armatura; i compagni non la ottengono nemmeno loro, il loro
+    destino si decide adesso."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+
+    fates = resolve_companions_fates(knight["companion1_name"], knight["companion2_name"])
+    cal = get_calendar_display(knight["created_at"], knight["game_minutes"])
+    add_biography_entry(
+        conn, knight["id"], knight["game_minutes"],
+        f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} rinuncia "
+        f"all'armatura {knight['armor_name']} e diventa Soldato Semplice.",
+    )
+    for fate in fates:
+        add_biography_entry(conn, knight["id"], knight["game_minutes"], fate)
+
+    release_roster_slot(conn, knight["armor_name"])
+    knight["apprentice_status"] = "soldier"
+    save_knight(conn, knight)
+    return {"companion_fates": fates}
+
+
+@app.post("/characters/{knight_id}/training-path/trial/die")
+def api_trial_die(knight_id: int, conn=Depends(get_db)):
+    """L'ultima alternativa al fallimento (richiesto in chat): la morte
+    definitiva del personaggio - permadeath vero, non uno stato. I
+    compagni non ottengono la Cloth nemmeno in questo caso; il loro
+    destino, restituito qui PRIMA della cancellazione (dopo non ci
+    sarebbe più nessun personaggio a cui associarlo), resta come
+    ultimo ricordo per il giocatore."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["is_knight"]:
+        raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
+
+    fates = resolve_companions_fates(knight["companion1_name"], knight["companion2_name"])
+    raw_name = knight["raw_name"]
+    armor_name = knight["armor_name"]
+    delete_knight(conn, knight_id)
+    return {"raw_name": raw_name, "armor_name": armor_name, "companion_fates": fates}
+
+
+SOLDIER_ACTIVITY_MINUTES = 480  # un turno di servizio, PLACEHOLDER come le altre durate del gioco
+
+
+@app.get("/characters/{knight_id}/soldier")
+def api_get_soldier_status(knight_id: int, conn=Depends(get_db)):
+    """Lo stato da Soldato Semplice (richiesto in chat: un vero
+    mini-percorso, non solo uno stato passivo) - l'elenco delle
+    attività disponibili, per chi ha scelto questa strada dopo un
+    fallimento della Prova Finale."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["apprentice_status"] != "soldier":
+        raise HTTPException(status_code=403, detail="Non sei un Soldato Semplice.")
+    activities = [{"key": k, "label": v["label"]} for k, v in SOLDIER_ACTIVITIES.items()]
+    return {"activities": activities, "denaro": knight["denaro"]}
+
+
+class SoldierActivityRequest(BaseModel):
+    activity_key: str
+
+
+@app.post("/characters/{knight_id}/soldier/activity")
+def api_do_soldier_activity(knight_id: int, req: SoldierActivityRequest, conn=Depends(get_db)):
+    """Risolve un'attività da Soldato Semplice (richiesto in chat) - un
+    po' di tempo di gioco, un po' di denaro, un po' di narrazione
+    diversa ogni volta."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if knight["apprentice_status"] != "soldier":
+        raise HTTPException(status_code=403, detail="Non sei un Soldato Semplice.")
+    if req.activity_key not in SOLDIER_ACTIVITIES:
+        raise HTTPException(status_code=400, detail="Attività sconosciuta.")
+
+    text, denaro = resolve_soldier_activity(req.activity_key)
+    knight["denaro"] += denaro
+    aging_msg = RosterManager.spend_time(knight, SOLDIER_ACTIVITY_MINUTES)
+    save_knight(conn, knight)
+    return {"text": text, "denaro_earned": denaro, "denaro_total": knight["denaro"], "aging_message": aging_msg}
 
 
 @app.get("/characters/{knight_id}/custom-techniques")
