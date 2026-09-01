@@ -23,6 +23,12 @@ log = get_logger(__name__)
 DB_PATH = Path(__file__).resolve().parent.parent / "database" / "saint_seiya.db"
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS world_clock (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    minutes INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO world_clock (id, minutes) VALUES (1, 0);
+
 CREATE TABLE IF NOT EXISTS armors (
     name TEXT PRIMARY KEY,
     divinity TEXT NOT NULL,
@@ -303,6 +309,27 @@ def init_db(conn: sqlite3.Connection | None = None) -> None:
     conn.commit()
     if own_conn:
         conn.close()
+
+
+def get_world_minutes(conn: sqlite3.Connection) -> int:
+    """L'orologio del mondo (richiesto in chat) - un unico calendario
+    condiviso da tutti i personaggi e i PNG, non più uno personale a
+    testa. Avanza SOLO quando qualcuno fa passare del tempo (allenarsi,
+    combattere, ecc. - vedi RosterManager.spend_time), esattamente come
+    in Football Manager: giocando la propria partita, avanza il tempo
+    per tutti."""
+    row = conn.execute("SELECT minutes FROM world_clock WHERE id = 1").fetchone()
+    return row["minutes"] if row else 0
+
+
+def advance_world_minutes(conn: sqlite3.Connection, minutes: int) -> int:
+    """Fa avanzare l'orologio del mondo di `minutes` minuti - restituisce
+    il nuovo totale. Chiamata da RosterManager.spend_time ogni volta che
+    un personaggio fa passare del tempo, cosa che ora avanza il
+    calendario CONDIVISO invece che uno personale."""
+    conn.execute("UPDATE world_clock SET minutes = minutes + ? WHERE id = 1", (minutes,))
+    conn.commit()
+    return get_world_minutes(conn)
 
 
 def refresh_armors_catalog(conn: sqlite3.Connection | None = None) -> int:
