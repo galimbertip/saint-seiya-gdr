@@ -509,6 +509,8 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
     armor = get_armor(armor_name, conn)
     techniques = [dict(t) for t in get_techniques_for_armor(armor_name, conn)]
     cosmo = 100 + armor["level"]
+    con_value = 10 + armor["level"] // 10
+    vita = 100 + con_value * 2  # stessa formula di VITA_BASE/VITA_PER_CON in character_factory.py
     return {
         "name": f"{display_name} di {armor_name}",
         "armor_name": armor_name,
@@ -517,9 +519,11 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
         "armor_level": armor["level"],
         "cosmo_cur": cosmo,
         "cosmo_max": cosmo,
+        "vita_cur": vita,
+        "vita_max": vita,
         "str": 10 + armor["level"] // 10,
         "dex": 10 + armor["level"] // 10,
-        "con": 10 + armor["level"] // 10,
+        "con": con_value,
         "tec": 10 + armor["level"] // 10,
         "vol": 10 + armor["level"] // 10,
         "origin": "",
