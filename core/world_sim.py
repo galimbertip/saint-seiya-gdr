@@ -25,7 +25,15 @@ WORLD_TICK_MINUTES_PER_DAY = 1440
 # armature nel catalogo, anche una probabilità piccola genera comunque
 # eventi visibili nell'arco di settimane di gioco). PLACEHOLDER da
 # tarare insieme, come le altre formule di bilanciamento del progetto.
-NPC_EVENT_CHANCE_PER_DAY = 0.0005
+# Ricalibrata in chat: con il ritmo REALE del tempo di gioco (una
+# sessione di allenamento consuma 4-8 ore, non un giorno intero - 2
+# "mesi" cliccati in interfaccia avanzano il mondo di appena una
+# dozzina di giorni, non 60), il valore precedente (0.0005) dava una
+# media di poco più di un evento atteso per un'intera sessione di
+# gioco prolungata - capitava facilmente zero per puro caso. Alzata a
+# un ritmo più affidabile da notare. PLACEHOLDER, da tarare ancora
+# insieme se serve.
+NPC_EVENT_CHANCE_PER_DAY = 0.0015
 
 # Per lo più un ritiro o una sparizione; la morte vera in duello resta
 # minoritaria, non l'esito predefinito (stesso principio già seguito
