@@ -82,6 +82,7 @@
     transition: width 0.2s;
   }
   .bar-fill.stamina { background: var(--gold); }
+  .bar-fill.vita { background: var(--danger); }
   .bar-label {
     position: absolute;
     inset: 0;
@@ -232,6 +233,17 @@ const $ = (sel) => document.querySelector(sel);
 // + tecniche di difesa", stessa struttura dell'Attacco Base) - deve
 // combaciare con DEFAULT_DEFENSE_POWER lato backend.
 const DEFAULT_DEFENSE_POWER = 10;
+
+// Il Cosmo come risorsa per le tecniche (richiesto in chat, le tre
+// barre) - stessa formula del backend (core/arena_manager.py,
+// technique_cosmo_cost), per mostrare il costo e disabilitare i
+// pulsanti che non ci si può permettere PRIMA di provare a inviarli,
+// non solo dopo un rifiuto del server.
+const TECHNIQUE_COSMO_COST_DIVISOR = 10;
+function techniqueCosmoCost(name, power) {
+  if (name === "Attacco Base" || !power) return 0;
+  return Math.max(1, Math.floor(power / TECHNIQUE_COSMO_COST_DIVISOR));
+}
 
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
@@ -1029,6 +1041,7 @@ function renderGameScreen() {
   // --- Barra di stato, sempre visibile ---
   const statusBar = el("div", { class: "status-bar" });
   statusBar.append(el("span", { class: "calendar" }, "📅 " + k.calendar.label));
+  statusBar.append(renderMiniBar("Vita", k.vita_cur, k.vita_max, "vita"));
   statusBar.append(renderMiniBar("Cosmo", k.cosmo_cur, k.cosmo_max, "cosmo"));
   statusBar.append(renderMiniBar("Stamina", k.stamina, 100, "stamina"));
   wrap.append(statusBar);
@@ -1465,7 +1478,7 @@ function renderMiniBar(label, value, max, kind) {
   const wrap = el("div", { class: "mini-bar" });
   const barWrap = el("div", { class: "bar-wrap" });
   const pct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
-  const fill = el("div", { class: "bar-fill" + (kind === "stamina" ? " stamina" : ""), style: `width:${pct}%` });
+  const fill = el("div", { class: "bar-fill" + (kind === "stamina" ? " stamina" : kind === "vita" ? " vita" : ""), style: `width:${pct}%` });
   barWrap.append(fill, el("div", { class: "bar-label" }, `${label}: ${value}/${max}`));
   wrap.append(barWrap);
   return wrap;
@@ -2279,6 +2292,7 @@ function appendBattleColumns(wrap) {
   // avevano sempre la stessa lunghezza anche con Cosmo massimo
   // molto diverso tra i due combattenti.
   const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
+  const sharedMaxVita = Math.max(k.vita_max, o.vita_max);
 
   // Tecniche personalizzate (richiesto in chat): caricate pigre una
   // sola volta qui, non separatamente in ogni ramo sottostante - si
@@ -2310,6 +2324,7 @@ function appendBattleColumns(wrap) {
   const leftPanel = el("div", { class: "fighter-panel" });
   leftPanel.append(el("h2", {}, k.formal_name));
   leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
+  leftPanel.append(renderFullBar(k.vita_cur, k.vita_max, sharedMaxVita, "Vita", "vita"));
   leftPanel.append(renderFullBar(k.cosmo_cur, k.cosmo_max, sharedMaxCosmo));
 
   if (state.battle.pending_opponent_technique) {
@@ -2332,7 +2347,12 @@ function appendBattleColumns(wrap) {
       // quale delle tue tecniche rispondere, come un vero attacco.
       leftPanel.append(el("p", { class: "hint", style: "margin-top:8px;" }, "Il colpo avversario arriva pieno, senza riduzione - scegli con cosa rispondere:"));
       for (const ct of myOffensive) {
-        leftPanel.append(el("button", { onClick: () => reactToAttack("contrattacca", ct) }, `⚔ ${ct.name} (${ct.power})`));
+        const cost = techniqueCosmoCost(ct.name, ct.power);
+        const affordable = k.cosmo_cur >= cost;
+        leftPanel.append(el("button", {
+          onClick: () => reactToAttack("contrattacca", ct),
+          ...(affordable ? {} : { disabled: "disabled" }),
+        }, cost > 0 ? `⚔ ${ct.name} (${ct.power}) — ${cost} Cosmo` : `⚔ ${ct.name} (${ct.power})`));
       }
       leftPanel.append(el("button", { class: "secondary", onClick: () => { state.showCounterPicker = false; render(); } }, "◄ Annulla"));
     } else {
@@ -2344,14 +2364,28 @@ function appendBattleColumns(wrap) {
     const senses = k.senses;
     leftPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le tue tecniche:"));
     for (const t of myOffensive) {
-      leftPanel.append(el("button", { onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc) }, `⚔ ${t.name} (${t.power})`));
+      const cost = techniqueCosmoCost(t.name, t.power);
+      const affordable = k.cosmo_cur >= cost;
+      leftPanel.append(el("button", {
+        onClick: () => declareAttack(t.name, t.power, t.tech_type, t.launch_desc, t.effect_desc),
+        ...(affordable ? {} : { disabled: "disabled" }),
+      }, cost > 0 ? `⚔ ${t.name} (${t.power}) — ${cost} Cosmo` : `⚔ ${t.name} (${t.power})`));
     }
     for (const btn of defensiveButtons()) leftPanel.append(btn);
+    // Carica il Cosmo (richiesto in chat, le tre barre): non spende
+    // più Cosmo per un bonus da un colpo solo - ora recupera Cosmo e
+    // concede un bonus per alcuni turni, con un raffreddamento -
+    // disabilitato anche mentre il bonus precedente è ancora attivo,
+    // non solo senza il Sesto Senso.
+    const alreadyCharged = (state.battle.player_charged_turns || 0) > 0;
+    let chargeLabel = "🔥 Carica il Cosmo";
+    if (!senses.sesto) chargeLabel = "🔥 Carica (richiede Sesto Senso)";
+    else if (alreadyCharged) chargeLabel = `🔥 Già carico (${state.battle.player_charged_turns} turni rimasti)`;
     leftPanel.append(el("button", {
       onClick: declareCharge,
       class: "secondary",
-      ...(senses.sesto ? {} : { disabled: "disabled" }),
-    }, senses.sesto ? "🔥 Carica il Cosmo" : "🔥 Carica (richiede Sesto Senso)"));
+      ...(senses.sesto && !alreadyCharged ? {} : { disabled: "disabled" }),
+    }, chargeLabel));
     // Ritirarsi non ha senso durante la Prova Finale (richiesto in
     // chat: è il momento decisivo dell'addestramento) - solo in un
     // vero scontro d'Arena.
@@ -2382,6 +2416,7 @@ function appendBattleColumns(wrap) {
   const rightPanel = el("div", { class: "fighter-panel opponent-panel" });
   rightPanel.append(el("h2", {}, o.name));
   rightPanel.append(el("p", { class: "hint" }, `${o.divinity} / ${o.faction} · Livello armatura ${o.armor_level}`));
+  rightPanel.append(renderFullBar(o.vita_cur, o.vita_max, sharedMaxVita, "Vita", "vita"));
   rightPanel.append(renderFullBar(o.cosmo_cur, o.cosmo_max, sharedMaxCosmo));
   rightPanel.append(el("p", { class: "hint", style: "margin-top:10px;" }, "Le sue tecniche:"));
   for (const t of o.techniques) {
@@ -2392,18 +2427,18 @@ function appendBattleColumns(wrap) {
   wrap.append(columns);
 }
 
-function renderFullBar(value, max, scaleMax) {
-  // scaleMax (opzionale): il Cosmo massimo più alto tra i due
-  // combattenti - la CORNICE esterna si restringe in proporzione,
-  // così chi ha meno Cosmo massimo ha una barra fisicamente più
-  // corta, non solo una percentuale diversa dentro una barra identica.
+function renderFullBar(value, max, scaleMax, label = "Cosmo", kind = "cosmo") {
+  // scaleMax (opzionale): il massimo più alto tra i due combattenti -
+  // la CORNICE esterna si restringe in proporzione, così chi ha meno
+  // massimo ha una barra fisicamente più corta, non solo una
+  // percentuale diversa dentro una barra identica.
   const containerPct = scaleMax ? Math.max(15, Math.min(100, (max / scaleMax) * 100)) : 100;
   const fillPct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
 
   const outer = el("div", { style: `width:${containerPct}%;` });
   const barWrap = el("div", { class: "bar-wrap" });
-  barWrap.append(el("div", { class: "bar-fill", style: `width:${fillPct}%` }));
-  barWrap.append(el("div", { class: "bar-label" }, `Cosmo: ${value} / ${max}`));
+  barWrap.append(el("div", { class: "bar-fill" + (kind === "vita" ? " vita" : ""), style: `width:${fillPct}%` }));
+  barWrap.append(el("div", { class: "bar-label" }, `${label}: ${value} / ${max}`));
   outer.append(barWrap);
   return outer;
 }
