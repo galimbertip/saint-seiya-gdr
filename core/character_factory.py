@@ -27,6 +27,13 @@ from core.fm_manager import get_calendar_display
 
 STARTING_COSMO_BASE = 100
 STARTING_STAT_BASE = 10
+# Le tre barre (richiesto in chat): la Vita ora è un indicatore a sé,
+# non più il Cosmo che fa "doppio lavoro" - scala con la Costituzione
+# invece che col livello dell'armatura (il Cosmo scala con quello),
+# così le due barre crescono per ragioni diverse. PLACEHOLDER come le
+# altre formule di bilanciamento di questo progetto.
+VITA_BASE = 100
+VITA_PER_CON = 2
 
 # Corporatura: richiesta in chat, sposta la Costituzione di partenza -
 # un cavaliere robusto incassa meglio, uno minuto un po' meno. Piccoli
@@ -112,6 +119,7 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     stats = _starting_stats(armor["level"])
     stats["con"] = max(1, stats["con"] + BUILD_CON_BONUS.get(build, 0))
     cosmo = STARTING_COSMO_BASE + armor["level"]
+    vita = VITA_BASE + stats["con"] * VITA_PER_CON
     full_display_name = f"{raw_name} {surname}".strip()
     formal_name = f"{full_display_name} di {armor_name}"
     # Calendario UNICO condiviso da tutti (richiesto in chat, stile
@@ -139,14 +147,14 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max,
+        INSERT INTO knights (formal_name, raw_name, armor_name, cosmo_cur, cosmo_max, vita_cur, vita_max,
                               str, dex, con, tec, vol, player_level, xp, stamina, age,
                               surname, gender, origin, build, biography, skin_tone, hair_color, created_at,
                               is_knight, master_name, master_armor_name, companion1_name, companion2_name,
                               game_minutes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (formal_name, raw_name, armor_name, cosmo, cosmo,
+        (formal_name, raw_name, armor_name, cosmo, cosmo, vita, vita,
          stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"], player_level,
          age, surname, gender, origin, build, biography, skin_tone, hair_color, created_at,
          is_knight, master_name, master_armor_name, companion1_name, companion2_name,
@@ -212,7 +220,7 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
     combattimento) tornando dal dict in memoria al DB."""
     conn.execute(
         """
-        UPDATE knights SET cosmo_cur=?, cosmo_max=?, str=?, dex=?, con=?, tec=?, vol=?,
+        UPDATE knights SET cosmo_cur=?, cosmo_max=?, vita_cur=?, vita_max=?, str=?, dex=?, con=?, tec=?, vol=?,
                             player_level=?, xp=?, stamina=?, age=?, game_day=?, game_minutes=?, weekly_schedule=?,
                             surname=?, gender=?, origin=?, build=?, tutorial_seen=?, biography=?,
                             skin_tone=?, hair_color=?, avatar_path=?, created_at=?,
@@ -222,7 +230,8 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
                             apprentice_status=?, armor_name=?
         WHERE id=?
         """,
-        (knight["cosmo_cur"], knight["cosmo_max"], knight["str"], knight["dex"], knight["con"],
+        (knight["cosmo_cur"], knight["cosmo_max"], knight["vita_cur"], knight["vita_max"],
+         knight["str"], knight["dex"], knight["con"],
          knight["tec"], knight["vol"], knight["player_level"], knight["xp"], knight["stamina"],
          knight["age"], knight["game_day"], knight["game_minutes"], knight["weekly_schedule"],
          knight["surname"], knight["gender"], knight["origin"], knight["build"], knight["tutorial_seen"],
