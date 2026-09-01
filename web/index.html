@@ -1628,6 +1628,10 @@ function renderSheetTab() {
   idCard.append(el("p", {}, k.is_knight
     ? "🎖️ Cavaliere"
     : el("span", {}, "🎓 Apprendista - in addestramento per diventare portatore di ", el("strong", {}, k.armor_name))));
+  // Le Dracme (richiesto in chat: prima non si vedevano da nessuna
+  // parte nella Scheda vera e propria, solo di sfuggita a fine
+  // missione) - sempre visibili qui, non solo in quel momento.
+  idCard.append(el("p", { class: "hint" }, `💰 ${k.denaro} Dracme`));
   grid.append(idCard);
 
   // --- BG Personaggio: solo l'abbozzo scritto alla creazione, non le
@@ -2166,13 +2170,13 @@ async function doSoldierActivity(activityKey) {
 function renderSoldierTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Servizio da Soldato Semplice"));
-  wrap.append(el("p", { class: "hint" }, `Denaro: ${state.character.denaro}`));
+  wrap.append(el("p", { class: "hint" }, `Dracme: ${state.character.denaro}`));
 
   if (state.soldierActivityResult) {
     const card = el("div", { class: "card" });
     const r = state.soldierActivityResult;
     card.append(el("p", {}, r.text));
-    card.append(el("p", { class: "hint" }, `+${r.denaro_earned} denaro (totale: ${r.denaro_total})`));
+    card.append(el("p", { class: "hint" }, `+${r.denaro_earned} Dracme (totale: ${r.denaro_total})`));
     if (r.aging_message) card.append(el("p", { class: "hint" }, r.aging_message));
     card.append(el("button", { onClick: () => { state.soldierActivityResult = null; render(); } }, "Continua"));
     wrap.append(card);
@@ -2223,7 +2227,7 @@ function renderMissionsTab() {
     if (state.missionEndingResult.text) {
       card.append(el("p", {}, state.missionEndingResult.text));
     }
-    card.append(el("p", { class: "hint" }, `Denaro: ${state.character.denaro} · Cosmo massimo: ${state.character.cosmo_max}`));
+    card.append(el("p", { class: "hint" }, `Dracme: ${state.character.denaro} · Cosmo massimo: ${state.character.cosmo_max}`));
     card.append(el("button", { onClick: () => { state.missionEndingResult = null; render(); } }, "Continua"));
     wrap.append(card);
     return wrap;
