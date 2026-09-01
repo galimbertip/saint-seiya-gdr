@@ -30,7 +30,8 @@ valori definitivi - li tariamo insieme quando affrontiamo il
 bilanciamento vero e proprio. La struttura è quella buona.
 """
 import random
-from database.db_manager import advance_world_minutes
+from database.db_manager import advance_world_minutes, get_last_npc_tick_minutes, set_last_npc_tick_minutes
+from core.world_sim import tick_world_events, WORLD_TICK_MINUTES_PER_DAY
 from datetime import datetime, timedelta
 
 from core.arena_manager import get_unlocked_senses
@@ -185,6 +186,15 @@ class RosterManager:
         previous_year = get_calendar_display(knight["game_minutes"])["year"]
         knight["game_minutes"] = advance_world_minutes(conn, minutes)
         new_year = get_calendar_display(knight["game_minutes"])["year"]
+
+        # Il mondo che vive per conto suo (richiesto in chat) - un
+        # controllo economico, non un ricalcolo dei PNG ad ogni singolo
+        # avanzamento: solo quando è passato almeno un giorno pieno dal
+        # loro ultimo ricalcolo.
+        last_tick = get_last_npc_tick_minutes(conn)
+        if knight["game_minutes"] - last_tick >= WORLD_TICK_MINUTES_PER_DAY:
+            tick_world_events(conn, knight["game_minutes"] - last_tick)
+            set_last_npc_tick_minutes(conn, knight["game_minutes"])
 
         if new_year > previous_year:
             knight["age"] += (new_year - previous_year)
