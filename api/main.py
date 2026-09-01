@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
-    get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster,
+    get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster, get_world_chronicle,
     add_biography_entry, get_biography_entries, get_custom_techniques, add_custom_technique,
     release_roster_slot,
 )
@@ -1137,6 +1137,25 @@ def api_get_roster(conn=Depends(get_db)):
     con chi le occupa - il PNG fisso se libere, il personaggio
     giocatore se reclamate. Ordinata per divinità/fazione/livello."""
     return [dict(r) for r in get_roster(conn)]
+
+
+@app.get("/world-chronicle")
+def api_get_world_chronicle(conn=Depends(get_db)):
+    """La Cronaca del Mondo (richiesto in chat): gli eventi accaduti ai
+    PNG nel tempo condiviso - morti, ritiri, sparizioni, sostituzioni -
+    condivisa da tutti i personaggi, non legata a nessuno in
+    particolare. Include anche la data di gioco leggibile di ciascuna
+    voce, calcolata qui invece che nel frontend."""
+    righe = get_world_chronicle(conn)
+    risultato = []
+    for r in righe:
+        cal = get_calendar_display(r["world_minutes"])
+        risultato.append({
+            "armor_name": r["armor_name"],
+            "entry": r["entry"],
+            "date_label": f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}",
+        })
+    return risultato
 
 
 @app.get("/institutional-npcs")
