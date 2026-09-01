@@ -289,6 +289,7 @@ const state = {
   lastDifficulty: null,     // l'ultima difficoltà cercata, per "Cerca altri avversari" senza rifare la scelta
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
+  chronicle: null,           // la Cronaca del Mondo (eventi accaduti ai PNG nel tempo), null finché non caricata
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
@@ -1053,10 +1054,10 @@ function renderGameScreen() {
   // se sono comunque bloccati lato server.
   const isSoldier = !k.is_knight && k.apprentice_status === "soldier";
   const tabDefs = k.is_knight
-    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"]]
+    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"]]
     : isSoldier
-    ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"]]
-    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"]];
+    ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"]]
+    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"]];
   // Allenamento e Arena ora restano visibili anche da Apprendista
   // (richiesto in chat: prima sparivano del tutto dalla barra, e senza
   // vederle il tutorial che le nomina risultava incomprensibile) - il
@@ -1094,6 +1095,7 @@ function renderGameScreen() {
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
   else if (state.gameTab === "missions") wrap.append(renderMissionsTab());
   else if (state.gameTab === "soldier") wrap.append(renderSoldierTab());
+  else if (state.gameTab === "chronicle") wrap.append(renderChronicleTab());
   else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
 
   wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
@@ -1106,6 +1108,16 @@ async function loadRoster() {
   } catch (e) {
     showError(e.message);
     state.roster = [];
+  }
+  render();
+}
+
+async function loadChronicle() {
+  try {
+    state.chronicle = await api("/world-chronicle");
+  } catch (e) {
+    showError(e.message);
+    state.chronicle = [];
   }
   render();
 }
@@ -1402,6 +1414,33 @@ async function createCustomTechnique(name, techType, isDefensive, launchDesc, ef
 // (etichettato chiaramente, per far capire che è ancora selezionabile
 // in creazione personaggio) o il cavaliere giocatore che l'ha già
 // reclamata.
+function renderChronicleTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Cronaca del Mondo"));
+  wrap.append(el("p", { class: "hint" }, "Quello che succede ai Cavalieri non giocati, nel tempo condiviso da tutti - indipendentemente da quale personaggio stai seguendo in questo momento."));
+
+  if (state.chronicle === null) {
+    loadChronicle();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Cronaca...")));
+    return wrap;
+  }
+
+  if (state.chronicle.length === 0) {
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Non è ancora successo nulla di notevole. Il mondo è giovane, o silenzioso - per ora.")));
+    return wrap;
+  }
+
+  const card = el("div", { class: "card" });
+  for (const voce of state.chronicle) {
+    const entryBlock = el("div", { style: "margin-top:12px;padding-top:12px;border-top:1px solid var(--border);" });
+    entryBlock.append(el("p", { class: "hint" }, `📅 ${voce.date_label} · ${voce.armor_name}`));
+    entryBlock.append(el("p", {}, voce.entry));
+    card.append(entryBlock);
+  }
+  wrap.append(card);
+  return wrap;
+}
+
 function renderHierarchyTab() {
   const wrap = el("div");
 
