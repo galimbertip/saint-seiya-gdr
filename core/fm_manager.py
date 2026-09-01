@@ -111,6 +111,10 @@ ARENA_ROUND_MINUTES = 15  # un mezzo-turno di combattimento (dichiari + reagisce
 # tempo. In Arena invece il Cosmo NON si rigenera mai da solo - lì sei
 # in combattimento, per definizione.
 COSMO_REGEN_PER_HOUR = 2  # PLACEHOLDER: da tarare insieme
+# La Vita guarisce più lentamente del Cosmo (richiesto in chat: le tre
+# barre si recuperano piano nel tempo, non di colpo - e una ferita vera
+# impiega più a guarire di quanto impieghi il Cosmo a ricaricarsi).
+VITA_REGEN_PER_HOUR = 1  # PLACEHOLDER: da tarare insieme
 
 
 def parse_weekly_schedule(schedule_str: str) -> list[str]:
@@ -236,6 +240,17 @@ class RosterManager:
         if cosmo_recovered > 0:
             knight["cosmo_cur"] += cosmo_recovered
             msg = f"{msg} (+{cosmo_recovered} Cosmo recuperato)"
+
+        # Stessa logica per la Vita (richiesto in chat: le tre barre si
+        # recuperano tutte piano nel tempo) - più lenta del Cosmo, una
+        # ferita vera impiega di più a guarire.
+        vita_recovered = min(
+            knight["vita_max"] - knight["vita_cur"],
+            round(minutes / 60 * VITA_REGEN_PER_HOUR),
+        )
+        if vita_recovered > 0:
+            knight["vita_cur"] += vita_recovered
+            msg = f"{msg} (+{vita_recovered} Vita recuperata)"
 
         aging_msg = RosterManager.spend_time(conn, knight, minutes)
         if aging_msg:
