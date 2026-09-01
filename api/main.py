@@ -733,7 +733,7 @@ def _complete_scalata_if_done(conn, knight: dict) -> bool:
     add_biography_entry(
         conn, knight["id"], knight["game_minutes"],
         f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} completa "
-        f"la Scalata delle Dodici Case, guadagnando {COSMO_MAX_REWARD} Cosmo massimo e {DENARO_REWARD} denaro.",
+        f"la Scalata delle Dodici Case, guadagnando {COSMO_MAX_REWARD} Cosmo massimo e {DENARO_REWARD} Dracme.",
     )
     return True
 
