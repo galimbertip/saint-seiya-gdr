@@ -15,7 +15,7 @@ round di combattimento) sarebbe inutilmente costoso."""
 
 import random
 
-from core.arena_manager import OPPONENT_FIRST_NAMES, OPPONENT_SURNAMES
+from core.arena_manager import generate_full_name
 
 WORLD_TICK_MINUTES_PER_DAY = 1440
 
@@ -75,7 +75,7 @@ def tick_world_events(conn, elapsed_minutes: int) -> list[dict]:
         if random.random() >= chance:
             continue
         fate = resolve_npc_fate()
-        new_name = f"{random.choice(OPPONENT_FIRST_NAMES)} {random.choice(OPPONENT_SURNAMES)}"
+        new_name = generate_full_name()
         conn.execute(
             """UPDATE roster SET npc_name = ?, npc_generation = npc_generation + 1,
                npc_fate = ?, last_world_event_minutes = last_world_event_minutes + ?
