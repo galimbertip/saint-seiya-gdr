@@ -111,6 +111,8 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
     armor = random.choice(candidates)
     techniques = [dict(t) for t in get_techniques_for_armor(armor["name"], conn)]
     cosmo = 100 + armor["level"]
+    con_value = 10 + armor["level"] // 10
+    vita = 100 + con_value * 2  # stessa formula di VITA_BASE/VITA_PER_CON in character_factory.py
 
     opponent_full_name = f"{random.choice(OPPONENT_FIRST_NAMES)} {random.choice(OPPONENT_SURNAMES)}"
     return {
@@ -121,9 +123,11 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
         "armor_level": armor["level"],
         "cosmo_cur": cosmo,
         "cosmo_max": cosmo,
+        "vita_cur": vita,
+        "vita_max": vita,
         "str": 10 + armor["level"] // 10,
         "dex": 10 + armor["level"] // 10,
-        "con": 10 + armor["level"] // 10,
+        "con": con_value,
         "tec": 10 + armor["level"] // 10,
         "vol": 10 + armor["level"] // 10,
         "origin": random.choice(list(ORIGIN_ELEMENT_AFFINITY.keys())),
@@ -359,8 +363,29 @@ NONO_SENSO_LEVEL = 50  # placeholder narrativo, nessun effetto meccanico oggi
 SEVENTH_SENSE_COSMO_RATIO = 0.2  # sotto il 20% del Cosmo massimo
 SEVENTH_SENSE_MULTIPLIER = 2.0
 
-CHARGE_COSMO_COST = 15
-CHARGE_DAMAGE_MULTIPLIER = 1.5
+# Le tre barre (richiesto in chat): il Cosmo smette di fare da vita e
+# diventa una risorsa vera per le tecniche - l'Attacco Base resta
+# sempre gratuito. "Carica il Cosmo" cambia verso: non spende più
+# Cosmo per un bonus da un colpo solo, ora fa perdere il turno per
+# RECUPERARE Cosmo e ottenere un bonus di potenza (attacco E difesa)
+# per alcuni turni di fila - con un raffreddamento: non si può
+# ricaricare finché il bonus precedente non è scaduto, altrimenti
+# alternando carica/attacco si diventerebbe invincibili (discusso in
+# chat). Tutti PLACEHOLDER come le altre formule di bilanciamento.
+TECHNIQUE_COSMO_COST_DIVISOR = 10
+CHARGE_TURNS_DURATION = 3    # quanti turni dura il bonus dopo una Carica
+CHARGE_COSMO_RESTORE = 30    # quanto Cosmo si recupera caricando
+CHARGE_POWER_BONUS = 1.3     # +30% al danno inflitto, -30% al danno subito, mentre il bonus è attivo
+
+
+def technique_cosmo_cost(technique_name: str, technique_power) -> int:
+    """Il Cosmo come risorsa per le tecniche (richiesto in chat): zero
+    per l'Attacco Base, altrimenti proporzionale alla potenza. Usata
+    sia per il giocatore sia per l'avversario, così l'IA rispetta lo
+    stesso vincolo."""
+    if technique_name == "Attacco Base" or not technique_power:
+        return 0
+    return max(1, technique_power // TECHNIQUE_COSMO_COST_DIVISOR)
 
 DEFAULT_DEFENSE_POWER = 10  # "Parata" generica, per chi non ha una tecnica difensiva
 
