@@ -13,12 +13,13 @@ Testo interamente originale, ispirato ai segni zodiacali che danno il
 nome alle Case (senza riprendere personaggi o scene specifiche
 dell'opera originale)."""
 
+import json
 import random
 import sqlite3
 
 from database.db_manager import get_roster_entry, get_armor
 from core.training_path import build_opponent_from_armor
-from core.arena_manager import generate_opponent
+from core.arena_manager import generate_opponent, generate_opponent_candidates
 from core.alignment import ALIGNMENT_PERSUASION_MODIFIER, persuasion_flavor_line
 
 MISSION_ID = "dodici_case"
@@ -507,24 +508,105 @@ def is_eligible_for_tournament(conn: sqlite3.Connection, knight: dict, tournamen
     return armor is not None and armor["faction"] == required_faction
 
 
-def pick_tournament_opponent(conn: sqlite3.Connection, knight: dict, tournament_id: str) -> dict:
-    """L'avversario per il round attuale del torneo `tournament_id` -
-    dalla stessa fazione se il torneo lo richiede (Le Guerre
-    Galattiche, un torneo tra pari), altrimenti dal pool normale
-    abbinato per livello (già usato dall'Arena, richiesto in chat:
-    riuso invece di duplicare la logica)."""
+def generate_tournament_bracket(conn: sqlite3.Connection, knight: dict, tournament_id: str) -> dict:
+    """Genera l'INTERO tabellone all'iscrizione (richiesto in chat: "non
+    si conosce i partecipanti, il tabellone" - non più un avversario
+    pescato alla cieca ad ogni round). Il percorso "fantasma" degli
+    altri partecipanti (chi affronta chi, chi vince) è già simulato
+    con un confronto di livello - solo il PROPRIO percorso del
+    giocatore resta scritto man mano che gioca sul serio. Per la
+    visualizzazione, il giocatore viene sempre mostrato come vincitore
+    del proprio incontro nei round successivi (se perde per davvero il
+    torneo finisce comunque lì, il tabellone mostrato in quel caso
+    semplicemente non conterà più)."""
     settings = TOURNAMENT_MISSIONS[tournament_id]
+    total_rounds = settings["rounds"]
+    total_slots = 2 ** total_rounds
+
     if settings["opponent_faction"]:
         rows = conn.execute(
             "SELECT * FROM armors WHERE faction = ? AND name != ?",
             (settings["opponent_faction"], knight["armor_name"]),
         ).fetchall()
-        armor_row = dict(random.choice(rows)) if rows else dict(get_armor(knight["armor_name"], conn))
-        guardian_name = get_house_guardian(conn, armor_row["name"])
-        return build_opponent_from_armor(conn, armor_row["name"], guardian_name)
+        pool = list(rows)
+        random.shuffle(pool)
+        opponent_armors = []
+        for row in pool[:total_slots - 1]:
+            guardian_name = get_house_guardian(conn, row["name"])
+            opponent_armors.append({"name": f"{guardian_name} di {row['name']}", "armor_name": row["name"], "level": row["level"]})
+    else:
+        player_armor = get_armor(knight["armor_name"], conn)
+        candidates = generate_opponent_candidates(
+            conn, player_armor["level"], exclude_armor_name=knight["armor_name"], count=total_slots - 1
+        )
+        opponent_armors = [{"name": c["name"], "armor_name": c["armor_name"], "level": c["armor_level"]} for c in candidates]
 
-    player_armor = get_armor(knight["armor_name"], conn)
-    return generate_opponent(conn, player_armor["level"], exclude_armor_names={knight["armor_name"]})
+    # Se il catalogo non basta per riempire tutti gli slot con nomi
+    # distinti (es. Le Guerre Galattiche con pochi Bronze Saint
+    # disponibili), si ripete pur di riempire il tabellone.
+    while opponent_armors and len(opponent_armors) < total_slots - 1:
+        opponent_armors.append(random.choice(opponent_armors))
+
+    player_armor_row = get_armor(knight["armor_name"], conn)
+    player_display_name = f"{knight['raw_name']} {knight['surname']}".strip()
+    slots = [{"name": player_display_name, "armor_name": knight["armor_name"],
+              "level": player_armor_row["level"], "is_player": True}]
+    for opp in opponent_armors[:total_slots - 1]:
+        slots.append({**opp, "is_player": False})
+    random.shuffle(slots)
+    player_slot = next(i for i, s in enumerate(slots) if s["is_player"])
+
+    rounds = []
+    current_slots = list(range(total_slots))
+    for _round_num in range(total_rounds):
+        matches = [[current_slots[i], current_slots[i + 1]] for i in range(0, len(current_slots), 2)]
+        winners = []
+        for a, b in matches:
+            if a == player_slot or b == player_slot:
+                winners.append(player_slot)
+            else:
+                level_a, level_b = slots[a]["level"], slots[b]["level"]
+                total = max(level_a + level_b, 1)
+                winners.append(a if random.random() < level_a / total else b)
+        rounds.append({"matches": matches, "winners": winners})
+        current_slots = winners
+
+    return {"slots": slots, "player_slot": player_slot, "rounds": rounds, "total_rounds": total_rounds}
+
+
+def save_tournament_bracket(knight: dict, bracket: dict) -> None:
+    """Serializza il tabellone dentro il campo tournament_bracket
+    (richiesto in chat) - il chiamante resta comunque responsabile di
+    save_knight() per persisterlo davvero."""
+    knight["tournament_bracket"] = json.dumps(bracket)
+
+
+def load_tournament_bracket(knight: dict) -> dict | None:
+    if not knight.get("tournament_bracket"):
+        return None
+    return json.loads(knight["tournament_bracket"])
+
+
+def get_tournament_opponent_slot(bracket: dict, round_number: int) -> dict:
+    """Lo slot dell'avversario del giocatore per questo round, dal
+    tabellone già generato (richiesto in chat: deve corrispondere
+    DAVVERO a chi si vede nel tabellone, non un altro pescato a
+    caso)."""
+    round_data = bracket["rounds"][round_number - 1]
+    player_slot = bracket["player_slot"]
+    for a, b in round_data["matches"]:
+        if a == player_slot or b == player_slot:
+            return bracket["slots"][b if a == player_slot else a]
+    raise ValueError("Il giocatore non compare in nessun incontro di questo round del tabellone.")
+
+
+def build_tournament_opponent(conn: sqlite3.Connection, bracket: dict, round_number: int) -> dict:
+    """L'avversario del round attuale, pronto per il motore di
+    combattimento - preso dal tabellone già generato, non più pescato
+    alla cieca ad ogni round (richiesto in chat)."""
+    slot = get_tournament_opponent_slot(bracket, round_number)
+    guardian_name = slot["name"].split(" di ")[0] if " di " in slot["name"] else slot["name"]
+    return build_opponent_from_armor(conn, slot["armor_name"], guardian_name)
 
 
 def resolve_tournament_reward(tournament_id: str, rounds_completed: int, is_champion: bool) -> dict:
