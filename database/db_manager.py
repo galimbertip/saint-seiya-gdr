@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS knights (
     mission_stage INTEGER NOT NULL DEFAULT 0,
     mission_node TEXT NOT NULL DEFAULT '',
     mission_flags TEXT NOT NULL DEFAULT '',
+    tournament_bracket TEXT NOT NULL DEFAULT '',
     apprentice_status TEXT NOT NULL DEFAULT ''
 );
 
@@ -335,6 +336,17 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN mission_flags TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunte colonne mission_node/mission_flags a knights (per missioni a grafo).")
+    if "tournament_bracket" not in existing_columns:
+        # Il tabellone dei tornei (richiesto in chat: "non si conosce i
+        # partecipanti, il tabellone" - generato tutto in una volta
+        # all'iscrizione, non più avversari pescati alla cieca round
+        # per round) - un JSON con tutti i partecipanti e l'esito
+        # dell'intero tabellone (il percorso "fantasma" degli altri
+        # partecipanti è già simulato al momento dell'iscrizione, così
+        # si può mostrare il tabellone completo fin dall'inizio).
+        conn.execute("ALTER TABLE knights ADD COLUMN tournament_bracket TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna tournament_bracket a knights.")
     if "apprentice_status" not in existing_columns:
         # Alternative al fallimento della Prova Finale (richiesto in
         # chat) - vuoto vuol dire "addestramento normale in corso",
