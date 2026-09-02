@@ -38,29 +38,6 @@
     padding: 16px 18px;
     margin-bottom: 16px;
   }
-  .tavern-map {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .tavern-tables-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 10px;
-  }
-  .tavern-spot {
-    background: var(--bg-panel-alt);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    cursor: pointer;
-    transition: border-color 0.15s;
-  }
-  .tavern-spot:hover { border-color: var(--gold-dim); }
-  .tavern-spot-here { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
-  .tavern-spot-label { font-weight: 700; margin-bottom: 4px; }
-  .tavern-spot-door { text-align: center; font-style: italic; }
   button {
     background: var(--gold-dim);
     color: var(--bg-darkest);
@@ -272,6 +249,13 @@ const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "onClick") node.addEventListener("click", v);
+    // onInput/onKeyDown in stile camelCase, come onClick (corretto in
+    // chat: "oninput"/"onkeydown" minuscoli finivano nel ramo else,
+    // trattati come un attributo HTML testuale invece che un vero
+    // gestore - una funzione passata lì non veniva mai collegata
+    // davvero, il campo di testo della Taverna non si aggiornava mai).
+    else if (k === "onInput") node.addEventListener("input", v);
+    else if (k === "onKeyDown") node.addEventListener("keydown", v);
     else if (k === "class") node.className = v;
     else node.setAttribute(k, v);
   }
@@ -316,7 +300,9 @@ const state = {
   tavernRealms: null,        // le 13 Taverne separate per regno (richiesto in chat), null finché non caricate
   tavernDivinity: null,      // in quale Taverna/regno sei ora, null se sei ancora alla scelta
   tavernRealmRoster: null,   // la mappa di QUESTA Taverna (taverniere + tavoli), null finché non caricata
-  tavernPlayerPosition: "door", // dove si trova il tuo segnalino nella Taverna: "door" | "bar" | "table-N"
+  tavernPlayerPosition: "door", // in quale zona ti trovi ora: "door" | "bar" | "table-N" | null se in mezzo alla sala
+  tavernPlayerX: 5,          // le tue coordinate VERE sulla mappa (richiesto in chat: movimento libero come l'Arena, non caselle)
+  tavernPlayerY: 9.3,
   tavernArmorName: null,     // con quale armatura/PNG stai parlando ora, null se nessuna
   tavernConversation: null,  // la conversazione corrente (nome, affinità, messaggi), null finché non caricata
   tavernInput: "",           // il testo che stai scrivendo
@@ -421,6 +407,8 @@ async function selectCharacter(id) {
   state.tavernDivinity = null;
   state.tavernRealmRoster = null;
   state.tavernPlayerPosition = "door";
+  state.tavernPlayerX = 5;
+  state.tavernPlayerY = 9.3;
   state.tavernArmorName = null;
   state.tavernConversation = null;
   state.tavernInput = "";
@@ -1176,6 +1164,8 @@ async function openTavernRealm(divinity) {
   state.tavernDivinity = divinity;
   state.tavernRealmRoster = null;
   state.tavernPlayerPosition = "door";
+  state.tavernPlayerX = 5;
+  state.tavernPlayerY = 9.3;
   render();
   try {
     state.tavernRealmRoster = await api(`/characters/${state.characterId}/tavern-map/${encodeURIComponent(divinity)}`);
@@ -1202,6 +1192,8 @@ function closeTavernRealm() {
   state.tavernDivinity = null;
   state.tavernRealmRoster = null;
   state.tavernPlayerPosition = "door";
+  state.tavernPlayerX = 5;
+  state.tavernPlayerY = 9.3;
   render();
 }
 
@@ -1278,6 +1270,125 @@ const TAVERN_RELATION_LABELS = {
   alleata: "🤝 Alleata", neutrale: "⚖️ Neutrale", diffidente: "⚠️ Diffidente", ostile: "⚔️ Ostile",
 };
 
+// Le zone fisse della mappa della Taverna (richiesto in chat:
+// movimento libero come l'Arena, non caselle cliccabili) - stessa
+// griglia 0-10 già usata da renderArenaMap, per coerenza visiva.
+// `radius`: quanto vicino deve arrivare il segnalino perché quella
+// zona diventi "dove sei" (interazione con chi c'è vicino).
+const TAVERN_ZONES = [
+  { key: "bar", x: 5, y: 1.3, w: 6, h: 1.6, radius: 2.2, label: "Bancone" },
+  { key: "table-1", x: 2, y: 3.6, w: 1.8, h: 1.8, radius: 1.3, label: "Tavolo 1" },
+  { key: "table-2", x: 2, y: 6.6, w: 1.8, h: 1.8, radius: 1.3, label: "Tavolo 2" },
+  { key: "table-3", x: 5, y: 5.2, w: 1.8, h: 1.8, radius: 1.3, label: "Tavolo 3" },
+  { key: "table-4", x: 8, y: 3.6, w: 1.8, h: 1.8, radius: 1.3, label: "Tavolo 4" },
+  { key: "table-5", x: 8, y: 6.6, w: 1.8, h: 1.8, radius: 1.3, label: "Tavolo 5" },
+  { key: "door", x: 5, y: 9.3, w: 1.6, h: 0.9, radius: 1.4, label: "Porta" },
+];
+
+function tavernZoneAtPosition(x, y) {
+  // Quale zona è abbastanza vicina da poterci interagire (richiesto in
+  // chat: "in base a dove si trova, compare il menu di dialogo con le
+  // persone vicine") - se sei lontano da tutte, null (in mezzo alla
+  // sala, nessuna interazione disponibile).
+  let closest = null;
+  let closestDist = Infinity;
+  for (const zone of TAVERN_ZONES) {
+    const dist = Math.hypot(x - zone.x, y - zone.y);
+    if (dist <= zone.radius && dist < closestDist) {
+      closest = zone.key;
+      closestDist = dist;
+    }
+  }
+  return closest;
+}
+
+function renderTavernMapCanvas(mapData) {
+  const SIZE = 340;
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = `${SIZE}px`;
+  canvas.style.display = "block";
+  canvas.style.margin = "0 auto";
+  canvas.style.background = "var(--bg-panel-alt)";
+  canvas.style.border = "1px solid var(--border)";
+  canvas.style.borderRadius = "8px";
+  canvas.style.cursor = "crosshair";
+
+  const ctx = canvas.getContext("2d");
+  const scale = SIZE / 10;
+
+  // Sfondo a griglia leggera, stesso stile dell'Arena.
+  ctx.strokeStyle = "rgba(120,130,150,0.2)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * scale, 0);
+    ctx.lineTo(i * scale, SIZE);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * scale);
+    ctx.lineTo(SIZE, i * scale);
+    ctx.stroke();
+  }
+
+  // Le zone: il bancone come rettangolo dorato, i tavoli come cerchi,
+  // la porta come rettangolo stretto.
+  const occupantsByTable = {};
+  for (const table of mapData.tables) occupantsByTable[`table-${table.table_number}`] = table.occupants;
+
+  for (const zone of TAVERN_ZONES) {
+    const px = zone.x * scale, py = zone.y * scale;
+    ctx.lineWidth = 2;
+    if (zone.key === "bar") {
+      ctx.fillStyle = "rgba(212, 175, 55, 0.25)";
+      ctx.strokeStyle = "var(--gold-dim)";
+      ctx.fillRect(px - (zone.w * scale) / 2, py - (zone.h * scale) / 2, zone.w * scale, zone.h * scale);
+      ctx.strokeRect(px - (zone.w * scale) / 2, py - (zone.h * scale) / 2, zone.w * scale, zone.h * scale);
+    } else if (zone.key === "door") {
+      ctx.fillStyle = "rgba(120, 130, 150, 0.3)";
+      ctx.strokeStyle = "var(--text-secondary)";
+      ctx.fillRect(px - (zone.w * scale) / 2, py - (zone.h * scale) / 2, zone.w * scale, zone.h * scale);
+      ctx.strokeRect(px - (zone.w * scale) / 2, py - (zone.h * scale) / 2, zone.w * scale, zone.h * scale);
+    } else {
+      const occupied = (occupantsByTable[zone.key] || []).length > 0;
+      ctx.fillStyle = occupied ? "rgba(63, 169, 106, 0.25)" : "rgba(120, 130, 150, 0.15)";
+      ctx.strokeStyle = occupied ? "var(--success)" : "var(--border)";
+      ctx.beginPath();
+      ctx.arc(px, py, (zone.w * scale) / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = "var(--text-secondary)";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(zone.label, px, py + (zone.key === "bar" || zone.key === "door" ? 4 : (zone.h * scale) / 2 + 14));
+  }
+
+  // Il tuo segnalino.
+  const playerPx = { x: state.tavernPlayerX * scale, y: state.tavernPlayerY * scale };
+  ctx.fillStyle = "var(--gold)";
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(playerPx.x, playerPx.y, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const gridX = ((e.clientX - rect.left) / rect.width) * 10;
+    const gridY = ((e.clientY - rect.top) / rect.height) * 10;
+    state.tavernPlayerX = Math.max(0.3, Math.min(9.7, gridX));
+    state.tavernPlayerY = Math.max(0.3, Math.min(9.7, gridY));
+    state.tavernPlayerPosition = tavernZoneAtPosition(state.tavernPlayerX, state.tavernPlayerY);
+    render();
+  });
+
+  return canvas;
+}
+
 function renderTavernTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Taverna"));
@@ -1316,8 +1427,8 @@ function renderTavernTab() {
     const inputRow = el("div", { class: "row" });
     const textInput = el("input", {
       type: "text", value: state.tavernInput, placeholder: "Scrivi qualcosa...",
-      oninput: (e) => { state.tavernInput = e.target.value; },
-      onkeydown: (e) => { if (e.key === "Enter") sendTavernMessage(); },
+      onInput: (e) => { state.tavernInput = e.target.value; },
+      onKeyDown: (e) => { if (e.key === "Enter") sendTavernMessage(); },
     });
     inputRow.append(textInput);
     inputRow.append(el("button", { onClick: sendTavernMessage }, "Invia"));
@@ -1339,46 +1450,18 @@ function renderTavernTab() {
     }
     const map = state.tavernRealmRoster;
     wrap.append(el("h2", {}, map.name));
-    wrap.append(el("p", { class: "hint" }, `${TAVERN_RELATION_LABELS[map.relation] || map.relation} - la disposizione della sala cambia nel tempo.`));
+    wrap.append(el("p", { class: "hint" }, `${TAVERN_RELATION_LABELS[map.relation] || map.relation} - la disposizione della sala cambia nel tempo. Clicca sulla mappa per muoverti.`));
 
-    const mapWrap = el("div", { class: "tavern-map" });
-
-    const barSpot = el("div", {
-      class: "tavern-spot" + (state.tavernPlayerPosition === "bar" ? " tavern-spot-here" : ""),
-      onClick: () => { state.tavernPlayerPosition = "bar"; render(); },
-    });
-    barSpot.append(el("div", { class: "tavern-spot-label" }, "🍺 Bancone"));
-    barSpot.append(el("div", { class: "hint" }, map.bartender.name));
-    mapWrap.append(barSpot);
-
-    const tablesGrid = el("div", { class: "tavern-tables-grid" });
-    for (const table of map.tables) {
-      const posKey = `table-${table.table_number}`;
-      const tableSpot = el("div", {
-        class: "tavern-spot" + (state.tavernPlayerPosition === posKey ? " tavern-spot-here" : ""),
-        onClick: () => { state.tavernPlayerPosition = posKey; render(); },
-      });
-      tableSpot.append(el("div", { class: "tavern-spot-label" }, `🪑 ${table.label}`));
-      tableSpot.append(el("div", { class: "hint" },
-        table.occupants.length === 0 ? "Libero" : table.occupants.map((o) => o.npc_name).join(", ")));
-      tablesGrid.append(tableSpot);
-    }
-    mapWrap.append(tablesGrid);
-
-    const doorSpot = el("div", {
-      class: "tavern-spot tavern-spot-door" + (state.tavernPlayerPosition === "door" ? " tavern-spot-here" : ""),
-      onClick: () => { state.tavernPlayerPosition = "door"; render(); },
-    });
-    doorSpot.append("🚪 Porta d'ingresso");
-    mapWrap.append(doorSpot);
-
-    wrap.append(mapWrap);
+    wrap.append(renderTavernMapCanvas(map));
 
     // La scena, romanzata, in base a dove ti trovi (richiesto in
-    // chat: "non farei il menu stile Arena, la farei romanzata").
+    // chat: "non farei il menu stile Arena, la farei romanzata" - per
+    // il movimento sì, per l'interazione no).
     const sceneCard = el("div", { class: "card" });
-    if (state.tavernPlayerPosition === "door") {
-      sceneCard.append(el("p", {}, "Ti fermi sulla soglia, lasciando che i tuoi occhi si abituino alla luce fioca della sala. Puoi dirigerti verso il bancone, verso uno dei tavoli, o tornartene da dove sei venuto."));
+    if (state.tavernPlayerPosition === null) {
+      sceneCard.append(el("p", {}, "Sei in mezzo alla sala, tra i tavoli. Avvicinati al bancone, a un tavolo, o alla porta per fare qualcosa."));
+    } else if (state.tavernPlayerPosition === "door") {
+      sceneCard.append(el("p", {}, "Ti fermi vicino alla soglia, lasciando che i tuoi occhi si abituino alla luce fioca della sala. Puoi dirigerti verso il bancone, verso uno dei tavoli, o tornartene da dove sei venuto."));
       sceneCard.append(el("button", { class: "secondary", onClick: closeTavernRealm }, "Torna alla schermata principale"));
     } else if (state.tavernPlayerPosition === "bar") {
       sceneCard.append(el("p", {}, `Ti avvicini al bancone. ${map.bartender.name} alza lo sguardo un istante, poi torna al proprio lavoro, in attesa che tu dica qualcosa.`));
