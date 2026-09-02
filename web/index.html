@@ -2812,7 +2812,44 @@ function renderTournamentStatus(tournament) {
   card.append(el("h2", {}, tournament.name));
   card.append(el("p", { class: "hint" }, `${tournament.round_label.charAt(0).toUpperCase() + tournament.round_label.slice(1)} - round ${tournament.round_number} di ${tournament.total_rounds}. Un torneo a eliminazione diretta: perdi e sei fuori, senza un altro tentativo.`));
   card.append(el("button", { onClick: startMissionDuel }, "⚔ Scendi in campo"));
-  return card;
+
+  const wrap = el("div", {});
+  wrap.append(card);
+
+  // Il tabellone vero (richiesto in chat: "non si conosce i
+  // partecipanti, il tabellone") - tutti i partecipanti e tutti gli
+  // incontri, round per round, generati fin dall'iscrizione.
+  const bracket = tournament.bracket;
+  if (bracket) {
+    const bracketCard = el("div", { class: "card" });
+    bracketCard.append(el("h3", {}, "Tabellone"));
+    for (let i = 0; i < bracket.rounds.length; i++) {
+      const roundNum = i + 1;
+      const roundData = bracket.rounds[i];
+      const roundBox = el("div", { style: "margin-bottom:14px;" });
+      let roundTitle = `Round ${roundNum}`;
+      if (roundNum === bracket.total_rounds) roundTitle = "Finale";
+      else if (roundNum === bracket.total_rounds - 1) roundTitle = "Semifinale";
+      if (roundNum > tournament.round_number) roundTitle += " (se arrivi fin qui)";
+      roundBox.append(el("p", { style: "font-weight:700;margin-bottom:6px;" }, roundTitle));
+
+      for (let m = 0; m < roundData.matches.length; m++) {
+        const [a, b] = roundData.matches[m];
+        const slotA = bracket.slots[a];
+        const slotB = bracket.slots[b];
+        const involvesPlayer = a === bracket.player_slot || b === bracket.player_slot;
+        const isNextMatch = involvesPlayer && roundNum === tournament.round_number;
+        const line = el("p", {
+          class: isNextMatch ? "" : "hint",
+          style: isNextMatch ? "font-weight:700;color:var(--gold);margin:2px 0;" : "margin:2px 0;",
+        }, `${slotA.name}${slotA.is_player ? " (tu)" : ""} vs ${slotB.name}${slotB.is_player ? " (tu)" : ""}`);
+        roundBox.append(line);
+      }
+      bracketCard.append(roundBox);
+    }
+    wrap.append(bracketCard);
+  }
+  return wrap;
 }
 
 function appendBattleColumns(wrap) {
