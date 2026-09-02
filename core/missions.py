@@ -16,8 +16,9 @@ dell'opera originale)."""
 import random
 import sqlite3
 
-from database.db_manager import get_roster_entry
+from database.db_manager import get_roster_entry, get_armor
 from core.training_path import build_opponent_from_armor
+from core.arena_manager import generate_opponent
 from core.alignment import ALIGNMENT_PERSUASION_MODIFIER, persuasion_flavor_line
 
 MISSION_ID = "dodici_case"
@@ -437,6 +438,108 @@ GRAPH_MISSIONS = {
     COLONNE_MISSION_ID: {"start_node": COLONNE_START_NODE, "nodes": COLONNE_NODES, "name": "Le Colonne dei Sette Mari"},
     ASGARD_MISSION_ID: {"start_node": ASGARD_START_NODE, "nodes": ASGARD_NODES, "name": "Il Gelo di Valhalla"},
 }
+
+# I tornei (richiesto in chat: "struttura diversa da Nettuno", niente
+# grafo di nodi - un vero tabellone a eliminazione diretta, come le
+# Guerre Galattiche canoniche). Perdere un round NON permette di
+# ritentare (a differenza della Scalata e delle missioni a grafo) - un
+# torneo a eliminazione diretta è, per definizione, senza seconde
+# possibilità: qui sta la vera differenza di "modus operandi" chiesta
+# in chat, non solo un'ambientazione diversa sullo stesso schema.
+GALAXIAN_WARS_ID = "galaxian_wars"
+FREE_TOURNAMENT_ID = "torneo_stelle_libere"
+
+TOURNAMENT_MISSIONS = {
+    GALAXIAN_WARS_ID: {
+        "name": "Le Guerre Galattiche",
+        "rounds": 3,
+        "eligible_faction": "Bronze Saint",  # richiesto in chat: solo per i Bronze Saint, fedele al canone
+        "opponent_faction": "Bronze Saint",
+        "reward_denaro_per_round": 100,
+        "reward_denaro_champion": 500,
+        "reward_cosmo_max_champion": 20,
+    },
+    FREE_TOURNAMENT_ID: {
+        "name": "Il Torneo delle Stelle Libere",
+        "rounds": 4,
+        "eligible_faction": None,  # richiesto in chat: iscrizione libera, indipendente dalla casta
+        "opponent_faction": None,  # usa il pool normale per livello, non una fazione fissa
+        "reward_denaro_per_round": 150,
+        "reward_denaro_champion": 800,
+        "reward_cosmo_max_champion": 30,
+    },
+}
+
+TOURNAMENT_ROUND_NAMES = {1: "primo turno", 2: "secondo turno", 3: "semifinale", 4: "finale"}
+
+
+def tournament_round_label(tournament_id: str, round_number: int) -> str:
+    """Il nome del round in base a quanti ne mancano alla fine
+    (richiesto implicito: l'ultimo round di un torneo a 3 è la
+    "semifinale" solo se il torneo ne ha 4 in tutto - la finale è
+    sempre l'ULTIMO, qualunque sia il numero totale di round)."""
+    total = TOURNAMENT_MISSIONS[tournament_id]["rounds"]
+    if round_number == total:
+        return "finale"
+    if round_number == total - 1:
+        return "semifinale"
+    return f"{round_number}º turno"
+
+
+def tournament_round_label_with_preposition(tournament_id: str, round_number: int) -> str:
+    """Come tournament_round_label, ma con "al"/"alla" già corretto
+    davanti (bug corretto in chat: "semifinale" e "finale" sono
+    femminili in italiano, "turno" è maschile - "al semifinale" era
+    sgrammaticato)."""
+    label = tournament_round_label(tournament_id, round_number)
+    preposition = "alla" if label in ("semifinale", "finale") else "al"
+    return f"{preposition} {label}"
+
+
+def is_eligible_for_tournament(conn: sqlite3.Connection, knight: dict, tournament_id: str) -> bool:
+    """Se questo personaggio può iscriversi al torneo `tournament_id`
+    (richiesto in chat: Le Guerre Galattiche solo per i Bronze Saint,
+    l'altro torneo aperto a chiunque)."""
+    required_faction = TOURNAMENT_MISSIONS[tournament_id]["eligible_faction"]
+    if required_faction is None:
+        return True
+    armor = get_armor(knight["armor_name"], conn)
+    return armor is not None and armor["faction"] == required_faction
+
+
+def pick_tournament_opponent(conn: sqlite3.Connection, knight: dict, tournament_id: str) -> dict:
+    """L'avversario per il round attuale del torneo `tournament_id` -
+    dalla stessa fazione se il torneo lo richiede (Le Guerre
+    Galattiche, un torneo tra pari), altrimenti dal pool normale
+    abbinato per livello (già usato dall'Arena, richiesto in chat:
+    riuso invece di duplicare la logica)."""
+    settings = TOURNAMENT_MISSIONS[tournament_id]
+    if settings["opponent_faction"]:
+        rows = conn.execute(
+            "SELECT * FROM armors WHERE faction = ? AND name != ?",
+            (settings["opponent_faction"], knight["armor_name"]),
+        ).fetchall()
+        armor_row = dict(random.choice(rows)) if rows else dict(get_armor(knight["armor_name"], conn))
+        guardian_name = get_house_guardian(conn, armor_row["name"])
+        return build_opponent_from_armor(conn, armor_row["name"], guardian_name)
+
+    player_armor = get_armor(knight["armor_name"], conn)
+    return generate_opponent(conn, player_armor["level"], exclude_armor_names={knight["armor_name"]})
+
+
+def resolve_tournament_reward(tournament_id: str, rounds_completed: int, is_champion: bool) -> dict:
+    """La ricompensa del torneo `tournament_id`: una quota per ogni
+    round superato, più un bonus vero solo se lo vinci per intero
+    (richiesto implicito: arrivare in semifinale ed essere eliminati
+    deve comunque valere qualcosa, ma molto meno che vincerlo)."""
+    settings = TOURNAMENT_MISSIONS[tournament_id]
+    denaro = settings["reward_denaro_per_round"] * rounds_completed
+    cosmo_max = 0
+    if is_champion:
+        denaro += settings["reward_denaro_champion"]
+        cosmo_max = settings["reward_cosmo_max_champion"]
+    return {"denaro": denaro, "cosmo_max": cosmo_max}
+
 
 
 def get_graph_node_content(mission_id: str, node_id: str, guardian_name: str = "") -> dict:
