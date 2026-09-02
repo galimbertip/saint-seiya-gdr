@@ -22,6 +22,13 @@ from core.dnd_engine import DnDEngine
 from database.db_manager import get_techniques_for_armor
 
 OPPONENT_LEVEL_TOLERANCE = 20  # cerca avversari con livello armatura entro +-20 dal punto scelto
+# La tolleranza raddoppia finché il pool non raggiunge questa soglia
+# (corretto in chat: poca varietà per le armature di livello molto
+# basso, dove ±20 lasciava solo 7-8 candidate) - un tetto oltre il
+# quale ci si ferma comunque, anche se il pool resta piccolo (livelli
+# davvero estremi, ai bordi del catalogo).
+MIN_OPPONENT_POOL_SIZE = 20
+MAX_OPPONENT_LEVEL_TOLERANCE = 160
 BASE_ATTACK_POWER = 20  # "Attacco Base": nessuna tecnica richiesta, ma debole
 
 # --- Livelli di sfida --------------------------------------------------
@@ -242,19 +249,26 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
     "un avversario pari a te". exclude_armor_names: un insieme di nomi
     da escludere (la tua armatura, e/o altri avversari già proposti
     nella stessa "sala d'attesa" - vedi generate_opponent_candidates).
-    Se non trova nessuna armatura nella tolleranza (es. livelli
-    estremi), allarga la ricerca a tutto il catalogo piuttosto che
-    fallire."""
+    La tolleranza si allarga da sola quando il pool è troppo piccolo
+    (corretto in chat: "poca rotazione/varietà anche col tasto
+    ricarica" - capitava alle armature di livello molto basso, dove il
+    catalogo ha pochi esemplari vicini, ±20 lasciava solo 7-8
+    candidate) - non più tutto-o-niente (allargava a TUTTO il
+    catalogo, ma solo se restava letteralmente zero candidate)."""
     exclude_armor_names = exclude_armor_names or set()
     offset = DIFFICULTY_LEVEL_OFFSET.get(difficulty, 0)
     target_level = player_armor_level + offset
 
-    rows = conn.execute(
-        "SELECT * FROM armors WHERE ABS(level - ?) <= ?",
-        (target_level, OPPONENT_LEVEL_TOLERANCE),
-    ).fetchall()
+    candidates: list = []
+    tolerance = OPPONENT_LEVEL_TOLERANCE
+    while len(candidates) < MIN_OPPONENT_POOL_SIZE and tolerance <= MAX_OPPONENT_LEVEL_TOLERANCE:
+        rows = conn.execute(
+            "SELECT * FROM armors WHERE ABS(level - ?) <= ?",
+            (target_level, tolerance),
+        ).fetchall()
+        candidates = [r for r in rows if r["name"] not in exclude_armor_names]
+        tolerance *= 2
 
-    candidates = [r for r in rows if r["name"] not in exclude_armor_names]
     if not candidates:
         all_rows = conn.execute("SELECT * FROM armors").fetchall()
         candidates = [r for r in all_rows if r["name"] not in exclude_armor_names] or list(all_rows)
