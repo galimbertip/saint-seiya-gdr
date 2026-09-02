@@ -290,6 +290,13 @@ const state = {
   creationMode: null,       // null | "detailed" - la scelta nella creazione personaggio
   roster: null,              // la Gerarchia (tutte le armature + chi le occupa), null finché non caricata
   chronicle: null,           // la Cronaca del Mondo (eventi accaduti ai PNG nel tempo), null finché non caricata
+  tavernRealms: null,        // le 13 Taverne separate per regno (richiesto in chat), null finché non caricate
+  tavernDivinity: null,      // in quale Taverna/regno sei ora, null se sei ancora alla scelta
+  tavernRealmRoster: null,   // i PNG di QUESTA Taverna, null finché non caricati
+  tavernArmorName: null,     // con quale armatura/PNG stai parlando ora, null se nessuna
+  tavernConversation: null,  // la conversazione corrente (nome, affinità, messaggi), null finché non caricata
+  tavernInput: "",           // il testo che stai scrivendo
+  tavernMissionOffer: null,  // l'offerta di missione appena arrivata dal PNG (richiesto in chat), null se nessuna
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
   customTechniques: null,    // le tecniche personalizzate del personaggio corrente (+ slot), null finché non caricate
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
@@ -386,6 +393,13 @@ async function selectCharacter(id) {
   state.deathResult = null;
   state.soldierStatus = null;
   state.soldierActivityResult = null;
+  state.tavernRealms = null;
+  state.tavernDivinity = null;
+  state.tavernRealmRoster = null;
+  state.tavernArmorName = null;
+  state.tavernConversation = null;
+  state.tavernInput = "";
+  state.tavernMissionOffer = null;
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -1054,10 +1068,10 @@ function renderGameScreen() {
   // se sono comunque bloccati lato server.
   const isSoldier = !k.is_knight && k.apprentice_status === "soldier";
   const tabDefs = k.is_knight
-    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"]]
+    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
     : isSoldier
-    ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"]]
-    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"]];
+    ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
+    : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]];
   // Allenamento e Arena ora restano visibili anche da Apprendista
   // (richiesto in chat: prima sparivano del tutto dalla barra, e senza
   // vederle il tutorial che le nomina risultava incomprensibile) - il
@@ -1096,6 +1110,7 @@ function renderGameScreen() {
   else if (state.gameTab === "missions") wrap.append(renderMissionsTab());
   else if (state.gameTab === "soldier") wrap.append(renderSoldierTab());
   else if (state.gameTab === "chronicle") wrap.append(renderChronicleTab());
+  else if (state.gameTab === "tavern") wrap.append(renderTavernTab());
   else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
 
   wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
@@ -1120,6 +1135,203 @@ async function loadChronicle() {
     state.chronicle = [];
   }
   render();
+}
+
+async function loadTavernRealms() {
+  try {
+    state.tavernRealms = await api(`/characters/${state.characterId}/taverns`);
+  } catch (e) {
+    showError(e.message);
+    state.tavernRealms = [];
+  }
+  render();
+}
+
+async function openTavernRealm(divinity) {
+  state.tavernDivinity = divinity;
+  state.tavernRealmRoster = null;
+  render();
+  try {
+    state.tavernRealmRoster = await api(`/characters/${state.characterId}/tavern-roster/${encodeURIComponent(divinity)}`);
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+function closeTavernRealm() {
+  state.tavernDivinity = null;
+  state.tavernRealmRoster = null;
+  render();
+}
+
+async function openTavernConversation(armorName) {
+  state.tavernArmorName = armorName;
+  state.tavernConversation = null;
+  state.tavernMissionOffer = null;
+  render();
+  try {
+    state.tavernConversation = await api(`/characters/${state.characterId}/tavern/${encodeURIComponent(armorName)}`);
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+function closeTavernConversation() {
+  state.tavernArmorName = null;
+  state.tavernConversation = null;
+  state.tavernMissionOffer = null;
+  render();
+}
+
+async function sendTavernMessage() {
+  const testo = state.tavernInput.trim();
+  if (!testo || !state.tavernConversation) return;
+  state.tavernInput = "";
+  // Il messaggio del giocatore compare subito, senza aspettare la
+  // risposta - la Taverna è a costo zero (richiesto in chat) quindi
+  // la risposta arriva comunque in fretta, ma reagire subito aiuta a
+  // sentirla come una vera conversazione.
+  state.tavernConversation.messages.push({ speaker: "player", text: testo });
+  render();
+  try {
+    const result = await api(`/characters/${state.characterId}/tavern/${encodeURIComponent(state.tavernArmorName)}/message`, {
+      method: "POST",
+      body: JSON.stringify({ text: testo }),
+    });
+    state.tavernConversation.messages.push({ speaker: "npc", text: result.response });
+    state.tavernConversation.affinity = result.affinity;
+    // Il reclutamento per missione (richiesto in chat): il PNG offre
+    // da solo, quando la fiducia costruita supera la soglia - non
+    // solo se glielo chiedi tu esplicitamente.
+    if (result.mission_offer) {
+      state.tavernConversation.messages.push({ speaker: "npc", text: result.mission_offer_text });
+      state.tavernMissionOffer = result.mission_offer;
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+async function acceptTavernMissionOffer() {
+  const missionId = state.tavernMissionOffer;
+  state.tavernMissionOffer = null;
+  render();
+  try {
+    await api(`/characters/${state.characterId}/mission/start`, {
+      method: "POST",
+      body: JSON.stringify({ mission_id: missionId }),
+    });
+    state.missionStatus = null;  // si ricarica da sola alla prossima apertura della Scheda Missioni
+    state.gameTab = "missions";
+    state.tavernArmorName = null;
+    state.tavernConversation = null;
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+const TAVERN_RELATION_LABELS = {
+  alleata: "🤝 Alleata", neutrale: "⚖️ Neutrale", diffidente: "⚠️ Diffidente", ostile: "⚔️ Ostile",
+};
+
+function renderTavernTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Taverna"));
+
+  // Livello 3 (richiesto in chat, taverne separate per regno): dentro
+  // una conversazione con un PNG specifico.
+  if (state.tavernArmorName) {
+    if (state.tavernConversation === null) {
+      wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della conversazione...")));
+      return wrap;
+    }
+    const conv = state.tavernConversation;
+    const card = el("div", { class: "card" });
+    card.append(el("button", { class: "secondary", onClick: closeTavernConversation }, "◄ Torna alla Taverna"));
+    card.append(el("h2", {}, conv.npc_name));
+    card.append(el("p", { class: "hint" }, `Affinità: ${conv.affinity}`));
+
+    const logBox = el("div", { class: "log-box" });
+    if (conv.messages.length === 0) {
+      logBox.append(el("div", { class: "log-line hint" }, `${conv.npc_name} ti guarda in attesa che tu dica qualcosa.`));
+    }
+    for (const msg of conv.messages) {
+      const isPlayer = msg.speaker === "player";
+      logBox.append(el("div", { class: "log-line", style: isPlayer ? "text-align:right;" : "" },
+        isPlayer ? `Tu: ${msg.text}` : `${conv.npc_name}: ${msg.text}`));
+    }
+    card.append(logBox);
+
+    // Il reclutamento per missione (richiesto in chat): un pulsante
+    // ben visibile per accettare, non solo testo.
+    if (state.tavernMissionOffer) {
+      card.append(el("button", { onClick: acceptTavernMissionOffer }, "✅ Accetta l'incarico"));
+      card.append(el("button", { class: "secondary", onClick: () => { state.tavernMissionOffer = null; render(); } }, "Non ora"));
+    }
+
+    const inputRow = el("div", { class: "row" });
+    const textInput = el("input", {
+      type: "text", value: state.tavernInput, placeholder: "Scrivi qualcosa...",
+      oninput: (e) => { state.tavernInput = e.target.value; },
+      onkeydown: (e) => { if (e.key === "Enter") sendTavernMessage(); },
+    });
+    inputRow.append(textInput);
+    inputRow.append(el("button", { onClick: sendTavernMessage }, "Invia"));
+    card.append(inputRow);
+    wrap.append(card);
+    return wrap;
+  }
+
+  // Livello 2: dentro un regno, l'elenco dei PNG con cui parlare.
+  if (state.tavernDivinity) {
+    wrap.append(el("button", { class: "secondary", onClick: closeTavernRealm }, "◄ Tutte le Taverne"));
+    const realmInfo = (state.tavernRealms || []).find((r) => r.divinity === state.tavernDivinity);
+    wrap.append(el("h2", {}, realmInfo ? realmInfo.name : state.tavernDivinity));
+
+    if (state.tavernRealmRoster === null) {
+      wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento...")));
+      return wrap;
+    }
+    if (state.tavernRealmRoster.length === 0) {
+      wrap.append(el("p", { class: "hint" }, "Non c'è nessuno da queste parti, al momento."));
+      return wrap;
+    }
+    const listCard = el("div", { class: "card" });
+    for (const entry of state.tavernRealmRoster) {
+      const label = entry.npc_status === "training"
+        ? `${entry.npc_training_candidate} - ${entry.armor_name} (in addestramento)`
+        : `${entry.npc_name} - ${entry.armor_name}`;
+      listCard.append(el("button", { class: "secondary", onClick: () => openTavernConversation(entry.armor_name) }, label));
+    }
+    wrap.append(listCard);
+    return wrap;
+  }
+
+  // Livello 1: la scelta di quale delle 13 Taverne visitare (richiesto
+  // in chat: separate, non un'unica Taverna con tutti dentro) - con
+  // la relazione tra la tua fazione e quella del regno, così sai già
+  // cosa aspettarti prima di entrare.
+  if (state.tavernRealms === null) {
+    loadTavernRealms();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento delle Taverne...")));
+    return wrap;
+  }
+
+  wrap.append(el("p", { class: "hint" }, "Scrivi liberamente - non c'è una vera intelligenza artificiale dietro (costo zero), solo un buon orecchio per le parole chiave. Se non capisce, te lo dice a modo suo. Entrare nella taverna di una fazione rivale non è come entrare in quella di casa propria."));
+
+  const listCard = el("div", { class: "card" });
+  for (const realm of state.tavernRealms) {
+    const row = el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;" });
+    row.append(el("button", { class: "secondary", style: "flex:1;", onClick: () => openTavernRealm(realm.divinity) }, realm.name));
+    row.append(el("span", { class: "hint" }, TAVERN_RELATION_LABELS[realm.relation] || realm.relation));
+    listCard.append(row);
+  }
+  wrap.append(listCard);
+  return wrap;
 }
 
 async function loadInstitutionalNpcs() {
