@@ -1217,10 +1217,14 @@ function closeTavernConversation() {
   render();
 }
 
-async function sendTavernMessage() {
-  const testo = state.tavernInput.trim();
+async function sendTavernMessage(overrideText, intent) {
+  // overrideText/intent (richiesto in chat, pulsanti in stile
+  // Football Manager): quando il messaggio arriva da un pulsante
+  // invece che dal campo libero, l'intento è già certo - comprensione
+  // garantita, niente rischio di "non ho capito".
+  const testo = (overrideText !== undefined ? overrideText : state.tavernInput).trim();
   if (!testo || !state.tavernConversation) return;
-  state.tavernInput = "";
+  if (overrideText === undefined) state.tavernInput = "";
   // Il messaggio del giocatore compare subito, senza aspettare la
   // risposta - la Taverna è a costo zero (richiesto in chat) quindi
   // la risposta arriva comunque in fretta, ma reagire subito aiuta a
@@ -1230,7 +1234,7 @@ async function sendTavernMessage() {
   try {
     const result = await api(`/characters/${state.characterId}/tavern/message`, {
       method: "POST",
-      body: JSON.stringify({ armor_name: state.tavernArmorName, text: testo }),
+      body: JSON.stringify({ armor_name: state.tavernArmorName, text: testo, intent: intent || null }),
     });
     state.tavernConversation.messages.push({ speaker: "npc", text: result.response });
     state.tavernConversation.affinity = result.affinity;
@@ -1424,14 +1428,23 @@ function renderTavernTab() {
       card.append(el("button", { class: "secondary", onClick: () => { state.tavernMissionOffer = null; render(); } }, "Non ora"));
     }
 
+    const quickIntentsRow = el("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-bottom:8px;" });
+    for (const qi of (conv.quick_intents || [])) {
+      quickIntentsRow.append(el("button", {
+        class: "secondary",
+        onClick: () => sendTavernMessage(qi.text, qi.intent),
+      }, qi.label));
+    }
+    card.append(quickIntentsRow);
+
     const inputRow = el("div", { class: "row" });
     const textInput = el("input", {
-      type: "text", value: state.tavernInput, placeholder: "Scrivi qualcosa...",
+      type: "text", value: state.tavernInput, placeholder: "...oppure scrivi liberamente",
       onInput: (e) => { state.tavernInput = e.target.value; },
       onKeyDown: (e) => { if (e.key === "Enter") sendTavernMessage(); },
     });
     inputRow.append(textInput);
-    inputRow.append(el("button", { onClick: sendTavernMessage }, "Invia"));
+    inputRow.append(el("button", { onClick: () => sendTavernMessage() }, "Invia"));
     card.append(inputRow);
     wrap.append(card);
     return wrap;
