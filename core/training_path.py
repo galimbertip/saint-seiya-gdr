@@ -31,6 +31,7 @@ import sqlite3
 
 from database.db_manager import get_roster_entry, get_armor, get_techniques_for_armor
 from core.arena_manager import generate_full_name, generate_distinct_full_names
+from core.alignment import random_alignment
 
 TOTAL_STAGES = 20
 
@@ -506,6 +507,12 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
     cosmo = 100 + armor["level"]
     con_value = 10 + armor["level"] // 10
     vita = 100 + con_value * 2  # stessa formula di VITA_BASE/VITA_PER_CON in character_factory.py
+    # L'allineamento persistente del PNG (richiesto in chat, effetti
+    # più ampi) - a differenza degli avversari d'Arena generati al
+    # volo, un Maestro/Guardiano ESISTE nel roster e ha un'identità
+    # fissa: usa quella, non una a caso ogni volta.
+    roster_entry = get_roster_entry(conn, armor_name)
+    alignment = roster_entry["npc_alignment"] if roster_entry and roster_entry["npc_alignment"] else random_alignment()
     return {
         "name": f"{display_name} di {armor_name}",
         "armor_name": armor_name,
@@ -523,6 +530,7 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
         "vol": 10 + armor["level"] // 10,
         "origin": "",
         "techniques": techniques,
+        "alignment": alignment,
     }
 
 
