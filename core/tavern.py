@@ -119,6 +119,7 @@ def alignment_to_mood(alignment: str) -> str:
 INTENT_KEYWORDS = [
     ("saluto_finale", ["addio", "arrivederci", "devo andare", "ci vediamo", "alla prossima", "vado via"]),
     ("saluto", ["ciao", "salve", "salut", "buongiorno", "buonasera", "buondì", "ehi"]),
+    ("ordina_da_bere", ["da bere", "un drink", "una birra", "del vino", "qualcosa da bere", "sete", "ordinare", "offro io", "il tuo migliore", "portami"]),
     ("complimento", ["bravo", "brava", "forte", "fortissimo", "fortissima", "ammirevole", "rispetto", "complimenti", "impressionante", "grande", "eccezionale"]),
     ("insulto", ["stupido", "stupida", "idiota", "vigliacco", "vigliacca", "patetico", "patetica", "odio", "disprezzo", "inutile"]),
     ("sfida", ["sfida", "sfidare", "combatt", "duello", "battersi", "battiamoci", "debole", "paura", "coraggio"]),
@@ -128,7 +129,7 @@ INTENT_KEYWORDS = [
 
 AFFINITY_DELTA = {
     "saluto": 1, "saluto_finale": 0, "domanda_su_di_te": 1, "domanda_su_mondo": 0,
-    "complimento": 2, "sfida": 0, "insulto": -3,
+    "complimento": 2, "sfida": 0, "insulto": -3, "ordina_da_bere": 1,
 }
 
 TAVERN_RESPONSES = {
@@ -216,6 +217,20 @@ TAVERN_RESPONSES = {
             "\"Il mondo va avanti, con o senza il tuo interessamento\", risponde, quasi annoiato.",
         ],
     },
+    "ordina_da_bere": {
+        "buono": [
+            "Sorride e ti versa qualcosa di caldo, senza nemmeno chiedere cosa preferisci. \"Questo va bene per iniziare.\"",
+            "\"Alla tua salute\", dice, alzando il proprio bicchiere insieme al tuo.",
+        ],
+        "neutrale": [
+            "Ti versa qualcosa senza troppi complimenti, e torna a badare al resto del bancone.",
+            "\"Subito\", dice, con l'efficienza di chi lo fa cento volte al giorno.",
+        ],
+        "malvagio": [
+            "Ti versa qualcosa con un sorriso che non sai bene come interpretare. \"Offre la casa - stavolta.\"",
+            "\"Paghi prima\", dice, secco, prima di versarti qualcosa.",
+        ],
+    },
     "domanda_su_di_te": {
         "buono": [
             "\"Non c'è molto da raccontare - solo un lungo cammino, come quello di chiunque altro qui.\"",
@@ -255,15 +270,20 @@ def detect_intent(text: str) -> str | None:
     return None
 
 
-def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale") -> tuple[str, int]:
+def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale",
+                             forced_intent: str | None = None) -> tuple[str, int]:
     """Risolve un messaggio del giocatore verso un PNG - restituisce
     (risposta, variazione di affinità). Se non riconosce nessun
     intento, la variazione è 0 e la risposta chiede di ripetere.
     `relation` (richiesto in chat): la relazione tra la fazione del
     personaggio e quella del PNG - con una fazione ostile, i gesti
     positivi contano meno del solito e quelli negativi contano di più
-    (fiducia lenta da guadagnare, facile da perdere)."""
-    intent = detect_intent(text)
+    (fiducia lenta da guadagnare, facile da perdere). `forced_intent`
+    (richiesto in chat, pulsanti in stile Football Manager): quando il
+    giocatore sceglie un tono da un pulsante invece di scrivere
+    liberamente, l'intento è già certo - salta il riconoscimento a
+    parole chiave, comprensione garantita al 100%."""
+    intent = forced_intent if forced_intent in TAVERN_RESPONSES else detect_intent(text)
     if intent is None:
         return random.choice(MISUNDERSTOOD_RESPONSES), 0
     mood = alignment_to_mood(alignment)
@@ -276,6 +296,24 @@ def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale
     else:
         delta = 0
     return response, delta
+
+
+# I pulsanti in stile Football Manager (richiesto in chat: come le
+# conferenze stampa) - un tono scelto da un pulsante garantisce la
+# comprensione, niente più "non ho capito" quando il giocatore sa già
+# cosa vuole dire. Il testo di esempio compare nella cronologia al
+# posto di quello scritto a mano, dato che con un pulsante non c'è
+# nulla da scrivere.
+TAVERN_QUICK_INTENTS = [
+    ("saluto", "👋 Saluta", "Ciao."),
+    ("complimento", "🎩 Fai un complimento", "Sei davvero notevole, complimenti."),
+    ("domanda_su_di_te", "🗣️ Chiedi di lui/lei", "Parlami un po' di te."),
+    ("domanda_su_mondo", "❓ Chiedi novità", "Ci sono novità, da queste parti?"),
+    ("ordina_da_bere", "🍺 Ordina da bere", "Portami qualcosa da bere."),
+    ("sfida", "⚔️ Lancia una sfida", "Che ne dici di uno scontro, prima o poi?"),
+    ("insulto", "😠 Insulta", "Non mi sembri poi così temibile."),
+    ("saluto_finale", "🚪 Congedati", "Devo andare. Ci vediamo."),
+]
 
 
 # Il testo con cui un PNG offre la missione collegata al proprio regno
