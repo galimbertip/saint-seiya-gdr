@@ -271,7 +271,7 @@ def detect_intent(text: str) -> str | None:
 
 
 def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale",
-                             forced_intent: str | None = None) -> tuple[str, int]:
+                             forced_intent: str | None = None, tone: str = "neutro") -> tuple[str, int]:
     """Risolve un messaggio del giocatore verso un PNG - restituisce
     (risposta, variazione di affinità). Se non riconosce nessun
     intento, la variazione è 0 e la risposta chiede di ripetere.
@@ -282,7 +282,10 @@ def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale
     (richiesto in chat, pulsanti in stile Football Manager): quando il
     giocatore sceglie un tono da un pulsante invece di scrivere
     liberamente, l'intento è già certo - salta il riconoscimento a
-    parole chiave, comprensione garantita al 100%."""
+    parole chiave, comprensione garantita al 100%. `tone` (richiesto
+    in chat, stessa idea ma per COME lo dici invece che COSA dici, es.
+    "Sorriso caloroso" vs "Sguardo freddo") - amplifica o smorza
+    l'effetto sull'affinità in entrambe le direzioni."""
     intent = forced_intent if forced_intent in TAVERN_RESPONSES else detect_intent(text)
     if intent is None:
         return random.choice(MISUNDERSTOOD_RESPONSES), 0
@@ -295,6 +298,7 @@ def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale
         delta = round(base_delta * RELATION_NEGATIVE_MULTIPLIER.get(relation, 1.0))
     else:
         delta = 0
+    delta = round(delta * TAVERN_TONE_MULTIPLIERS.get(tone, 1.0))
     return response, delta
 
 
@@ -314,6 +318,22 @@ TAVERN_QUICK_INTENTS = [
     ("insulto", "😠 Insulta", "Non mi sembri poi così temibile."),
     ("saluto_finale", "🚪 Congedati", "Devo andare. Ci vediamo."),
 ]
+
+# Il TONO con cui dici le cose (richiesto in chat, in stile Football
+# Manager - non "cosa dici", ma "come lo dici") - un asse separato
+# dall'intento: lo stesso complimento, fatto con un sorriso caloroso
+# o a braccia conserte, non pesa allo stesso modo. Si applica sia ai
+# pulsanti sopra sia al testo libero. "neutro" è il default se il
+# giocatore non ne sceglie uno diverso - nessun effetto, come non
+# scegliere reazione in una conferenza stampa.
+TAVERN_TONES = [
+    ("neutro", "Nessuna reazione", 1.0),
+    ("caloroso", "😊 Sorriso caloroso", 1.4),
+    ("aperto", "🤗 Braccia aperte", 1.15),
+    ("deciso", "💪 Tono deciso", 1.0),
+    ("freddo", "🥶 Sguardo freddo", 0.5),
+]
+TAVERN_TONE_MULTIPLIERS = {key: mult for key, _label, mult in TAVERN_TONES}
 
 
 # Il testo con cui un PNG offre la missione collegata al proprio regno
