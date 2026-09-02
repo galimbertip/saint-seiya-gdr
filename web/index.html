@@ -38,6 +38,22 @@
     padding: 16px 18px;
     margin-bottom: 16px;
   }
+  .tone-pill {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .tone-pill:hover { border-color: var(--gold-dim); }
+  .tone-pill-active {
+    background: var(--gold);
+    color: #1a1a1a;
+    border-color: var(--gold);
+    font-weight: 700;
+  }
   button {
     background: var(--gold-dim);
     color: var(--bg-darkest);
@@ -305,6 +321,7 @@ const state = {
   tavernPlayerY: 9.3,
   tavernArmorName: null,     // con quale armatura/PNG stai parlando ora, null se nessuna
   tavernConversation: null,  // la conversazione corrente (nome, affinità, messaggi), null finché non caricata
+  tavernSelectedTone: "neutro", // il tono/atteggiamento scelto (richiesto in chat, stile Football Manager) - si applica al prossimo messaggio, sia da pulsante che da testo libero
   tavernInput: "",           // il testo che stai scrivendo
   tavernMissionOffer: null,  // l'offerta di missione appena arrivata dal PNG (richiesto in chat), null se nessuna
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
@@ -412,6 +429,7 @@ async function selectCharacter(id) {
   state.tavernArmorName = null;
   state.tavernConversation = null;
   state.tavernInput = "";
+  state.tavernSelectedTone = "neutro";
   state.tavernMissionOffer = null;
   await refreshCharacter();
   state.screen = "game";
@@ -1234,10 +1252,11 @@ async function sendTavernMessage(overrideText, intent) {
   try {
     const result = await api(`/characters/${state.characterId}/tavern/message`, {
       method: "POST",
-      body: JSON.stringify({ armor_name: state.tavernArmorName, text: testo, intent: intent || null }),
+      body: JSON.stringify({ armor_name: state.tavernArmorName, text: testo, intent: intent || null, tone: state.tavernSelectedTone }),
     });
     state.tavernConversation.messages.push({ speaker: "npc", text: result.response });
     state.tavernConversation.affinity = result.affinity;
+    state.tavernSelectedTone = "neutro";  // il tono si sceglie di nuovo ad ogni messaggio, come in FM
     // Il reclutamento per missione (richiesto in chat): il PNG offre
     // da solo, quando la fiducia costruita supera la soglia - non
     // solo se glielo chiedi tu esplicitamente.
@@ -1427,6 +1446,22 @@ function renderTavernTab() {
       card.append(el("button", { onClick: acceptTavernMissionOffer }, "✅ Accetta l'incarico"));
       card.append(el("button", { class: "secondary", onClick: () => { state.tavernMissionOffer = null; render(); } }, "Non ora"));
     }
+
+    // Il tono/atteggiamento (richiesto in chat, stile Football
+    // Manager: "Nessuna reazione / Braccia distese / Sorriso caloroso
+    // / Apri le braccia") - un asse separato da COSA dici, si applica
+    // sia ai pulsanti sotto sia al testo libero. Una sola scelta alla
+    // volta, come i pulsanti a pillola dell'immagine.
+    card.append(el("p", { class: "hint", style: "margin-bottom:4px;" }, "Con che atteggiamento?"));
+    const toneRow = el("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-bottom:12px;" });
+    for (const t of (conv.tones || [])) {
+      const isActive = state.tavernSelectedTone === t.tone;
+      toneRow.append(el("button", {
+        class: "tone-pill" + (isActive ? " tone-pill-active" : ""),
+        onClick: () => { state.tavernSelectedTone = t.tone; render(); },
+      }, t.label));
+    }
+    card.append(toneRow);
 
     const quickIntentsRow = el("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-bottom:8px;" });
     for (const qi of (conv.quick_intents || [])) {
