@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS roster (
     npc_generation INTEGER NOT NULL DEFAULT 1,
     npc_fate TEXT NOT NULL DEFAULT '',
     last_world_event_minutes INTEGER NOT NULL DEFAULT 0,
+    npc_status TEXT NOT NULL DEFAULT 'occupied',
+    npc_training_candidate TEXT NOT NULL DEFAULT '',
+    npc_training_ready_minutes INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
@@ -329,6 +332,16 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE roster ADD COLUMN last_world_event_minutes INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         log.info("Migrazione: aggiunte colonne npc_alive/npc_generation/npc_fate/last_world_event_minutes a roster.")
+    if "npc_status" not in roster_columns:
+        # Un successore non prende il posto ISTANTANEAMENTE (richiesto
+        # in chat: "sarebbe meglio dire che comincia l'addestramento",
+        # non che diventa Cavaliere di colpo) - vacante, poi in
+        # addestramento, poi occupato di nuovo.
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_status TEXT NOT NULL DEFAULT 'occupied'")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_training_candidate TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_training_ready_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne npc_status/npc_training_candidate/npc_training_ready_minutes a roster.")
 
     world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
     if "last_npc_tick_minutes" not in world_clock_columns:
@@ -504,6 +517,7 @@ def get_roster(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT r.armor_name, r.npc_name, r.claimed_by_knight_id, r.npc_generation, r.npc_fate,
+               r.npc_status, r.npc_training_candidate,
                a.divinity, a.faction, a.level,
                k.raw_name AS claimed_by_raw_name, k.surname AS claimed_by_surname,
                k.player_level AS claimed_by_level
