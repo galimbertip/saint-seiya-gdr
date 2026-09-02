@@ -1171,7 +1171,7 @@ async function openTavernConversation(armorName) {
   state.tavernMissionOffer = null;
   render();
   try {
-    state.tavernConversation = await api(`/characters/${state.characterId}/tavern/${encodeURIComponent(armorName)}`);
+    state.tavernConversation = await api(`/characters/${state.characterId}/tavern?armor_name=${encodeURIComponent(armorName)}`);
   } catch (e) {
     showError(e.message);
   }
@@ -1196,9 +1196,9 @@ async function sendTavernMessage() {
   state.tavernConversation.messages.push({ speaker: "player", text: testo });
   render();
   try {
-    const result = await api(`/characters/${state.characterId}/tavern/${encodeURIComponent(state.tavernArmorName)}/message`, {
+    const result = await api(`/characters/${state.characterId}/tavern/message`, {
       method: "POST",
-      body: JSON.stringify({ text: testo }),
+      body: JSON.stringify({ armor_name: state.tavernArmorName, text: testo }),
     });
     state.tavernConversation.messages.push({ speaker: "npc", text: result.response });
     state.tavernConversation.affinity = result.affinity;
