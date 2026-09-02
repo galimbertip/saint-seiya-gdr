@@ -19,6 +19,7 @@ import random
 import sqlite3
 
 from core.dnd_engine import DnDEngine
+from core.alignment import random_alignment, combat_action_weights
 from database.db_manager import get_techniques_for_armor
 
 OPPONENT_LEVEL_TOLERANCE = 20  # cerca avversari con livello armatura entro +-20 dal punto scelto
@@ -297,6 +298,12 @@ def generate_opponent(conn: sqlite3.Connection, player_armor_level: int,
         "vol": 10 + armor["level"] // 10,
         "origin": random.choice(list(ORIGIN_ELEMENT_AFFINITY.keys())),
         "techniques": techniques,
+        # Un allineamento fresco ad ogni incontro (richiesto in chat,
+        # effetti più ampi) - a differenza dei PNG del roster, un
+        # avversario d'Arena generato al volo non ha un'identità
+        # persistente, quindi non ha senso salvarlo: sposta comunque
+        # il comportamento in combattimento per QUESTO scontro.
+        "alignment": random_alignment(),
     }
 
 
@@ -1086,8 +1093,13 @@ def choose_opponent_action(opponent: dict) -> tuple[str, dict | None]:
     """Sceglie l'azione PROATTIVA dell'avversario: Attacca o Carica.
     Difendi non è più una scelta proattiva 'alla cieca' - è reattiva
     (vedi opponent_reacts), decisa solo quando è l'avversario a SUBIRE
-    un attacco, non quando lo dichiara lui."""
-    action = random.choices(["attacca", "carica"], weights=[0.8, 0.2])[0]
+    un attacco, non quando lo dichiara lui. I pesi dipendono dal vero
+    allineamento dell'avversario (richiesto in chat, effetti più
+    ampi): un Malvagio è più aggressivo e meno paziente, un Buono più
+    misurato - una sfumatura leggera, non un'altra difficoltà
+    mascherata."""
+    attack_weight, charge_weight = combat_action_weights(opponent.get("alignment", ""))
+    action = random.choices(["attacca", "carica"], weights=[attack_weight, charge_weight])[0]
 
     if action == "attacca":
         name, power, tech_type = choose_opponent_technique(opponent)
