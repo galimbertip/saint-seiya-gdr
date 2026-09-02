@@ -828,7 +828,7 @@ function applyArenaResult(result) {
       // (Casa/nodo successivo se vinto, la stessa se perso - si
       // sceglierà se ritentare o abbandonare).
       if (result.mission_completed) {
-        state.missionEndingResult = { text: result.mission_ending_text };
+        state.missionEndingResult = { text: result.mission_ending_text, tournamentChampion: result.tournament_champion };
       } else {
         state.arenaLog.push(result.won ? "Hai vinto lo scontro." : "Sei stato sconfitto - puoi ritentare, o abbandonare la missione.");
       }
@@ -2662,8 +2662,9 @@ function renderMissionsTab() {
   // (richiesto in chat: prima non arrivava nessun segnale al
   // frontend).
   if (state.missionEndingResult) {
+    const eliminated = state.missionEndingResult.tournamentChampion === false;
     const card = el("div", { class: "card" });
-    card.append(el("h2", {}, "🏆 Missione completata!"));
+    card.append(el("h2", {}, eliminated ? "⚔ Eliminato dal torneo" : "🏆 Missione completata!"));
     if (state.missionEndingResult.text) {
       card.append(el("p", {}, state.missionEndingResult.text));
     }
@@ -2699,11 +2700,33 @@ function renderMissionsTab() {
     card3.append(el("p", {}, "Infiltrati nel Regno di Asgard, tra i Guerrieri Divini. Un frammento del Bracciale del Nibelungen ti metterà alla prova - il potere ha sempre un prezzo."));
     card3.append(el("button", { onClick: () => startMission("gelo_di_valhalla") }, "❄️ Inizia Il Gelo di Valhalla"));
     wrap.append(card3);
+
+    // I tornei (richiesto in chat: struttura diversa, un vero
+    // tabellone a eliminazione diretta - perdere un round significa
+    // essere fuori, non poter ritentare come nelle altre missioni).
+    const isBronze = state.character && state.character.armor && state.character.armor.faction === "Bronze Saint";
+    const card4 = el("div", { class: "card" });
+    card4.append(el("h2", {}, "Le Guerre Galattiche"));
+    card4.append(el("p", {}, "Un torneo a eliminazione diretta, riservato ai Bronze Saint - tre round, senza seconde possibilità. Perdi un round e sei fuori."));
+    if (isBronze) {
+      card4.append(el("button", { onClick: () => startMission("galaxian_wars") }, "🌌 Iscriviti alle Guerre Galattiche"));
+    } else {
+      card4.append(el("p", { class: "hint" }, "Riservato ai Bronze Saint - la tua armatura non è idonea."));
+    }
+    wrap.append(card4);
+
+    const card5 = el("div", { class: "card" });
+    card5.append(el("h2", {}, "Il Torneo delle Stelle Libere"));
+    card5.append(el("p", {}, "Un torneo aperto a chiunque, indipendentemente dal rango - quattro round, sempre a eliminazione diretta, contro avversari sempre più forti."));
+    card5.append(el("button", { onClick: () => startMission("torneo_stelle_libere") }, "⭐ Iscriviti al Torneo delle Stelle Libere"));
+    wrap.append(card5);
     return wrap;
   }
 
   if (ms.mission_id === "dodici_case") {
     wrap.append(renderScalataHouse(ms.house));
+  } else if (ms.tournament) {
+    wrap.append(renderTournamentStatus(ms.tournament));
   } else {
     wrap.append(renderGraphMissionNode(ms.node));
   }
@@ -2778,6 +2801,17 @@ function renderGraphMissionNode(node) {
   } else if (node.type === "ending") {
     card.append(el("p", {}, node.text));
   }
+  return card;
+}
+
+function renderTournamentStatus(tournament) {
+  // Richiesto in chat: struttura diversa dalle missioni a grafo, un
+  // vero tabellone - qui non ci sono nodi/scelte, solo il progresso
+  // nei round e un pulsante per lo scontro successivo.
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, tournament.name));
+  card.append(el("p", { class: "hint" }, `${tournament.round_label.charAt(0).toUpperCase() + tournament.round_label.slice(1)} - round ${tournament.round_number} di ${tournament.total_rounds}. Un torneo a eliminazione diretta: perdi e sei fuori, senza un altro tentativo.`));
+  card.append(el("button", { onClick: startMissionDuel }, "⚔ Scendi in campo"));
   return card;
 }
 
