@@ -228,7 +228,7 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
                             is_knight=?, training_stage=?, master_name=?, master_armor_name=?,
                             companion1_name=?, companion2_name=?, arena_background_path=?, arena_backgrounds=?,
                             denaro=?, mission_id=?, mission_stage=?, mission_node=?, mission_flags=?,
-                            apprentice_status=?, armor_name=?
+                            tournament_bracket=?, apprentice_status=?, armor_name=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["vita_cur"], knight["vita_max"],
@@ -241,7 +241,7 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
          knight["master_armor_name"], knight["companion1_name"], knight["companion2_name"],
          knight["arena_background_path"], knight["arena_backgrounds"],
          knight["denaro"], knight["mission_id"], knight["mission_stage"],
-         knight["mission_node"], knight["mission_flags"], knight["apprentice_status"],
+         knight["mission_node"], knight["mission_flags"], knight["tournament_bracket"], knight["apprentice_status"],
          knight["armor_name"], knight["id"]),
     )
     conn.commit()
