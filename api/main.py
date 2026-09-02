@@ -41,6 +41,7 @@ from core.tavern import (
     resolve_tavern_response, TAVERN_REALMS, get_faction_relation, RELATION_STARTING_AFFINITY,
     check_mission_offer, MISSION_OFFER_TEXTS,
     ensure_tavern_bartender, ensure_tavern_seating, maybe_reshuffle_tavern, TABLE_LAYOUT,
+    TAVERN_QUICK_INTENTS,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -1284,12 +1285,14 @@ def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(ge
         "npc_name": npc_name,
         "affinity": affinity,
         "messages": [{"speaker": m["speaker"], "text": m["text"]} for m in messages],
+        "quick_intents": [{"intent": i, "label": label, "text": sample} for i, label, sample in TAVERN_QUICK_INTENTS],
     }
 
 
 class TavernMessageRequest(BaseModel):
     armor_name: str
     text: str
+    intent: str | None = None
 
 
 @app.post("/characters/{knight_id}/tavern/message")
@@ -1319,7 +1322,7 @@ def api_send_tavern_message(knight_id: int, req: TavernMessageRequest, conn=Depe
     relationship_before = get_tavern_relationship(conn, knight_id, armor_name)
     affinity_before = relationship_before["affinity"] if relationship_before else RELATION_STARTING_AFFINITY.get(relation, 0)
 
-    response_text, affinity_delta = resolve_tavern_response(req.text, npc_alignment, relation)
+    response_text, affinity_delta = resolve_tavern_response(req.text, npc_alignment, relation, forced_intent=req.intent)
     world_minutes = get_world_minutes(conn)
 
     add_tavern_message(conn, knight_id, armor_name, world_minutes, "player", req.text.strip())
