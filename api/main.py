@@ -1194,7 +1194,7 @@ def api_get_tavern_roster(knight_id: int, divinity: str, conn=Depends(get_db)):
     return [dict(r) for r in rows]
 
 
-@app.get("/characters/{knight_id}/tavern/{armor_name}")
+@app.get("/characters/{knight_id}/tavern")
 def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(get_db)):
     """La conversazione con un PNG specifico nella Taverna (richiesto
     in chat) - la cronologia già scambiata, e l'affinità accumulata
@@ -1203,7 +1203,11 @@ def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(ge
     core.tavern. Se è la prima volta che parlate, l'affinità parte già
     dal punto giusto in base alla relazione tra le vostre fazioni
     (richiesto in chat: "sicuramente inizialmente c'è diffidenza") -
-    non da zero per tutti indistintamente."""
+    non da zero per tutti indistintamente. `armor_name` come parametro
+    di query, non nel percorso (bug corretto in chat: molti nomi di
+    armature contengono "/", es. "Ursa Minor / Orsa Minore" - anche
+    codificato, uno slash nel PERCORSO di un URL può rompere il
+    routing prima ancora che arrivi a FastAPI)."""
     knight = _get_knight_or_404(conn, knight_id)
     roster_entry = get_roster_entry(conn, armor_name)
     if roster_entry is None:
@@ -1230,11 +1234,12 @@ def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(ge
 
 
 class TavernMessageRequest(BaseModel):
+    armor_name: str
     text: str
 
 
-@app.post("/characters/{knight_id}/tavern/{armor_name}/message")
-def api_send_tavern_message(knight_id: int, armor_name: str, req: TavernMessageRequest, conn=Depends(get_db)):
+@app.post("/characters/{knight_id}/tavern/message")
+def api_send_tavern_message(knight_id: int, req: TavernMessageRequest, conn=Depends(get_db)):
     """Invia un messaggio a un PNG nella Taverna (richiesto in chat) -
     testo libero, risposta a parole chiave filtrata per il vero
     allineamento del PNG (mai mostrato) e per la relazione tra le
@@ -1243,8 +1248,10 @@ def api_send_tavern_message(knight_id: int, armor_name: str, req: TavernMessageR
     ripetere in stile Saint Seiya invece di un freddo errore. Se
     l'affinità supera la soglia di fiducia proprio con questo
     messaggio, il PNG può offrire da solo la missione del proprio
-    regno (richiesto in chat)."""
+    regno (richiesto in chat). `armor_name` nel corpo della richiesta,
+    non nel percorso (stesso bug corretto sopra)."""
     knight = _get_knight_or_404(conn, knight_id)
+    armor_name = req.armor_name
     roster_entry = get_roster_entry(conn, armor_name)
     if roster_entry is None:
         raise HTTPException(status_code=404, detail="Armatura sconosciuta.")
