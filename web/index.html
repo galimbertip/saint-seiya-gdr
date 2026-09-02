@@ -38,6 +38,29 @@
     padding: 16px 18px;
     margin-bottom: 16px;
   }
+  .tavern-map {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .tavern-tables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+  }
+  .tavern-spot {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .tavern-spot:hover { border-color: var(--gold-dim); }
+  .tavern-spot-here { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+  .tavern-spot-label { font-weight: 700; margin-bottom: 4px; }
+  .tavern-spot-door { text-align: center; font-style: italic; }
   button {
     background: var(--gold-dim);
     color: var(--bg-darkest);
@@ -292,7 +315,8 @@ const state = {
   chronicle: null,           // la Cronaca del Mondo (eventi accaduti ai PNG nel tempo), null finché non caricata
   tavernRealms: null,        // le 13 Taverne separate per regno (richiesto in chat), null finché non caricate
   tavernDivinity: null,      // in quale Taverna/regno sei ora, null se sei ancora alla scelta
-  tavernRealmRoster: null,   // i PNG di QUESTA Taverna, null finché non caricati
+  tavernRealmRoster: null,   // la mappa di QUESTA Taverna (taverniere + tavoli), null finché non caricata
+  tavernPlayerPosition: "door", // dove si trova il tuo segnalino nella Taverna: "door" | "bar" | "table-N"
   tavernArmorName: null,     // con quale armatura/PNG stai parlando ora, null se nessuna
   tavernConversation: null,  // la conversazione corrente (nome, affinità, messaggi), null finché non caricata
   tavernInput: "",           // il testo che stai scrivendo
@@ -396,6 +420,7 @@ async function selectCharacter(id) {
   state.tavernRealms = null;
   state.tavernDivinity = null;
   state.tavernRealmRoster = null;
+  state.tavernPlayerPosition = "door";
   state.tavernArmorName = null;
   state.tavernConversation = null;
   state.tavernInput = "";
@@ -1150,9 +1175,23 @@ async function loadTavernRealms() {
 async function openTavernRealm(divinity) {
   state.tavernDivinity = divinity;
   state.tavernRealmRoster = null;
+  state.tavernPlayerPosition = "door";
   render();
   try {
-    state.tavernRealmRoster = await api(`/characters/${state.characterId}/tavern-roster/${encodeURIComponent(divinity)}`);
+    state.tavernRealmRoster = await api(`/characters/${state.characterId}/tavern-map/${encodeURIComponent(divinity)}`);
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+async function refreshTavernMap() {
+  // "Aspetta un po'" (richiesto in chat: la disposizione è dinamica) -
+  // ricarica la mappa, che ricontrolla da sola se è ora di
+  // rimescolare chi siede dove.
+  if (!state.tavernDivinity) return;
+  try {
+    state.tavernRealmRoster = await api(`/characters/${state.characterId}/tavern-map/${encodeURIComponent(state.tavernDivinity)}`);
   } catch (e) {
     showError(e.message);
   }
@@ -1162,6 +1201,7 @@ async function openTavernRealm(divinity) {
 function closeTavernRealm() {
   state.tavernDivinity = null;
   state.tavernRealmRoster = null;
+  state.tavernPlayerPosition = "door";
   render();
 }
 
@@ -1251,7 +1291,7 @@ function renderTavernTab() {
     }
     const conv = state.tavernConversation;
     const card = el("div", { class: "card" });
-    card.append(el("button", { class: "secondary", onClick: closeTavernConversation }, "◄ Torna alla Taverna"));
+    card.append(el("button", { class: "secondary", onClick: closeTavernConversation }, "◄ Torna alla mappa"));
     card.append(el("h2", {}, conv.npc_name));
     card.append(el("p", { class: "hint" }, `Affinità: ${conv.affinity}`));
 
@@ -1286,28 +1326,76 @@ function renderTavernTab() {
     return wrap;
   }
 
-  // Livello 2: dentro un regno, l'elenco dei PNG con cui parlare.
+  // Livello 2: dentro un regno - la mappa vera della Taverna
+  // (richiesto in chat: non più un elenco da cui scegliere, una
+  // stanza con un bancone e dei tavoli, dove ti muovi e interagisci
+  // in base a dove ti trovi).
   if (state.tavernDivinity) {
-    wrap.append(el("button", { class: "secondary", onClick: closeTavernRealm }, "◄ Tutte le Taverne"));
-    const realmInfo = (state.tavernRealms || []).find((r) => r.divinity === state.tavernDivinity);
-    wrap.append(el("h2", {}, realmInfo ? realmInfo.name : state.tavernDivinity));
+    wrap.append(el("button", { class: "secondary", onClick: closeTavernRealm }, "◄ Esci dalla Taverna"));
 
     if (state.tavernRealmRoster === null) {
-      wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento...")));
+      wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Taverna...")));
       return wrap;
     }
-    if (state.tavernRealmRoster.length === 0) {
-      wrap.append(el("p", { class: "hint" }, "Non c'è nessuno da queste parti, al momento."));
-      return wrap;
+    const map = state.tavernRealmRoster;
+    wrap.append(el("h2", {}, map.name));
+    wrap.append(el("p", { class: "hint" }, `${TAVERN_RELATION_LABELS[map.relation] || map.relation} - la disposizione della sala cambia nel tempo.`));
+
+    const mapWrap = el("div", { class: "tavern-map" });
+
+    const barSpot = el("div", {
+      class: "tavern-spot" + (state.tavernPlayerPosition === "bar" ? " tavern-spot-here" : ""),
+      onClick: () => { state.tavernPlayerPosition = "bar"; render(); },
+    });
+    barSpot.append(el("div", { class: "tavern-spot-label" }, "🍺 Bancone"));
+    barSpot.append(el("div", { class: "hint" }, map.bartender.name));
+    mapWrap.append(barSpot);
+
+    const tablesGrid = el("div", { class: "tavern-tables-grid" });
+    for (const table of map.tables) {
+      const posKey = `table-${table.table_number}`;
+      const tableSpot = el("div", {
+        class: "tavern-spot" + (state.tavernPlayerPosition === posKey ? " tavern-spot-here" : ""),
+        onClick: () => { state.tavernPlayerPosition = posKey; render(); },
+      });
+      tableSpot.append(el("div", { class: "tavern-spot-label" }, `🪑 ${table.label}`));
+      tableSpot.append(el("div", { class: "hint" },
+        table.occupants.length === 0 ? "Libero" : table.occupants.map((o) => o.npc_name).join(", ")));
+      tablesGrid.append(tableSpot);
     }
-    const listCard = el("div", { class: "card" });
-    for (const entry of state.tavernRealmRoster) {
-      const label = entry.npc_status === "training"
-        ? `${entry.npc_training_candidate} - ${entry.armor_name} (in addestramento)`
-        : `${entry.npc_name} - ${entry.armor_name}`;
-      listCard.append(el("button", { class: "secondary", onClick: () => openTavernConversation(entry.armor_name) }, label));
+    mapWrap.append(tablesGrid);
+
+    const doorSpot = el("div", {
+      class: "tavern-spot tavern-spot-door" + (state.tavernPlayerPosition === "door" ? " tavern-spot-here" : ""),
+      onClick: () => { state.tavernPlayerPosition = "door"; render(); },
+    });
+    doorSpot.append("🚪 Porta d'ingresso");
+    mapWrap.append(doorSpot);
+
+    wrap.append(mapWrap);
+
+    // La scena, romanzata, in base a dove ti trovi (richiesto in
+    // chat: "non farei il menu stile Arena, la farei romanzata").
+    const sceneCard = el("div", { class: "card" });
+    if (state.tavernPlayerPosition === "door") {
+      sceneCard.append(el("p", {}, "Ti fermi sulla soglia, lasciando che i tuoi occhi si abituino alla luce fioca della sala. Puoi dirigerti verso il bancone, verso uno dei tavoli, o tornartene da dove sei venuto."));
+      sceneCard.append(el("button", { class: "secondary", onClick: closeTavernRealm }, "Torna alla schermata principale"));
+    } else if (state.tavernPlayerPosition === "bar") {
+      sceneCard.append(el("p", {}, `Ti avvicini al bancone. ${map.bartender.name} alza lo sguardo un istante, poi torna al proprio lavoro, in attesa che tu dica qualcosa.`));
+      sceneCard.append(el("button", { onClick: () => openTavernConversation(map.bartender.armor_name) }, `Parla con ${map.bartender.name}`));
+    } else {
+      const table = map.tables.find((t) => `table-${t.table_number}` === state.tavernPlayerPosition);
+      if (table.occupants.length === 0) {
+        sceneCard.append(el("p", {}, `Ti siedi da solo al ${table.label.toLowerCase()}. Nessuno, per ora, sembra intenzionato a raggiungerti - ma la serata è ancora lunga.`));
+        sceneCard.append(el("button", { class: "secondary", onClick: refreshTavernMap }, "Aspetta un po' e guarda chi arriva"));
+      } else {
+        sceneCard.append(el("p", {}, `Ti avvicini al ${table.label.toLowerCase()}, dove ${table.occupants.length === 1 ? "qualcuno è seduto" : "alcune persone sono sedute"}.`));
+        for (const occupant of table.occupants) {
+          sceneCard.append(el("button", { onClick: () => openTavernConversation(occupant.armor_name) }, `Parla con ${occupant.npc_name}`));
+        }
+      }
     }
-    wrap.append(listCard);
+    wrap.append(sceneCard);
     return wrap;
   }
 
