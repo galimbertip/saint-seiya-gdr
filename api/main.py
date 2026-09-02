@@ -33,7 +33,7 @@ from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
     get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster, get_world_chronicle,
     add_biography_entry, get_biography_entries, get_custom_techniques, add_custom_technique,
-    release_roster_slot,
+    release_roster_slot, get_roster_entry,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -63,6 +63,7 @@ from core.missions import (
     COLONNE_MISSION_ID, COLONNE_START_NODE, COLONNE_NODES,
     get_colonne_node_content, pick_duel_armor_for_node, resolve_colonne_ending,
 )
+from core.alignment import persuasion_flavor_line
 from core.apprentice_fates import (
     resolve_companions_fates, resolve_soldier_activity, retrain_for_new_armor, SOLDIER_ACTIVITIES,
 )
@@ -776,16 +777,26 @@ def api_mission_persuade(knight_id: int, conn=Depends(get_db)):
     guardian_name = get_house_guardian(conn, house_name)
     content = get_house_content(knight["mission_stage"], guardian_name)
 
-    success = resolve_persuasion(knight)
+    # L'allineamento vero del Guardiano (richiesto in chat, stile D&D)
+    # sposta la soglia di persuasione - MAI mostrato al giocatore, solo
+    # una frase di tono aggiunta al testo già scritto per la Casa.
+    guardian_entry = get_roster_entry(conn, house_name)
+    guardian_alignment = guardian_entry["npc_alignment"] if guardian_entry else ""
+
+    success = resolve_persuasion(knight, guardian_alignment)
     mission_completed = False
     if success:
         knight["mission_stage"] += 1
         mission_completed = _complete_scalata_if_done(conn, knight)
         save_knight(conn, knight)
 
+    base_text = content["persuade_success"] if success else content["persuade_failure"]
+    flavor = persuasion_flavor_line(guardian_alignment, success) if guardian_alignment else ""
+    full_text = f"{base_text} {flavor}".strip()
+
     return {
         "success": success,
-        "text": content["persuade_success"] if success else content["persuade_failure"],
+        "text": full_text,
         "mission_completed": mission_completed,
     }
 
