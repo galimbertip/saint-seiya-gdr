@@ -11,7 +11,12 @@ chiave, chiede di ripetere con una frase in stile Saint Seiya
 
 import random
 
-from core.alignment import ALIGNMENTS
+from core.alignment import ALIGNMENTS, random_alignment
+from core.arena_manager import generate_full_name
+from database.db_manager import (
+    get_tavern_bartender, insert_tavern_bartender, get_tavern_seating, set_tavern_seating,
+    remove_tavern_seating, get_tavern_last_reshuffle, set_tavern_last_reshuffle,
+)
 
 # Ogni allineamento si riduce a uno di tre "umori" per le risposte
 # della Taverna (richiesto in chat) - scrivere un pool per ciascuno
@@ -297,3 +302,136 @@ def check_mission_offer(npc_divinity: str, affinity_before: int, affinity_after:
     if affinity_before < MISSION_OFFER_AFFINITY_THRESHOLD <= affinity_after:
         return mission_id
     return None
+
+
+# --- La Taverna a mappa (richiesto in chat) --------------------------
+# Non più un semplice elenco da cui scegliere un interlocutore: una
+# stanza vera, con un bancone e dei tavoli, dove i PNG del regno
+# occupano posti che cambiano nel tempo - stessa idea della mappa
+# dell'Arena, applicata qui.
+
+TABLE_LAYOUT = {
+    0: {"seats": 3, "label": "Bancone"},
+    1: {"seats": 4, "label": "Tavolo 1"},
+    2: {"seats": 4, "label": "Tavolo 2"},
+    3: {"seats": 4, "label": "Tavolo 3"},
+    4: {"seats": 4, "label": "Tavolo 4"},
+    5: {"seats": 4, "label": "Tavolo 5"},
+}
+# Quanti PNG "popolano" la taverna in un dato momento - non tutti
+# quelli del regno insieme (con Athena sarebbero oltre 80), solo
+# un'istantanea plausibile di chi ci si trova in quel momento.
+MAX_SEATED_NPCS = 12
+
+# Ogni quanto tempo condiviso la disposizione PUÒ cambiare (richiesto
+# in chat: dinamica, non statica) e quanta gente si sposta ad ogni
+# rimescolamento - PLACEHOLDER come le altre costanti di ritmo di
+# questo progetto.
+TAVERN_RESHUFFLE_MINUTES = 240
+RESHUFFLE_FRACTION = 0.3
+
+BARTENDER_INTRO_TEXTS = [
+    "\"Benvenuto\", dice senza troppa enfasi, pulendo un bicchiere che non ne aveva bisogno.",
+    "Ti osserva un istante, poi torna a badare al proprio bancone.",
+    "Un cenno del capo, un bicchiere già pronto - il mestiere, prima di tutto.",
+]
+
+
+def ensure_tavern_bartender(conn, divinity: str) -> dict:
+    """Il taverniere di questo regno (richiesto in chat) - generato una
+    sola volta, resta lo stesso per sempre (a differenza degli
+    avventori ai tavoli, che cambiano)."""
+    bartender = get_tavern_bartender(conn, divinity)
+    if bartender is None:
+        name = generate_full_name()
+        alignment = random_alignment()
+        insert_tavern_bartender(conn, divinity, name, alignment)
+        bartender = get_tavern_bartender(conn, divinity)
+    return dict(bartender)
+
+
+def _eligible_npcs_for_realm(conn, divinity: str) -> list[dict]:
+    """I PNG di questo regno che potrebbero comparire nella Taverna
+    (richiesto in chat) - solo quelli non reclamati da un giocatore."""
+    rows = conn.execute(
+        "SELECT r.* FROM roster r JOIN armors a ON a.name = r.armor_name "
+        "WHERE a.divinity = ? AND r.claimed_by_knight_id IS NULL",
+        (divinity,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _all_seat_slots() -> list[tuple[int, int]]:
+    """Ogni singolo posto a sedere della mappa (tavolo, indice posto),
+    bancone escluso - il bancone si riempie a parte, ha una logica
+    leggermente diversa (ci si può stare "in piedi" senza un vero
+    posto fisso, richiesto in chat implicitamente dal come funziona un
+    vero bancone)."""
+    slots = []
+    for table_number, info in TABLE_LAYOUT.items():
+        if table_number == 0:
+            continue
+        for seat_index in range(info["seats"]):
+            slots.append((table_number, seat_index))
+    return slots
+
+
+def ensure_tavern_seating(conn, divinity: str, world_minutes: int) -> None:
+    """La prima volta che qualcuno entra in questa Taverna (richiesto
+    in chat), genera una disposizione iniziale - un sottoinsieme
+    plausibile dei PNG del regno, sparsi tra i tavoli."""
+    existing = get_tavern_seating(conn, divinity)
+    if existing:
+        return
+    candidates = _eligible_npcs_for_realm(conn, divinity)
+    if not candidates:
+        return
+    random.shuffle(candidates)
+    slots = _all_seat_slots()
+    random.shuffle(slots)
+    chosen = candidates[:MAX_SEATED_NPCS]
+    for npc, (table_number, seat_index) in zip(chosen, slots):
+        set_tavern_seating(conn, divinity, npc["armor_name"], table_number, seat_index)
+    conn.commit()
+    set_tavern_last_reshuffle(conn, divinity, world_minutes)
+
+
+def maybe_reshuffle_tavern(conn, divinity: str, world_minutes: int) -> None:
+    """La disposizione cambia nel tempo (richiesto in chat: "dinamica,
+    la gente si alza, si siede, cambia tavolo") - controllo economico
+    (stesso principio già usato per gli eventi del mondo): solo se è
+    passato abbastanza tempo condiviso dall'ultimo rimescolamento per
+    questo regno."""
+    last = get_tavern_last_reshuffle(conn, divinity)
+    if world_minutes - last < TAVERN_RESHUFFLE_MINUTES:
+        return
+
+    current = get_tavern_seating(conn, divinity)
+    occupied_armor_names = {row["armor_name"] for row in current}
+    occupied_slots = {(row["table_number"], row["seat_index"]) for row in current}
+
+    # Una quota di chi è seduto se ne va (torna "in giro" per il
+    # regno, non più visibile in Taverna finché non ricapita).
+    n_to_remove = max(1, round(len(current) * RESHUFFLE_FRACTION))
+    to_remove = random.sample(list(current), min(n_to_remove, len(current)))
+    for row in to_remove:
+        remove_tavern_seating(conn, divinity, row["armor_name"])
+        occupied_armor_names.discard(row["armor_name"])
+        occupied_slots.discard((row["table_number"], row["seat_index"]))
+
+    # Altrettanti (o quanti ne bastano per restare sotto il tetto)
+    # arrivano a occupare posti liberi, pescando tra chi non è già
+    # seduto.
+    candidates = [
+        npc for npc in _eligible_npcs_for_realm(conn, divinity)
+        if npc["armor_name"] not in occupied_armor_names
+    ]
+    random.shuffle(candidates)
+    free_slots = [slot for slot in _all_seat_slots() if slot not in occupied_slots]
+    random.shuffle(free_slots)
+    n_to_add = min(len(to_remove), len(candidates), len(free_slots))
+    for npc, (table_number, seat_index) in zip(candidates[:n_to_add], free_slots[:n_to_add]):
+        set_tavern_seating(conn, divinity, npc["armor_name"], table_number, seat_index)
+
+    conn.commit()
+    set_tavern_last_reshuffle(conn, divinity, world_minutes)
