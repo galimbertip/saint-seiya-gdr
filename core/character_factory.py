@@ -22,6 +22,7 @@ from database.db_manager import (
     add_biography_entry, get_world_minutes,
 )
 from core.arena_manager import generate_full_name
+from core.alignment import random_alignment
 from core.training_path import select_master, generate_companions
 from core.fm_manager import get_calendar_display
 
@@ -191,7 +192,7 @@ def ensure_roster_populated(conn: sqlite3.Connection) -> int:
     for row in all_armors:
         if get_roster_entry(conn, row["name"]) is None:
             npc_name = generate_full_name()
-            insert_roster_entry(conn, row["name"], npc_name)
+            insert_roster_entry(conn, row["name"], npc_name, alignment=random_alignment())
             creati += 1
     conn.commit()
     return creati
