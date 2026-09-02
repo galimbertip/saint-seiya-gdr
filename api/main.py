@@ -69,6 +69,8 @@ from core.missions import (
     MISSION_ID, TOTAL_HOUSES, HOUSE_ORDER, COSMO_MAX_REWARD, DENARO_REWARD,
     get_house_guardian, get_house_content, resolve_persuasion,
     GRAPH_MISSIONS, get_graph_node_content, pick_graph_duel_armor, resolve_graph_mission_ending,
+    TOURNAMENT_MISSIONS, is_eligible_for_tournament, pick_tournament_opponent,
+    resolve_tournament_reward, tournament_round_label, tournament_round_label_with_preposition,
 )
 from core.alignment import persuasion_flavor_line
 from core.apprentice_fates import (
@@ -292,6 +294,8 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
                 if completed:
                     extra["mission_completed"] = True
                     extra["mission_ending_text"] = ending_text
+        elif knight["mission_id"] in TOURNAMENT_MISSIONS:
+            extra.update(_conclude_tournament_round(conn, knight, winner))
     else:
         _record_fight_outcome(conn, knight, opponent_name, winner)
 
@@ -698,6 +702,18 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
         node = get_graph_node_content(mission_id, node_id)
         return {"active": True, "mission_id": mission_id, "node": node}
 
+    if knight["mission_id"] in TOURNAMENT_MISSIONS:
+        tournament_id = knight["mission_id"]
+        settings = TOURNAMENT_MISSIONS[tournament_id]
+        round_number = knight["mission_stage"]
+        return {
+            "active": True, "mission_id": tournament_id,
+            "tournament": {
+                "name": settings["name"], "round_number": round_number, "total_rounds": settings["rounds"],
+                "round_label": tournament_round_label(tournament_id, round_number),
+            },
+        }
+
     return {"active": False}
 
 
@@ -713,11 +729,15 @@ def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get
     _require_mission_ready(knight)
     if knight["mission_id"]:
         raise HTTPException(status_code=400, detail="Hai già una missione in corso.")
-    if req.mission_id != MISSION_ID and req.mission_id not in GRAPH_MISSIONS:
+    if req.mission_id != MISSION_ID and req.mission_id not in GRAPH_MISSIONS and req.mission_id not in TOURNAMENT_MISSIONS:
         raise HTTPException(status_code=400, detail="Missione sconosciuta.")
+    if req.mission_id in TOURNAMENT_MISSIONS and not is_eligible_for_tournament(conn, knight, req.mission_id):
+        raise HTTPException(status_code=400, detail="Non sei idoneo a iscriverti a questo torneo.")
 
     knight["mission_id"] = req.mission_id
     if req.mission_id == MISSION_ID:
+        knight["mission_stage"] = 1
+    elif req.mission_id in TOURNAMENT_MISSIONS:
         knight["mission_stage"] = 1
     else:
         knight["mission_node"] = GRAPH_MISSIONS[req.mission_id]["start_node"]
@@ -746,6 +766,56 @@ def _complete_scalata_if_done(conn, knight: dict) -> bool:
         f"la Scalata delle Dodici Case, guadagnando {COSMO_MAX_REWARD} Cosmo massimo e {DENARO_REWARD} Dracme.",
     )
     return True
+
+
+def _conclude_tournament_round(conn, knight: dict, winner: str) -> dict:
+    """Gestisce l'esito di un round di torneo (richiesto in chat: vero
+    a eliminazione diretta, niente ritentativi come nella Scalata o
+    nelle missioni a grafo - qui perdere significa essere fuori,
+    davvero) - avanza sulla vittoria (campione se era l'ultimo round),
+    chiude tutto sull'eliminazione, con una ricompensa proporzionale ai
+    round superati in entrambi i casi."""
+    tournament_id = knight["mission_id"]
+    settings = TOURNAMENT_MISSIONS[tournament_id]
+    round_number = knight["mission_stage"]
+    cal = get_calendar_display(knight["game_minutes"])
+    extra: dict = {"tournament_champion": False}
+
+    if winner == "player" and round_number < settings["rounds"]:
+        # Non era l'ultimo round - si avanza, la missione resta attiva.
+        knight["mission_stage"] += 1
+        return extra
+
+    rounds_completed = round_number if winner == "player" else round_number - 1
+    is_champion = winner == "player"
+    reward = resolve_tournament_reward(tournament_id, rounds_completed, is_champion)
+    knight["denaro"] += reward["denaro"]
+    if reward["cosmo_max"]:
+        knight["cosmo_max"] += reward["cosmo_max"]
+        knight["cosmo_cur"] = knight["cosmo_max"]
+    knight["mission_id"] = ""
+    knight["mission_stage"] = 0
+
+    if is_champion:
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} vince "
+            f"{settings['name']}, diventandone campione.",
+        )
+        ending_text = "Vittoria! Sei il campione di questo torneo."
+    else:
+        label_with_prep = tournament_round_label_with_preposition(tournament_id, round_number)
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene "
+            f"eliminato {label_with_prep} di un torneo, con {rounds_completed} vittorie racimolate lungo il cammino.",
+        )
+        ending_text = f"Eliminato {label_with_prep}. Vittorie in totale: {rounds_completed}."
+
+    extra["mission_completed"] = True
+    extra["mission_ending_text"] = ending_text
+    extra["tournament_champion"] = is_champion
+    return extra
 
 
 def _complete_graph_mission_if_done(conn, knight: dict) -> tuple[bool, str]:
@@ -911,6 +981,18 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         battle_state = start_battle(conn, knight, armor, opponent=opponent)
         battle_state["is_mission"] = True
         return {"battle_state": battle_state, "intro": node["intro"].format(guardian=guardian_name)}
+
+    if knight["mission_id"] in TOURNAMENT_MISSIONS:
+        tournament_id = knight["mission_id"]
+        round_number = knight["mission_stage"]
+        settings = TOURNAMENT_MISSIONS[tournament_id]
+        opponent = pick_tournament_opponent(conn, knight, tournament_id)
+        battle_state = start_battle(conn, knight, armor, opponent=opponent)
+        battle_state["is_mission"] = True
+        round_label = tournament_round_label(tournament_id, round_number)
+        intro = (f"{round_label.capitalize()} del {settings['name']} - "
+                 f"{round_number}º di {settings['rounds']}: affronti {opponent['name']}.")
+        return {"battle_state": battle_state, "intro": intro}
 
     raise HTTPException(status_code=400, detail="Missione sconosciuta.")
 
