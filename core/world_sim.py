@@ -20,6 +20,7 @@ round di combattimento) sarebbe inutilmente costoso."""
 import random
 
 from core.arena_manager import generate_full_name
+from core.alignment import random_alignment
 from core.institutional_npcs import INSTITUTIONAL_NPCS
 from database.db_manager import add_world_event
 
@@ -101,6 +102,40 @@ NPC_FATE_OPTIONS = [
 # di colpo) - stesso ordine di grandezza dell'apprendistato del
 # giocatore. PLACEHOLDER, da tarare insieme se serve.
 NPC_TRAINING_DURATION_MINUTES = 120 * WORLD_TICK_MINUTES_PER_DAY
+
+# Le ferite come stato intermedio (richiesto in chat: "il Cavaliere
+# della Fiamma viene attaccato da uno Specter, perde, riporta ferite -
+# magari dopo un po' muore per le ferite") - una parte degli eventi
+# "notevoli" di un PNG occupato, invece di andare dritti a un destino
+# finale, lo lascia FERITO ma ancora al proprio posto: il vero rischio
+# arriva nei giorni successivi, non subito. PLACEHOLDER, come le altre
+# probabilità di questo modulo.
+NPC_INJURY_CHANCE_SHARE = 0.35  # quota degli eventi "notevoli" che diventa un ferimento invece di un destino diretto
+NPC_INJURY_RECOVERY_CHANCE_PER_DAY = 0.02  # una volta ferito, buona probabilità di guarire col tempo
+NPC_INJURY_DEATH_CHANCE_PER_DAY = 0.006    # ma anche un rischio vero di non farcela
+
+# (testo, etichetta) - l'etichetta viene riusata nel testo di morte
+# per le ferite, se le cose vanno male più avanti.
+NPC_INJURY_CAUSES = [
+    ("viene attaccato da uno Specter durante una pattuglia isolata, e ne esce ferito.", "quell'attacco"),
+    ("perde un duello non richiesto contro un rivale mai identificato, riportando ferite serie.", "quel duello"),
+    ("si fa male in un incidente durante l'addestramento - niente di scenico, solo sfortuna.", "quell'incidente"),
+    ("torna da una missione con ferite che tarderanno a guarire.", "quella missione"),
+    ("viene colto di sorpresa da un'imboscata ai confini del proprio territorio.", "quell'imboscata"),
+]
+
+NPC_INJURY_DEATH_TEXTS = [
+    "non si riprende mai del tutto dalle ferite di {cause_label}, e alla fine cede.",
+    "si spegne per le conseguenze di {cause_label}, lontano dai riflettori che raramente si accendono per i Cavalieri comuni.",
+    "perde la propria battaglia più silenziosa - quella contro le ferite di {cause_label} - senza che quasi nessuno se ne accorga.",
+]
+
+NPC_INJURY_RECOVERY_TEXTS = [
+    "si rimette in piedi, più lentamente di quanto avrebbe voluto, ma si rimette.",
+    "torna al proprio posto, con qualche cicatrice in più e la stessa determinazione di sempre.",
+    "guarisce dalle proprie ferite - il tempo, per una volta, gioca a favore.",
+]
+
 
 # Chi inizia l'addestramento per un'armatura lasciata libera (richiesto
 # in chat) - una riga di Cronaca a parte da quella della partenza, non
@@ -210,35 +245,85 @@ def _tick_world_flavor_events(conn, elapsed_minutes: int, current_world_minutes:
     return events
 
 
+def _start_departure(conn, row, fate_text: str, current_world_minutes: int) -> list[dict]:
+    """La sequenza condivisa 'qualcuno lascia il proprio posto, un
+    aspirante inizia l'addestramento' - usata sia da una partenza
+    diretta sia da una morte per ferite (richiesto in chat), per non
+    duplicare la stessa logica due volte."""
+    events = []
+    departure_entry = f"{row['npc_name']} di {row['armor_name']} {fate_text}"
+    add_world_event(conn, current_world_minutes, row["armor_name"], departure_entry)
+
+    candidate = generate_full_name()
+    training_ready = current_world_minutes + NPC_TRAINING_DURATION_MINUTES
+    start_text = random.choice(NPC_TRAINING_START_TEXTS).format(name=candidate, armor=row["armor_name"])
+    add_world_event(conn, current_world_minutes, row["armor_name"], start_text)
+
+    conn.execute(
+        """UPDATE roster SET npc_status = 'training', npc_training_candidate = ?,
+           npc_training_ready_minutes = ?, npc_fate = ?, npc_injured = 0, npc_injury_cause = '',
+           last_world_event_minutes = ?
+           WHERE armor_name = ?""",
+        (candidate, training_ready, f"{row['npc_name']} {fate_text}", current_world_minutes, row["armor_name"]),
+    )
+    events.append({"armor_name": row["armor_name"], "entry": departure_entry})
+    events.append({"armor_name": row["armor_name"], "entry": start_text})
+    return events
+
+
+def _tick_injured_npcs(conn, elapsed_minutes: int, current_world_minutes: int) -> list[dict]:
+    """Chi è già ferito (richiesto in chat) rischia ad ogni controllo di
+    guarire, di peggiorare fino a morirne, o semplicemente di restare
+    ferito com'è - non tutto si risolve nello stesso tick in cui è
+    successo."""
+    events = []
+    rows = conn.execute(
+        "SELECT * FROM roster WHERE claimed_by_knight_id IS NULL AND npc_status = 'occupied' AND npc_injured = 1"
+    ).fetchall()
+    for row in rows:
+        if _roll_chance(elapsed_minutes, NPC_INJURY_DEATH_CHANCE_PER_DAY):
+            death_text = random.choice(NPC_INJURY_DEATH_TEXTS).format(cause_label=row["npc_injury_cause"])
+            events.extend(_start_departure(conn, row, death_text, current_world_minutes))
+        elif _roll_chance(elapsed_minutes, NPC_INJURY_RECOVERY_CHANCE_PER_DAY):
+            recovery_text = random.choice(NPC_INJURY_RECOVERY_TEXTS)
+            entry = f"{row['npc_name']} di {row['armor_name']} {recovery_text}"
+            conn.execute(
+                "UPDATE roster SET npc_injured = 0, npc_injury_cause = '' WHERE armor_name = ?",
+                (row["armor_name"],),
+            )
+            add_world_event(conn, current_world_minutes, row["armor_name"], entry)
+            events.append({"armor_name": row["armor_name"], "entry": entry})
+    return events
+
+
 def _tick_common_npc_departures(conn, elapsed_minutes: int, current_world_minutes: int) -> list[dict]:
-    """Fase 1 (richiesto in chat): un PNG occupato lascia il proprio
-    posto. L'armatura non passa subito a un nuovo occupante - un
-    aspirante inizia SOLO ORA il proprio addestramento (vedi
+    """Fase 1 (richiesto in chat): un PNG occupato e SANO ha un evento
+    notevole - una parte diretta subito (come prima), una parte esce
+    invece ferito e resta al proprio posto (vedi _tick_injured_npcs per
+    cosa gli succede nei giorni seguenti). L'armatura, quando si
+    libera, non passa subito a un nuovo occupante - un aspirante
+    inizia SOLO ORA il proprio addestramento (vedi
     _tick_common_npc_graduations per quando lo completa davvero)."""
     events = []
     rows = conn.execute(
-        "SELECT * FROM roster WHERE claimed_by_knight_id IS NULL AND npc_alive = 1 AND npc_status = 'occupied'"
+        "SELECT * FROM roster WHERE claimed_by_knight_id IS NULL AND npc_alive = 1 "
+        "AND npc_status = 'occupied' AND npc_injured = 0"
     ).fetchall()
     for row in rows:
         if not _roll_chance(elapsed_minutes, NPC_EVENT_CHANCE_PER_DAY):
             continue
-        fate = resolve_npc_fate()
-        departure_entry = f"{row['npc_name']} di {row['armor_name']} {fate}"
-        add_world_event(conn, current_world_minutes, row["armor_name"], departure_entry)
-
-        candidate = generate_full_name()
-        training_ready = current_world_minutes + NPC_TRAINING_DURATION_MINUTES
-        start_text = random.choice(NPC_TRAINING_START_TEXTS).format(name=candidate, armor=row["armor_name"])
-        add_world_event(conn, current_world_minutes, row["armor_name"], start_text)
-
-        conn.execute(
-            """UPDATE roster SET npc_status = 'training', npc_training_candidate = ?,
-               npc_training_ready_minutes = ?, npc_fate = ?, last_world_event_minutes = ?
-               WHERE armor_name = ?""",
-            (candidate, training_ready, f"{row['npc_name']} {fate}", current_world_minutes, row["armor_name"]),
-        )
-        events.append({"armor_name": row["armor_name"], "entry": departure_entry})
-        events.append({"armor_name": row["armor_name"], "entry": start_text})
+        if random.random() < NPC_INJURY_CHANCE_SHARE:
+            cause_text, cause_label = random.choice(NPC_INJURY_CAUSES)
+            entry = f"{row['npc_name']} di {row['armor_name']} {cause_text}"
+            conn.execute(
+                "UPDATE roster SET npc_injured = 1, npc_injury_cause = ? WHERE armor_name = ?",
+                (cause_label, row["armor_name"]),
+            )
+            add_world_event(conn, current_world_minutes, row["armor_name"], entry)
+            events.append({"armor_name": row["armor_name"], "entry": entry})
+        else:
+            fate = resolve_npc_fate()
+            events.extend(_start_departure(conn, row, fate, current_world_minutes))
     return events
 
 
@@ -260,9 +345,9 @@ def _tick_common_npc_graduations(conn, current_world_minutes: int) -> list[dict]
         add_world_event(conn, current_world_minutes, row["armor_name"], graduation_text)
         conn.execute(
             """UPDATE roster SET npc_name = ?, npc_status = 'occupied', npc_generation = npc_generation + 1,
-               npc_training_candidate = '', npc_training_ready_minutes = 0
+               npc_training_candidate = '', npc_training_ready_minutes = 0, npc_alignment = ?
                WHERE armor_name = ?""",
-            (row["npc_training_candidate"], row["armor_name"]),
+            (row["npc_training_candidate"], random_alignment(), row["armor_name"]),
         )
         events.append({"armor_name": row["armor_name"], "entry": graduation_text})
     return events
@@ -286,6 +371,7 @@ def tick_world_events(conn, elapsed_minutes: int, current_world_minutes: int) ->
         return []
 
     events = []
+    events.extend(_tick_injured_npcs(conn, elapsed_minutes, current_world_minutes))
     events.extend(_tick_common_npc_departures(conn, elapsed_minutes, current_world_minutes))
     events.extend(_tick_common_npc_graduations(conn, current_world_minutes))
     events.extend(_tick_institutional_events(conn, elapsed_minutes, current_world_minutes))
