@@ -118,3 +118,53 @@ def persuasion_flavor_line(alignment: str, success: bool) -> str:
     pool = ALIGNMENT_SUCCESS_FLAVOR if success else ALIGNMENT_FAILURE_FLAVOR
     opzioni = pool.get(alignment) or pool["Neutrale Puro"]
     return random.choice(opzioni)
+
+
+# Effetti più ampi (richiesto in chat): l'allineamento sposta anche il
+# comportamento in combattimento, non solo la persuasione - un
+# avversario più Malvagio è più aggressivo e meno paziente (carica di
+# rado, preferisce colpire), uno più Buono è più misurato (carica più
+# spesso, un duello onorevole più che una gara di violenza pura). Le
+# differenze restano volutamente leggere - non deve sembrare un'altra
+# difficoltà mascherata, solo una sfumatura di stile che si nota nel
+# tempo. (peso_attacco, peso_carica) - sostituisce i pesi fissi
+# 0.8/0.2 usati finora da choose_opponent_action.
+ALIGNMENT_COMBAT_WEIGHTS = {
+    "Legale Buono": (0.75, 0.25),
+    "Neutrale Buono": (0.78, 0.22),
+    "Caotico Buono": (0.72, 0.28),
+    "Legale Neutrale": (0.80, 0.20),
+    "Neutrale Puro": (0.80, 0.20),
+    "Caotico Neutrale": (0.82, 0.18),
+    "Legale Malvagio": (0.85, 0.15),
+    "Neutrale Malvagio": (0.88, 0.12),
+    "Caotico Malvagio": (0.90, 0.10),
+}
+
+
+def combat_action_weights(alignment: str) -> tuple[float, float]:
+    """I pesi (attacca, carica) per la scelta dell'azione proattiva di
+    un avversario (richiesto in chat) - quelli di default
+    (Legale Neutrale/Neutrale Puro, 0.80/0.20) se l'allineamento non è
+    riconosciuto o è vuoto (retrocompatibilità con avversari generati
+    prima di questa modifica)."""
+    return ALIGNMENT_COMBAT_WEIGHTS.get(alignment, (0.80, 0.20))
+
+
+# Lo stesso vale per il peso dei destini nella simulazione del mondo
+# (richiesto in chat) - un PNG più Malvagio è leggermente più incline
+# a sparire in circostanze losche o a morire in un duello, uno più
+# Buono più incline a un ritiro pacifico. Le tre categorie sono le
+# stesse di core.world_sim.NPC_FATE_OPTIONS (morte, ritiro, sparizione)
+# - qui solo un moltiplicatore per categoria, non frasi nuove.
+ALIGNMENT_FATE_CATEGORY_WEIGHTS = {
+    "Legale Buono": (0.7, 1.3, 0.8),
+    "Neutrale Buono": (0.6, 1.4, 0.8),
+    "Caotico Buono": (0.8, 1.1, 1.1),
+    "Legale Neutrale": (1.0, 1.0, 1.0),
+    "Neutrale Puro": (1.0, 1.0, 1.0),
+    "Caotico Neutrale": (1.1, 0.9, 1.2),
+    "Legale Malvagio": (1.2, 0.8, 1.1),
+    "Neutrale Malvagio": (1.3, 0.7, 1.2),
+    "Caotico Malvagio": (1.5, 0.6, 1.4),
+}  # (morte, ritiro, sparizione)
