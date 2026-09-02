@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS roster (
     npc_status TEXT NOT NULL DEFAULT 'occupied',
     npc_training_candidate TEXT NOT NULL DEFAULT '',
     npc_training_ready_minutes INTEGER NOT NULL DEFAULT 0,
+    npc_injured INTEGER NOT NULL DEFAULT 0,
+    npc_injury_cause TEXT NOT NULL DEFAULT '',
+    npc_alignment TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
@@ -342,6 +345,27 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE roster ADD COLUMN npc_training_ready_minutes INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         log.info("Migrazione: aggiunte colonne npc_status/npc_training_candidate/npc_training_ready_minutes a roster.")
+    if "npc_injured" not in roster_columns:
+        # Le ferite come stato intermedio (richiesto in chat): un PNG
+        # può uscire ferito da uno scontro/missione/incidente
+        # d'allenamento simulato, restando al proprio posto ma con un
+        # rischio vero - nei giorni seguenti - di guarire o di
+        # peggiorare fino a morirne.
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_injured INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_injury_cause TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne npc_injured/npc_injury_cause a roster.")
+    if "npc_alignment" not in roster_columns:
+        # L'allineamento vero (richiesto in chat, stile D&D a 9
+        # caselle) - MAI mostrato al giocatore, si scopre solo
+        # giocando/fallendo. Assegnato in Python (vedi
+        # core/alignment.py), non con un default SQL fisso, per questo
+        # la colonna nasce vuota e viene riempita subito dopo dalla
+        # migrazione applicativa in ensure_roster_populated.
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_alignment TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna npc_alignment a roster.")
+        log.info("Migrazione: aggiunte colonne npc_status/npc_training_candidate/npc_training_ready_minutes a roster.")
 
     world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
     if "last_npc_tick_minutes" not in world_clock_columns:
@@ -533,13 +557,17 @@ def get_roster_entry(conn: sqlite3.Connection, armor_name: str) -> sqlite3.Row |
     return conn.execute("SELECT * FROM roster WHERE armor_name = ?", (armor_name,)).fetchone()
 
 
-def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str) -> None:
+def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str, alignment: str = "") -> None:
     """Crea lo slot per un'armatura con il suo PNG fisso - ignorata (non
     sovrascrive) se esiste già, perché il nome del PNG non deve mai
-    cambiare una volta assegnato (richiesto in chat)."""
+    cambiare una volta assegnato (richiesto in chat). `alignment`
+    (richiesto in chat, stile D&D): il vero allineamento del PNG, mai
+    mostrato al giocatore - calcolato dal chiamante (core.alignment),
+    non qui, per non far dipendere questo modulo di basso livello da
+    logica applicativa."""
     conn.execute(
-        "INSERT OR IGNORE INTO roster (armor_name, npc_name, claimed_by_knight_id) VALUES (?, ?, NULL)",
-        (armor_name, npc_name),
+        "INSERT OR IGNORE INTO roster (armor_name, npc_name, claimed_by_knight_id, npc_alignment) VALUES (?, ?, NULL, ?)",
+        (armor_name, npc_name, alignment),
     )
 
 
