@@ -60,8 +60,7 @@ from core.training_path import (
 from core.missions import (
     MISSION_ID, TOTAL_HOUSES, HOUSE_ORDER, COSMO_MAX_REWARD, DENARO_REWARD,
     get_house_guardian, get_house_content, resolve_persuasion,
-    COLONNE_MISSION_ID, COLONNE_START_NODE, COLONNE_NODES,
-    get_colonne_node_content, pick_duel_armor_for_node, resolve_colonne_ending,
+    GRAPH_MISSIONS, get_graph_node_content, pick_graph_duel_armor, resolve_graph_mission_ending,
 )
 from core.alignment import persuasion_flavor_line
 from core.apprentice_fates import (
@@ -275,12 +274,13 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
                 if _complete_scalata_if_done(conn, knight):
                     extra["mission_completed"] = True
                     extra["mission_ending_text"] = None
-        elif knight["mission_id"] == COLONNE_MISSION_ID:
-            node_id = knight["mission_node"] or COLONNE_START_NODE
-            node = COLONNE_NODES[node_id]
+        elif knight["mission_id"] in GRAPH_MISSIONS:
+            mission_id = knight["mission_id"]
+            node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
+            node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
             knight["mission_node"] = node["win_next"] if winner == "player" else node["lose_next"]
             if winner == "player":
-                completed, ending_text = _complete_colonne_if_done(conn, knight)
+                completed, ending_text = _complete_graph_mission_if_done(conn, knight)
                 if completed:
                     extra["mission_completed"] = True
                     extra["mission_ending_text"] = ending_text
@@ -684,10 +684,11 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
         house = get_house_content(knight["mission_stage"], guardian_name)
         return {"active": True, "mission_id": knight["mission_id"], "house": house}
 
-    if knight["mission_id"] == COLONNE_MISSION_ID:
-        node_id = knight["mission_node"] or COLONNE_START_NODE
-        node = get_colonne_node_content(node_id)
-        return {"active": True, "mission_id": knight["mission_id"], "node": node}
+    if knight["mission_id"] in GRAPH_MISSIONS:
+        mission_id = knight["mission_id"]
+        node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
+        node = get_graph_node_content(mission_id, node_id)
+        return {"active": True, "mission_id": mission_id, "node": node}
 
     return {"active": False}
 
@@ -704,14 +705,14 @@ def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get
     _require_mission_ready(knight)
     if knight["mission_id"]:
         raise HTTPException(status_code=400, detail="Hai già una missione in corso.")
-    if req.mission_id not in (MISSION_ID, COLONNE_MISSION_ID):
+    if req.mission_id != MISSION_ID and req.mission_id not in GRAPH_MISSIONS:
         raise HTTPException(status_code=400, detail="Missione sconosciuta.")
 
     knight["mission_id"] = req.mission_id
     if req.mission_id == MISSION_ID:
         knight["mission_stage"] = 1
     else:
-        knight["mission_node"] = COLONNE_START_NODE
+        knight["mission_node"] = GRAPH_MISSIONS[req.mission_id]["start_node"]
         knight["mission_flags"] = ""
     save_knight(conn, knight)
     return {"active": True}
@@ -739,14 +740,19 @@ def _complete_scalata_if_done(conn, knight: dict) -> bool:
     return True
 
 
-def _complete_colonne_if_done(conn, knight: dict) -> tuple[bool, str]:
+def _complete_graph_mission_if_done(conn, knight: dict) -> tuple[bool, str]:
     """Se il nodo attuale è 'fine', assegna la ricompensa (base + un
     eventuale bonus dai flag accumulati durante il percorso, richiesto
     in chat: una conseguenza vera per la scelta morale centrale) e
-    chiude la missione. Restituisce (completata, testo del finale)."""
+    chiude la missione. Generica (richiesto in chat, "molte più
+    missioni") - funziona per QUALUNQUE missione registrata in
+    GRAPH_MISSIONS, non più solo per Le Colonne. Restituisce
+    (completata, testo del finale)."""
     if knight["mission_node"] != "fine":
         return False, ""
-    ending = resolve_colonne_ending(_mission_flags_set(knight))
+    mission_id = knight["mission_id"]
+    mission_name = GRAPH_MISSIONS[mission_id]["name"]
+    ending = resolve_graph_mission_ending(mission_id, _mission_flags_set(knight))
     knight["cosmo_max"] += COSMO_MAX_REWARD
     knight["cosmo_cur"] = knight["cosmo_max"]
     knight["denaro"] += DENARO_REWARD + ending["bonus"].get("denaro", 0)
@@ -757,7 +763,7 @@ def _complete_colonne_if_done(conn, knight: dict) -> tuple[bool, str]:
     add_biography_entry(
         conn, knight["id"], knight["game_minutes"],
         f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} completa "
-        f"Le Colonne dei Sette Mari.",
+        f"{mission_name}.",
     )
     return True, ending["text"]
 
@@ -807,17 +813,20 @@ class MissionChoiceRequest(BaseModel):
 
 @app.post("/characters/{knight_id}/mission/choose")
 def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(get_db)):
-    """Risolve una scelta di un nodo 'choice' delle Colonne dei Sette
-    Mari (richiesto in chat: bivi che portano DAVVERO a strade diverse)
-    - applica l'eventuale flag dell'opzione scelta (che può cambiare il
-    finale più avanti) e passa al nodo successivo."""
+    """Risolve una scelta di un nodo 'choice' di una missione a grafo
+    (richiesto in chat: bivi che portano DAVVERO a strade diverse) -
+    applica l'eventuale flag dell'opzione scelta (che può cambiare il
+    finale più avanti) e passa al nodo successivo. Generica (richiesto
+    in chat, "molte più missioni") - funziona per qualunque missione
+    registrata in GRAPH_MISSIONS."""
     knight = _get_knight_or_404(conn, knight_id)
     _require_mission_ready(knight)
-    if knight["mission_id"] != COLONNE_MISSION_ID:
+    if knight["mission_id"] not in GRAPH_MISSIONS:
         raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
 
-    node_id = knight["mission_node"] or COLONNE_START_NODE
-    node = COLONNE_NODES[node_id]
+    mission_id = knight["mission_id"]
+    node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
+    node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
     if node["type"] != "choice":
         raise HTTPException(status_code=400, detail="Questo nodo non prevede una scelta.")
     if not (0 <= req.option_index < len(node["options"])):
@@ -835,16 +844,18 @@ def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(g
 
 @app.post("/characters/{knight_id}/mission/attempt")
 def api_mission_attempt(knight_id: int, conn=Depends(get_db)):
-    """Un vero tiro di dado per un nodo 'skill_check' delle Colonne dei
-    Sette Mari (richiesto in chat) - a seconda dell'esito, porta a nodi
-    SUCCESSIVI DIVERSI (non solo testo diverso sulla stessa strada)."""
+    """Un vero tiro di dado per un nodo 'skill_check' di una missione a
+    grafo (richiesto in chat) - a seconda dell'esito, porta a nodi
+    SUCCESSIVI DIVERSI (non solo testo diverso sulla stessa strada).
+    Generica (richiesto in chat, "molte più missioni")."""
     knight = _get_knight_or_404(conn, knight_id)
     _require_mission_ready(knight)
-    if knight["mission_id"] != COLONNE_MISSION_ID:
+    if knight["mission_id"] not in GRAPH_MISSIONS:
         raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
 
-    node_id = knight["mission_node"] or COLONNE_START_NODE
-    node = COLONNE_NODES[node_id]
+    mission_id = knight["mission_id"]
+    node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
+    node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
     if node["type"] != "skill_check":
         raise HTTPException(status_code=400, detail="Questo nodo non prevede una prova a dado.")
 
@@ -880,12 +891,13 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         battle_state["is_mission"] = True
         return {"battle_state": battle_state}
 
-    if knight["mission_id"] == COLONNE_MISSION_ID:
-        node_id = knight["mission_node"] or COLONNE_START_NODE
-        node = COLONNE_NODES[node_id]
+    if knight["mission_id"] in GRAPH_MISSIONS:
+        mission_id = knight["mission_id"]
+        node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
+        node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
         if node["type"] != "duel":
             raise HTTPException(status_code=400, detail="Questo nodo non prevede uno scontro.")
-        duel_armor_name = pick_duel_armor_for_node(node_id)
+        duel_armor_name = pick_graph_duel_armor(mission_id, node_id)
         guardian_name = get_house_guardian(conn, duel_armor_name)
         opponent = build_opponent_from_armor(conn, duel_armor_name, guardian_name)
         battle_state = start_battle(conn, knight, armor, opponent=opponent)
