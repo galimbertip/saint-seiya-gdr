@@ -69,7 +69,8 @@ from core.missions import (
     MISSION_ID, TOTAL_HOUSES, HOUSE_ORDER, COSMO_MAX_REWARD, DENARO_REWARD,
     get_house_guardian, get_house_content, resolve_persuasion,
     GRAPH_MISSIONS, get_graph_node_content, pick_graph_duel_armor, resolve_graph_mission_ending,
-    TOURNAMENT_MISSIONS, is_eligible_for_tournament, pick_tournament_opponent,
+    TOURNAMENT_MISSIONS, is_eligible_for_tournament,
+    generate_tournament_bracket, save_tournament_bracket, load_tournament_bracket, build_tournament_opponent,
     resolve_tournament_reward, tournament_round_label, tournament_round_label_with_preposition,
 )
 from core.alignment import persuasion_flavor_line
@@ -711,6 +712,7 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
             "tournament": {
                 "name": settings["name"], "round_number": round_number, "total_rounds": settings["rounds"],
                 "round_label": tournament_round_label(tournament_id, round_number),
+                "bracket": load_tournament_bracket(knight),
             },
         }
 
@@ -739,6 +741,8 @@ def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get
         knight["mission_stage"] = 1
     elif req.mission_id in TOURNAMENT_MISSIONS:
         knight["mission_stage"] = 1
+        bracket = generate_tournament_bracket(conn, knight, req.mission_id)
+        save_tournament_bracket(knight, bracket)
     else:
         knight["mission_node"] = GRAPH_MISSIONS[req.mission_id]["start_node"]
         knight["mission_flags"] = ""
@@ -986,7 +990,10 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         tournament_id = knight["mission_id"]
         round_number = knight["mission_stage"]
         settings = TOURNAMENT_MISSIONS[tournament_id]
-        opponent = pick_tournament_opponent(conn, knight, tournament_id)
+        bracket = load_tournament_bracket(knight)
+        if bracket is None:
+            raise HTTPException(status_code=400, detail="Tabellone del torneo mancante - riprova ad iscriverti.")
+        opponent = build_tournament_opponent(conn, bracket, round_number)
         battle_state = start_battle(conn, knight, armor, opponent=opponent)
         battle_state["is_mission"] = True
         round_label = tournament_round_label(tournament_id, round_number)
