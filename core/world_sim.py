@@ -20,7 +20,7 @@ round di combattimento) sarebbe inutilmente costoso."""
 import random
 
 from core.arena_manager import generate_full_name
-from core.alignment import random_alignment
+from core.alignment import random_alignment, ALIGNMENT_FATE_CATEGORY_WEIGHTS
 from core.institutional_npcs import INSTITUTIONAL_NPCS
 from database.db_manager import add_world_event
 
@@ -75,26 +75,37 @@ WORLD_FLAVOR_EVENTS = [
 # e con cura a non usare mai un aggettivo o un participio che debba
 # concordare con il genere del PNG (i nomi generati non portano un
 # genere tracciato - "stanco"/"stanca" non si può scegliere a caso).
-NPC_FATE_OPTIONS = [
+NPC_FATE_CATEGORIES = {
     # Morte in combattimento - la più rara delle tre categorie.
-    ("muore in un duello che nessuno ha visto, e l'armatura resta orfana per un po', in attesa di chi saprà meritarla.", 0.05),
-    ("cade in battaglia lontano dal Santuario, e la notizia raggiunge il Sacro Imperio solo molto più tardi, come un sussurro tra i corridoi.", 0.05),
-    ("non fa ritorno da una missione mai autorizzata, e nessuno osa chiedere altro.", 0.05),
-    ("combatte un'ultima battaglia contro un nemico che nessuno riesce a identificare, e non ne resta altro che il nome.", 0.05),
-    ("si spegne lontano da ogni Cosmo amico, e la notizia arriva al Santuario solo molto più tardi.", 0.05),
+    "morte": [
+        "muore in un duello che nessuno ha visto, e l'armatura resta orfana per un po', in attesa di chi saprà meritarla.",
+        "cade in battaglia lontano dal Santuario, e la notizia raggiunge il Sacro Imperio solo molto più tardi, come un sussurro tra i corridoi.",
+        "non fa ritorno da una missione mai autorizzata, e nessuno osa chiedere altro.",
+        "combatte un'ultima battaglia contro un nemico che nessuno riesce a identificare, e non ne resta altro che il nome.",
+        "si spegne lontano da ogni Cosmo amico, e la notizia arriva al Santuario solo molto più tardi.",
+    ],
     # Ritiro - la più comune.
-    ("appende l'armatura al muro di una casa lontana dal Santuario: la guerra senza fine ha eroso ogni voglia di restare.", 0.09),
-    ("si congeda dal Sacro Imperio senza clamore, in cerca altrove di una pace che qui non ha mai trovato.", 0.09),
-    ("sceglie una vita senza Cosmo da bruciare né nemici da affrontare all'alba, e nessuno osa biasimarla.", 0.09),
-    ("posa l'armatura con lo stesso gesto lento di chi ha già dato tutto quello che aveva da dare.", 0.08),
-    ("lascia il Santuario per sempre: la stanchezza di contare le vittorie invece dei giorni vissuti in pace ha vinto su tutto il resto.", 0.08),
-    ("si ritira senza una parola di troppo - chi resta capisce comunque, senza bisogno di spiegazioni.", 0.07),
+    "ritiro": [
+        "appende l'armatura al muro di una casa lontana dal Santuario: la guerra senza fine ha eroso ogni voglia di restare.",
+        "si congeda dal Sacro Imperio senza clamore, in cerca altrove di una pace che qui non ha mai trovato.",
+        "sceglie una vita senza Cosmo da bruciare né nemici da affrontare all'alba, e nessuno osa biasimarla.",
+        "posa l'armatura con lo stesso gesto lento di chi ha già dato tutto quello che aveva da dare.",
+        "lascia il Santuario per sempre: la stanchezza di contare le vittorie invece dei giorni vissuti in pace ha vinto su tutto il resto.",
+        "si ritira senza una parola di troppo - chi resta capisce comunque, senza bisogno di spiegazioni.",
+    ],
     # Sparizione - a metà tra le due.
-    ("sparisce una notte senza lasciare traccia, lasciando solo domande dietro di sé.", 0.08),
-    ("scompare nel nulla, come se il Sacro Imperio stesso ne avesse perso ogni memoria.", 0.07),
-    ("esce per una pattuglia di routine e non fa più ritorno - c'è chi parla di fuga, chi teme di peggio.", 0.05),
-    ("svanisce durante un lungo viaggio verso confini che nessuno ha mai osato attraversare.", 0.05),
-]
+    "sparizione": [
+        "sparisce una notte senza lasciare traccia, lasciando solo domande dietro di sé.",
+        "scompare nel nulla, come se il Sacro Imperio stesso ne avesse perso ogni memoria.",
+        "esce per una pattuglia di routine e non fa più ritorno - c'è chi parla di fuga, chi teme di peggio.",
+        "svanisce durante un lungo viaggio verso confini che nessuno ha mai osato attraversare.",
+    ],
+}
+# Il peso di base di ciascuna categoria (somma delle vecchie liste
+# piatte: 5×0.05, 6×~0.085, 4×0.0625) - moltiplicato poi per
+# ALIGNMENT_FATE_CATEGORY_WEIGHTS (richiesto in chat, effetti più
+# ampi) in base al vero allineamento del PNG.
+NPC_FATE_CATEGORY_BASE_WEIGHTS = {"morte": 0.25, "ritiro": 0.50, "sparizione": 0.25}
 
 # Il tempo che serve a un nuovo aspirante per essere pronto a
 # raccogliere un'armatura lasciata libera (richiesto in chat: "sarebbe
@@ -183,18 +194,21 @@ INSTITUTIONAL_SUCCESSION_TEXTS = {
 }
 
 
-def resolve_npc_fate() -> str:
+def resolve_npc_fate(alignment: str = "") -> str:
     """Un destino narrativo per UN PNG che lascia il proprio posto
     (richiesto in chat) - stesso principio di
     core.apprentice_fates.resolve_companion_fate, qui applicato ai PNG
-    del mondo invece che ai compagni d'addestramento."""
-    roll = random.random()
-    cumulative = 0.0
-    for text, weight in NPC_FATE_OPTIONS:
-        cumulative += weight
-        if roll < cumulative:
-            return text
-    return NPC_FATE_OPTIONS[-1][0]
+    del mondo invece che ai compagni d'addestramento. `alignment`
+    (richiesto in chat, effetti più ampi): il vero allineamento del
+    PNG pesa quale CATEGORIA di destino è più probabile (un Malvagio
+    più incline a una fine violenta o a sparire in circostanze losche,
+    un Buono più incline a un ritiro pacifico) - la scelta della frase
+    specifica dentro la categoria resta uniforme."""
+    multipliers = ALIGNMENT_FATE_CATEGORY_WEIGHTS.get(alignment, (1.0, 1.0, 1.0))
+    categories = list(NPC_FATE_CATEGORY_BASE_WEIGHTS.keys())  # ["morte", "ritiro", "sparizione"], stesso ordine dei moltiplicatori
+    weighted = [NPC_FATE_CATEGORY_BASE_WEIGHTS[cat] * mult for cat, mult in zip(categories, multipliers)]
+    category = random.choices(categories, weights=weighted, k=1)[0]
+    return random.choice(NPC_FATE_CATEGORIES[category])
 
 
 def _roll_chance(elapsed_minutes: int, chance_per_day: float) -> bool:
@@ -322,7 +336,7 @@ def _tick_common_npc_departures(conn, elapsed_minutes: int, current_world_minute
             add_world_event(conn, current_world_minutes, row["armor_name"], entry)
             events.append({"armor_name": row["armor_name"], "entry": entry})
         else:
-            fate = resolve_npc_fate()
+            fate = resolve_npc_fate(row["npc_alignment"])
             events.extend(_start_departure(conn, row, fate, current_world_minutes))
     return events
 
