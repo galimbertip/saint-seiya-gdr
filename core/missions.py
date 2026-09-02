@@ -18,6 +18,7 @@ import sqlite3
 
 from database.db_manager import get_roster_entry
 from core.training_path import build_opponent_from_armor
+from core.alignment import ALIGNMENT_PERSUASION_MODIFIER, persuasion_flavor_line
 
 MISSION_ID = "dodici_case"
 TOTAL_HOUSES = 12
@@ -200,13 +201,19 @@ def get_house_guardian(conn: sqlite3.Connection, house_armor_name: str) -> str:
     return entry["npc_name"] if entry else f"{random.choice(['Marco', 'Elena', 'Kenji'])} Ignoto"
 
 
-def resolve_persuasion(knight: dict) -> bool:
+def resolve_persuasion(knight: dict, guardian_alignment: str = "") -> bool:
     """Un vero tiro di dado per il tentativo di persuasione (richiesto
     in chat: la possibilità di convincere un Guardiano a lasciarti
     passare senza combattere) - un filo più dura delle prove
-    dell'addestramento, qui sei di fronte a un Gold Saint."""
+    dell'addestramento, qui sei di fronte a un Gold Saint.
+    `guardian_alignment` (richiesto in chat, stile D&D): l'allineamento
+    vero del Guardiano sposta la soglia - un PNG più Buono è più
+    ricettivo, uno più Malvagio più cinico. Prima ogni Guardiano aveva
+    la STESSA soglia, motivo per cui la Scalata si poteva risolvere
+    per intero con la sola diplomazia (segnalato in chat)."""
+    modifier = ALIGNMENT_PERSUASION_MODIFIER.get(guardian_alignment, 0)
     roll = random.randint(1, 20) + knight[PERSUADE_STAT] // 2
-    return roll >= PERSUADE_THRESHOLD
+    return roll >= PERSUADE_THRESHOLD + modifier
 
 
 def get_house_content(house_number: int, guardian_name: str) -> dict:
