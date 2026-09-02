@@ -33,7 +33,12 @@ from database.db_manager import (
     get_connection, init_db, refresh_armors_catalog,
     get_armor, get_techniques_for_armor, list_armors_for_player_level, get_roster, get_world_chronicle,
     add_biography_entry, get_biography_entries, get_custom_techniques, add_custom_technique,
-    release_roster_slot, get_roster_entry,
+    release_roster_slot, get_roster_entry, get_world_minutes,
+    get_tavern_relationship, adjust_tavern_affinity, add_tavern_message, get_tavern_conversation,
+)
+from core.tavern import (
+    resolve_tavern_response, TAVERN_REALMS, get_faction_relation, RELATION_STARTING_AFFINITY,
+    check_mission_offer, MISSION_OFFER_TEXTS,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -1152,6 +1157,127 @@ def api_get_biography(knight_id: int, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
     entries = get_biography_entries(conn, knight_id)
     return {"sketch": knight["biography"], "entries": [dict(e) for e in entries]}
+
+
+@app.get("/characters/{knight_id}/taverns")
+def api_get_taverns(knight_id: int, conn=Depends(get_db)):
+    """L'elenco delle 13 Taverne, una per regno/fazione (richiesto in
+    chat: separate, non un'unica Taverna con tutti) - con la relazione
+    tra la TUA fazione e quella di ciascun regno, così sai già, prima
+    di entrare, se ti aspetta un'accoglienza fredda."""
+    knight = _get_knight_or_404(conn, knight_id)
+    armor = get_armor(knight["armor_name"], conn)
+    player_divinity = armor["divinity"] if armor else ""
+    result = []
+    for divinity, name in TAVERN_REALMS.items():
+        result.append({
+            "divinity": divinity,
+            "name": name,
+            "relation": get_faction_relation(player_divinity, divinity),
+        })
+    return result
+
+
+@app.get("/characters/{knight_id}/tavern-roster/{divinity}")
+def api_get_tavern_roster(knight_id: int, divinity: str, conn=Depends(get_db)):
+    """I PNG presenti nella Taverna di un regno specifico (richiesto in
+    chat) - solo quelli non reclamati da un giocatore, come in
+    Gerarchia."""
+    _get_knight_or_404(conn, knight_id)
+    if divinity not in TAVERN_REALMS:
+        raise HTTPException(status_code=404, detail="Regno sconosciuto.")
+    rows = conn.execute(
+        "SELECT r.* FROM roster r JOIN armors a ON a.name = r.armor_name "
+        "WHERE a.divinity = ? AND r.claimed_by_knight_id IS NULL ORDER BY r.npc_name",
+        (divinity,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/characters/{knight_id}/tavern/{armor_name}")
+def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(get_db)):
+    """La conversazione con un PNG specifico nella Taverna (richiesto
+    in chat) - la cronologia già scambiata, e l'affinità accumulata
+    finora. Testo libero, nessuna vera IA dietro (richiesto in chat,
+    costo zero) - solo un riconoscimento a parole chiave, vedi
+    core.tavern. Se è la prima volta che parlate, l'affinità parte già
+    dal punto giusto in base alla relazione tra le vostre fazioni
+    (richiesto in chat: "sicuramente inizialmente c'è diffidenza") -
+    non da zero per tutti indistintamente."""
+    knight = _get_knight_or_404(conn, knight_id)
+    roster_entry = get_roster_entry(conn, armor_name)
+    if roster_entry is None:
+        raise HTTPException(status_code=404, detail="Armatura sconosciuta.")
+
+    relationship = get_tavern_relationship(conn, knight_id, armor_name)
+    if relationship is None:
+        player_armor = get_armor(knight["armor_name"], conn)
+        npc_armor = get_armor(armor_name, conn)
+        relation = get_faction_relation(
+            player_armor["divinity"] if player_armor else "", npc_armor["divinity"] if npc_armor else ""
+        )
+        starting_affinity = RELATION_STARTING_AFFINITY.get(relation, 0)
+        affinity = adjust_tavern_affinity(conn, knight_id, armor_name, starting_affinity, get_world_minutes(conn))
+    else:
+        affinity = relationship["affinity"]
+
+    messages = get_tavern_conversation(conn, knight_id, armor_name)
+    return {
+        "npc_name": roster_entry["npc_name"],
+        "affinity": affinity,
+        "messages": [{"speaker": m["speaker"], "text": m["text"]} for m in messages],
+    }
+
+
+class TavernMessageRequest(BaseModel):
+    text: str
+
+
+@app.post("/characters/{knight_id}/tavern/{armor_name}/message")
+def api_send_tavern_message(knight_id: int, armor_name: str, req: TavernMessageRequest, conn=Depends(get_db)):
+    """Invia un messaggio a un PNG nella Taverna (richiesto in chat) -
+    testo libero, risposta a parole chiave filtrata per il vero
+    allineamento del PNG (mai mostrato) e per la relazione tra le
+    vostre fazioni (fiducia lenta da guadagnare, facile da perdere con
+    un rivale) - se non riconosce nessuna parola chiave, chiede di
+    ripetere in stile Saint Seiya invece di un freddo errore. Se
+    l'affinità supera la soglia di fiducia proprio con questo
+    messaggio, il PNG può offrire da solo la missione del proprio
+    regno (richiesto in chat)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    roster_entry = get_roster_entry(conn, armor_name)
+    if roster_entry is None:
+        raise HTTPException(status_code=404, detail="Armatura sconosciuta.")
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Il messaggio non può essere vuoto.")
+
+    player_armor = get_armor(knight["armor_name"], conn)
+    npc_armor = get_armor(armor_name, conn)
+    relation = get_faction_relation(
+        player_armor["divinity"] if player_armor else "", npc_armor["divinity"] if npc_armor else ""
+    )
+
+    relationship_before = get_tavern_relationship(conn, knight_id, armor_name)
+    affinity_before = relationship_before["affinity"] if relationship_before else RELATION_STARTING_AFFINITY.get(relation, 0)
+
+    response_text, affinity_delta = resolve_tavern_response(req.text, roster_entry["npc_alignment"], relation)
+    world_minutes = get_world_minutes(conn)
+
+    add_tavern_message(conn, knight_id, armor_name, world_minutes, "player", req.text.strip())
+    add_tavern_message(conn, knight_id, armor_name, world_minutes, "npc", response_text)
+    new_affinity = adjust_tavern_affinity(conn, knight_id, armor_name, affinity_delta, world_minutes)
+
+    mission_offer = check_mission_offer(
+        npc_armor["divinity"] if npc_armor else "", affinity_before, new_affinity, bool(knight["mission_id"])
+    )
+    if mission_offer:
+        offer_text = random.choice(MISSION_OFFER_TEXTS)
+        add_tavern_message(conn, knight_id, armor_name, world_minutes, "npc", offer_text)
+
+    return {
+        "response": response_text, "affinity": new_affinity, "affinity_delta": affinity_delta,
+        "mission_offer": mission_offer, "mission_offer_text": offer_text if mission_offer else None,
+    }
 
 
 @app.get("/roster")
