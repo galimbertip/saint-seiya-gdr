@@ -2262,13 +2262,19 @@ function renderMissionsTab() {
     card2.append(el("p", {}, "Infiltrati nel Regno di Poseidone. Le tue scelte portano DAVVERO a strade diverse - e a finali diversi."));
     card2.append(el("button", { onClick: () => startMission("colonne_sette_mari") }, "🌊 Inizia Le Colonne"));
     wrap.append(card2);
+
+    const card3 = el("div", { class: "card" });
+    card3.append(el("h2", {}, "Il Gelo di Valhalla"));
+    card3.append(el("p", {}, "Infiltrati nel Regno di Asgard, tra i Guerrieri Divini. Un frammento del Bracciale del Nibelungen ti metterà alla prova - il potere ha sempre un prezzo."));
+    card3.append(el("button", { onClick: () => startMission("gelo_di_valhalla") }, "❄️ Inizia Il Gelo di Valhalla"));
+    wrap.append(card3);
     return wrap;
   }
 
   if (ms.mission_id === "dodici_case") {
     wrap.append(renderScalataHouse(ms.house));
-  } else if (ms.mission_id === "colonne_sette_mari") {
-    wrap.append(renderColonneNode(ms.node));
+  } else {
+    wrap.append(renderGraphMissionNode(ms.node));
   }
 
   const abandonCard = el("div", { class: "card" });
@@ -2312,7 +2318,7 @@ function renderScalataHouse(house) {
   return card;
 }
 
-function renderColonneNode(node) {
+function renderGraphMissionNode(node) {
   const card = el("div", { class: "card" });
 
   if (node.type === "choice") {
