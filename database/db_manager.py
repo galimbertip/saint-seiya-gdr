@@ -157,6 +157,26 @@ CREATE TABLE IF NOT EXISTS world_events (
     armor_name TEXT NOT NULL,
     entry TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS tavern_relationships (
+    knight_id INTEGER NOT NULL,
+    armor_name TEXT NOT NULL,
+    affinity INTEGER NOT NULL DEFAULT 0,
+    last_message_minutes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (knight_id, armor_name),
+    FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE,
+    FOREIGN KEY (armor_name) REFERENCES armors(name)
+);
+
+CREATE TABLE IF NOT EXISTS tavern_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    knight_id INTEGER NOT NULL,
+    armor_name TEXT NOT NULL,
+    world_minutes INTEGER NOT NULL,
+    speaker TEXT NOT NULL,
+    text TEXT NOT NULL,
+    FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
+);
 """
 
 
@@ -621,6 +641,53 @@ def get_world_chronicle(conn: sqlite3.Connection, limit: int = 100) -> list[sqli
     return conn.execute(
         "SELECT * FROM world_events ORDER BY world_minutes DESC, id DESC LIMIT ?", (limit,)
     ).fetchall()
+
+
+def get_tavern_relationship(conn: sqlite3.Connection, knight_id: int, armor_name: str) -> sqlite3.Row | None:
+    """Il rapporto (richiesto in chat, la Taverna) tra un personaggio
+    giocatore e un PNG - None se non si sono ancora mai parlati."""
+    return conn.execute(
+        "SELECT * FROM tavern_relationships WHERE knight_id = ? AND armor_name = ?",
+        (knight_id, armor_name),
+    ).fetchone()
+
+
+def adjust_tavern_affinity(conn: sqlite3.Connection, knight_id: int, armor_name: str,
+                            delta: int, world_minutes: int) -> int:
+    """Sposta l'affinità di `delta` (può essere negativo) - crea il
+    rapporto se non esiste ancora. Restituisce l'affinità risultante."""
+    conn.execute(
+        """INSERT INTO tavern_relationships (knight_id, armor_name, affinity, last_message_minutes)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT (knight_id, armor_name)
+           DO UPDATE SET affinity = affinity + excluded.affinity, last_message_minutes = excluded.last_message_minutes""",
+        (knight_id, armor_name, delta, world_minutes),
+    )
+    conn.commit()
+    return get_tavern_relationship(conn, knight_id, armor_name)["affinity"]
+
+
+def add_tavern_message(conn: sqlite3.Connection, knight_id: int, armor_name: str,
+                        world_minutes: int, speaker: str, text: str) -> None:
+    """Una riga di conversazione nella Taverna (richiesto in chat) -
+    speaker è 'player' o 'npc'."""
+    conn.execute(
+        "INSERT INTO tavern_messages (knight_id, armor_name, world_minutes, speaker, text) VALUES (?, ?, ?, ?, ?)",
+        (knight_id, armor_name, world_minutes, speaker, text),
+    )
+    conn.commit()
+
+
+def get_tavern_conversation(conn: sqlite3.Connection, knight_id: int, armor_name: str,
+                             limit: int = 50) -> list[sqlite3.Row]:
+    """L'ultima parte della conversazione con un PNG specifico, in
+    ordine cronologico (dalla più vecchia alla più recente, per essere
+    mostrata così com'è in una schermata di chat)."""
+    rows = conn.execute(
+        "SELECT * FROM tavern_messages WHERE knight_id = ? AND armor_name = ? ORDER BY id DESC LIMIT ?",
+        (knight_id, armor_name, limit),
+    ).fetchall()
+    return list(reversed(rows))
 
 
 def get_biography_entries(conn: sqlite3.Connection, knight_id: int) -> list[sqlite3.Row]:
