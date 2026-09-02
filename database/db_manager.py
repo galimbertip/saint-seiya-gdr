@@ -164,8 +164,7 @@ CREATE TABLE IF NOT EXISTS tavern_relationships (
     affinity INTEGER NOT NULL DEFAULT 0,
     last_message_minutes INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (knight_id, armor_name),
-    FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE,
-    FOREIGN KEY (armor_name) REFERENCES armors(name)
+    FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS tavern_messages (
@@ -176,6 +175,25 @@ CREATE TABLE IF NOT EXISTS tavern_messages (
     speaker TEXT NOT NULL,
     text TEXT NOT NULL,
     FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS tavern_bartenders (
+    divinity TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    alignment TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tavern_seating (
+    divinity TEXT NOT NULL,
+    armor_name TEXT NOT NULL,
+    table_number INTEGER NOT NULL,
+    seat_index INTEGER NOT NULL,
+    PRIMARY KEY (divinity, armor_name)
+);
+
+CREATE TABLE IF NOT EXISTS tavern_seating_meta (
+    divinity TEXT PRIMARY KEY,
+    last_reshuffle_minutes INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -385,13 +403,39 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE roster ADD COLUMN npc_alignment TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunta colonna npc_alignment a roster.")
-        log.info("Migrazione: aggiunte colonne npc_status/npc_training_candidate/npc_training_ready_minutes a roster.")
 
     world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
     if "last_npc_tick_minutes" not in world_clock_columns:
         conn.execute("ALTER TABLE world_clock ADD COLUMN last_npc_tick_minutes INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         log.info("Migrazione: aggiunta colonna last_npc_tick_minutes a world_clock.")
+
+    # Il taverniere (richiesto in chat) usa una chiave speciale al
+    # posto di un vero nome di armatura per parlare con lui nella
+    # stessa infrastruttura di conversazione - il vincolo di chiave
+    # esterna su armor_name, corretto qui, lo avrebbe impedito (bug
+    # scoperto in chat). SQLite non supporta togliere un vincolo con
+    # ALTER TABLE: si ricrea la tabella da capo, copiando i dati.
+    fk_list = conn.execute("PRAGMA foreign_key_list(tavern_relationships)").fetchall()
+    has_armor_fk = any(fk["table"] == "armors" for fk in fk_list)
+    if has_armor_fk:
+        conn.execute("ALTER TABLE tavern_relationships RENAME TO tavern_relationships_old")
+        conn.execute(
+            """CREATE TABLE tavern_relationships (
+                knight_id INTEGER NOT NULL,
+                armor_name TEXT NOT NULL,
+                affinity INTEGER NOT NULL DEFAULT 0,
+                last_message_minutes INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (knight_id, armor_name),
+                FOREIGN KEY (knight_id) REFERENCES knights(id) ON DELETE CASCADE
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO tavern_relationships SELECT knight_id, armor_name, affinity, last_message_minutes FROM tavern_relationships_old"
+        )
+        conn.execute("DROP TABLE tavern_relationships_old")
+        conn.commit()
+        log.info("Migrazione: rimosso il vincolo di chiave esterna su tavern_relationships.armor_name.")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -688,6 +732,57 @@ def get_tavern_conversation(conn: sqlite3.Connection, knight_id: int, armor_name
         (knight_id, armor_name, limit),
     ).fetchall()
     return list(reversed(rows))
+
+
+def get_tavern_bartender(conn: sqlite3.Connection, divinity: str) -> sqlite3.Row | None:
+    """Il taverniere di questo regno (richiesto in chat, la Taverna a
+    mappa) - un PNG fisso non legato a nessuna armatura, generato una
+    volta sola per regno."""
+    return conn.execute("SELECT * FROM tavern_bartenders WHERE divinity = ?", (divinity,)).fetchone()
+
+
+def insert_tavern_bartender(conn: sqlite3.Connection, divinity: str, name: str, alignment: str) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO tavern_bartenders (divinity, name, alignment) VALUES (?, ?, ?)",
+        (divinity, name, alignment),
+    )
+    conn.commit()
+
+
+def get_tavern_seating(conn: sqlite3.Connection, divinity: str) -> list[sqlite3.Row]:
+    """Chi siede dove, in questo momento, nella Taverna di questo regno
+    (richiesto in chat) - ogni riga è un PNG con il tavolo e il posto
+    che occupa."""
+    return conn.execute("SELECT * FROM tavern_seating WHERE divinity = ?", (divinity,)).fetchall()
+
+
+def set_tavern_seating(conn: sqlite3.Connection, divinity: str, armor_name: str,
+                        table_number: int, seat_index: int) -> None:
+    conn.execute(
+        """INSERT INTO tavern_seating (divinity, armor_name, table_number, seat_index) VALUES (?, ?, ?, ?)
+           ON CONFLICT (divinity, armor_name) DO UPDATE SET table_number = excluded.table_number, seat_index = excluded.seat_index""",
+        (divinity, armor_name, table_number, seat_index),
+    )
+
+
+def remove_tavern_seating(conn: sqlite3.Connection, divinity: str, armor_name: str) -> None:
+    conn.execute("DELETE FROM tavern_seating WHERE divinity = ? AND armor_name = ?", (divinity, armor_name))
+
+
+def get_tavern_last_reshuffle(conn: sqlite3.Connection, divinity: str) -> int:
+    row = conn.execute(
+        "SELECT last_reshuffle_minutes FROM tavern_seating_meta WHERE divinity = ?", (divinity,)
+    ).fetchone()
+    return row["last_reshuffle_minutes"] if row else 0
+
+
+def set_tavern_last_reshuffle(conn: sqlite3.Connection, divinity: str, world_minutes: int) -> None:
+    conn.execute(
+        """INSERT INTO tavern_seating_meta (divinity, last_reshuffle_minutes) VALUES (?, ?)
+           ON CONFLICT (divinity) DO UPDATE SET last_reshuffle_minutes = excluded.last_reshuffle_minutes""",
+        (divinity, world_minutes),
+    )
+    conn.commit()
 
 
 def get_biography_entries(conn: sqlite3.Connection, knight_id: int) -> list[sqlite3.Row]:
