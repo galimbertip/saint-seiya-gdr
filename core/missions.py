@@ -250,6 +250,18 @@ SEA_GENERAL_ARMORS = [
 ]
 TRITON_ARMOR = "Scale di Triton"
 
+ASGARD_MISSION_ID = "gelo_di_valhalla"
+ASGARD_START_NODE = "arrivo"
+
+GOD_WARRIOR_ARMORS = [
+    "God Robe di Alfa (Dubhe)", "God Robe di Beta (Merak)", "God Robe di Gamma (Phecda)",
+    "God Robe di Delta (Megrez)", "God Robe di Epsilon (Alioth)", "God Robe di Zeta (Mizar)",
+    "God Robe di Zeta Ombra (Alcor)", "God Robe di Eta (Benetnasch)", "God Robe di Gullinbursti",
+    "God Robe di Midgard", "God Robe di Hræsvelgr", "God Robe di Grani", "God Robe di Níðhöggr",
+    "God Robe di Tanngrisnir", "God Robe di Eikþyrnir", "God Robe di Garmr", "God Robe di Gryphon",
+]
+ODIN_ARMOR = "God Robe Divina di Odino"
+
 COLONNE_NODES = {
     "arrivo": {
         "type": "choice",
@@ -333,11 +345,106 @@ COLONNE_NODES = {
     },
 }
 
+ASGARD_NODES = {
+    "arrivo": {
+        "type": "choice",
+        "text": ("L'aria si fa gelida ben prima che tu scorga Valhalla - un palazzo di ghiaccio che sembra "
+                  "scolpito dal cielo stesso, sotto un'aurora che non smette mai di ardere. Come vuoi "
+                  "avvicinarti?"),
+        "options": [
+            {"label": "Attraversare apertamente il Ponte di Ghiaccio", "next": "guardia_del_ponte",
+             "outcome_text": ("Scegli la strada diretta. Se Asgard vuole fermarti, che lo faccia alla luce "
+                               "dell'aurora, non nell'ombra.")},
+            {"label": "Scendere nelle grotte glaciali sotto il palazzo", "next": "passaggio_nascosto",
+             "outcome_text": ("Il gelo delle grotte è un rischio in sé, ma meglio quello che farsi notare "
+                               "prima ancora di aver capito con chi hai a che fare.")},
+        ],
+    },
+    "guardia_del_ponte": {
+        "type": "duel",
+        "armor_pool": GOD_WARRIOR_ARMORS,
+        "intro": ("{guardian}, un Guerriero Divino, ti sbarra il Ponte di Ghiaccio - la sua God Robe "
+                   "risuona di un potere antico, che sembra provenire dal cielo stesso più che dalla terra."),
+        "win_next": "bracciale",
+        "lose_next": "guardia_del_ponte",
+    },
+    "passaggio_nascosto": {
+        "type": "skill_check",
+        "stat": "con",
+        "text": ("Le grotte sotto Valhalla sono uno scheletro di ghiaccio scavato da correnti d'aria "
+                  "gelide - resistere al freddo, qui, conta più della velocità o della forza."),
+        "success_text": ("Il tuo corpo regge il gelo più a lungo di quanto pensassi - attraversi le grotte "
+                          "senza che nessuno se ne accorga."),
+        "failure_text": ("Il freddo ti tradisce proprio a metà strada: un tremito, un passo falso, e il "
+                          "rumore che ne segue non passa inosservato."),
+        "success_next": "bracciale",
+        "failure_next": "imboscata_glaciale",
+    },
+    "imboscata_glaciale": {
+        "type": "duel",
+        "armor_pool": GOD_WARRIOR_ARMORS,
+        "intro": ("Il gelo stesso sembra essersi mosso per intrappolarti: sei stato scoperto. {guardian} "
+                   "emerge dalle grotte, la God Robe che scintilla di un freddo tagliente quanto la sua "
+                   "ostilità."),
+        "win_next": "bracciale",
+        "lose_next": "imboscata_glaciale",
+    },
+    "bracciale": {
+        "type": "choice",
+        "text": ("Incastonato in un blocco di ghiaccio millenario, scorgi un frammento del Bracciale del "
+                  "Nibelungen - dicono che chi lo indossa attinga a un potere immenso, e che quel potere, "
+                  "prima o poi, pretenda un prezzo."),
+        "options": [
+            {"label": "Prendere il frammento e sentirne subito la potenza", "next": "duello_finale", "flag": "used_ring_power",
+             "outcome_text": ("Lo stacchi dal ghiaccio, e nell'istante in cui lo sfiori un calore innaturale "
+                               "ti attraversa il braccio - potere vero, ma con un retrogusto che non ti "
+                               "convince del tutto.")},
+            {"label": "Lasciarlo intatto, diffidando di un potere che sa già di inganno", "next": "duello_finale",
+             "outcome_text": ("Ti allontani dal blocco di ghiaccio senza toccarlo. Qualunque cosa prometta, "
+                               "preferisci restare quello che sei.")},
+        ],
+    },
+    "duello_finale": {
+        "type": "duel",
+        "armor": ODIN_ARMOR,
+        "intro": ("{guardian} ti attende nella sala del trono di Valhalla, avvolto dal Cosmo di Odino "
+                   "stesso. Non è un Guerriero Divino come gli altri: è l'ultima, vera barriera prima del "
+                   "cuore gelato di Asgard."),
+        "win_next": "fine",
+        "lose_next": "duello_finale",
+    },
+    "fine": {
+        "type": "ending",
+        "text": ("Il Guerriero Divino cade in ginocchio sul ghiaccio, la God Robe incrinata ma lo sguardo "
+                  "ancora fiero. Valhalla è, per oggi, tua da attraversare. Il Regno di Asgard ricorderà il "
+                  "tuo nome."),
+        "text_with_flag": {
+            "used_ring_power": ("Il Guerriero Divino cade in ginocchio, ma la tua stessa vittoria ti lascia "
+                                 "un retrogusto amaro: il potere del Bracciale del Nibelungen ha lasciato un "
+                                 "segno che non svanirà in fretta. Valhalla è, per oggi, tua da attraversare "
+                                 "- ma qualcosa, dentro di te, non è più del tutto come prima."),
+        },
+        "bonus_with_flag": {"used_ring_power": {"denaro": 200}},
+    },
+}
 
-def get_colonne_node_content(node_id: str, guardian_name: str = "") -> dict:
-    """Il contenuto testuale del nodo `node_id`, con il nome vero del
-    Generale/Guardiano al posto del segnaposto dove serve."""
-    node = COLONNE_NODES[node_id]
+
+# Il registro delle missioni a grafo (richiesto in chat: "molte più
+# missioni" - da qui in avanti, aggiungerne una nuova significa solo
+# scrivere il grafo dei nodi e registrarlo qui, non duplicare la
+# logica di gestione altrove come succedeva prima con le Colonne).
+GRAPH_MISSIONS = {
+    COLONNE_MISSION_ID: {"start_node": COLONNE_START_NODE, "nodes": COLONNE_NODES, "name": "Le Colonne dei Sette Mari"},
+    ASGARD_MISSION_ID: {"start_node": ASGARD_START_NODE, "nodes": ASGARD_NODES, "name": "Il Gelo di Valhalla"},
+}
+
+
+def get_graph_node_content(mission_id: str, node_id: str, guardian_name: str = "") -> dict:
+    """Il contenuto testuale del nodo `node_id` della missione a grafo
+    `mission_id`, con il nome vero del Guardiano al posto del
+    segnaposto dove serve - generica (richiesto in chat), non più
+    specifica delle sole Colonne."""
+    node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
     content = {"node_id": node_id, "type": node["type"]}
     if node["type"] == "choice":
         content["text"] = node["text"]
@@ -353,21 +460,24 @@ def get_colonne_node_content(node_id: str, guardian_name: str = "") -> dict:
     return content
 
 
-def pick_duel_armor_for_node(node_id: str) -> str:
-    """L'armatura del duello per questo nodo - fissa per il finale
-    (Triton), a caso tra i 7 Generali per gli altri due incontri
-    (richiesto in chat: varietà tra un tentativo e l'altro)."""
-    node = COLONNE_NODES[node_id]
+def pick_graph_duel_armor(mission_id: str, node_id: str) -> str:
+    """L'armatura del duello per questo nodo della missione `mission_id`
+    - fissa per gli scontri finali, a caso tra il pool per gli altri
+    (richiesto in chat: varietà tra un tentativo e l'altro). Generica,
+    non più specifica delle sole Colonne."""
+    node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
     if "armor" in node:
         return node["armor"]
     return random.choice(node["armor_pool"])
 
 
-def resolve_colonne_ending(flags: set[str]) -> dict:
-    """Il testo di finale e l'eventuale ricompensa extra, in base ai
-    flag accumulati durante la missione (richiesto in chat: una
-    conseguenza vera, ritardata, per la scelta morale centrale)."""
-    ending = COLONNE_NODES["fine"]
+def resolve_graph_mission_ending(mission_id: str, flags: set[str]) -> dict:
+    """Il testo di finale e l'eventuale ricompensa extra della missione
+    `mission_id`, in base ai flag accumulati durante il percorso
+    (richiesto in chat: una conseguenza vera, ritardata, per la scelta
+    morale centrale) - generica, non più specifica delle sole
+    Colonne."""
+    ending = GRAPH_MISSIONS[mission_id]["nodes"]["fine"]
     text = ending["text"]
     bonus = {}
     for flag_name, alt_text in ending.get("text_with_flag", {}).items():
