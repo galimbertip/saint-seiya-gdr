@@ -22,9 +22,66 @@ import random
 from core.arena_manager import generate_full_name
 from core.alignment import random_alignment, ALIGNMENT_FATE_CATEGORY_WEIGHTS
 from core.institutional_npcs import INSTITUTIONAL_NPCS
-from database.db_manager import add_world_event
+from database.db_manager import add_world_event, get_roster_entry
 
 WORLD_TICK_MINUTES_PER_DAY = 1440
+
+# Le tre barre vere anche per i PNG (richiesto in chat) - recuperano
+# nel tempo con gli stessi tassi già usati per il giocatore
+# (core.fm_manager.VITA_REGEN_PER_HOUR/COSMO_REGEN_PER_HOUR), più un
+# tasso per la stamina che il giocatore non ha (la sua si recupera con
+# un riposo esplicito, un PNG non "sceglie" di riposare - recupera e
+# basta, passivamente). PLACEHOLDER, come le altre formule di ritmo di
+# questo modulo.
+NPC_VITA_REGEN_PER_HOUR = 1
+NPC_COSMO_REGEN_PER_HOUR = 2
+NPC_STAMINA_REGEN_PER_HOUR = 2
+
+
+def apply_npc_regen(conn, armor_name: str, current_world_minutes: int) -> dict | None:
+    """Applica il recupero nel tempo delle tre barre di UN PNG
+    (richiesto in chat) - chiamata "al bisogno" (subito prima di usare
+    le sue statistiche, es. per un combattimento), non ad ogni tick del
+    mondo: con 228 armature ricalcolare tutte ad ogni avanzamento
+    sarebbe inutilmente costoso, mentre un PNG che non viene mai
+    coinvolto in nulla non ha comunque bisogno di essere aggiornato.
+    Restituisce la riga del roster aggiornata, o None se l'armatura non
+    ha un PNG (non dovrebbe mai succedere dopo ensure_roster_populated,
+    ma per sicurezza)."""
+    entry = get_roster_entry(conn, armor_name)
+    if entry is None:
+        return None
+    elapsed_minutes = current_world_minutes - entry["npc_last_regen_minutes"]
+    if elapsed_minutes <= 0:
+        return entry
+    hours = elapsed_minutes / 60
+
+    new_vita = min(entry["npc_vita_max"], entry["npc_vita_cur"] + round(hours * NPC_VITA_REGEN_PER_HOUR))
+    new_cosmo = min(entry["npc_cosmo_max"], entry["npc_cosmo_cur"] + round(hours * NPC_COSMO_REGEN_PER_HOUR))
+    new_stamina = min(entry["npc_stamina_max"], entry["npc_stamina_cur"] + round(hours * NPC_STAMINA_REGEN_PER_HOUR))
+
+    conn.execute(
+        """UPDATE roster SET npc_vita_cur = ?, npc_cosmo_cur = ?, npc_stamina_cur = ?, npc_last_regen_minutes = ?
+           WHERE armor_name = ?""",
+        (new_vita, new_cosmo, new_stamina, current_world_minutes, armor_name),
+    )
+    conn.commit()
+    return get_roster_entry(conn, armor_name)
+
+
+def apply_npc_damage(conn, armor_name: str, vita_cur: int, cosmo_cur: int, current_world_minutes: int) -> None:
+    """Persiste quanta Vita/Cosmo restano a un PNG DOPO uno scontro
+    vero (richiesto in chat: "un PNG che perde un duello resta debole
+    finché non recupera nel tempo") - senza questo, ogni combattimento
+    contro lo stesso PNG lo troverebbe sempre di nuovo al massimo,
+    come se nulla fosse mai successo. Aggiorna anche il timestamp di
+    recupero, così il prossimo apply_npc_regen calcola il tempo
+    trascorso da ADESSO, non da prima dello scontro."""
+    conn.execute(
+        "UPDATE roster SET npc_vita_cur = ?, npc_cosmo_cur = ?, npc_last_regen_minutes = ? WHERE armor_name = ?",
+        (max(0, vita_cur), max(0, cosmo_cur), current_world_minutes, armor_name),
+    )
+    conn.commit()
 
 # Probabilità che un singolo PNG non reclamato abbia un evento notevole
 # in UN giorno di tempo condiviso - bassa apposta (con oltre 200
