@@ -337,6 +337,7 @@ const state = {
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
   showDefensePicker: false,  // sta scegliendo la tecnica per la Difesa? (richiesto in chat: prima era automatica)
   institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
+  divinityNpcs: null,        // le Divinità del mondo (richiesto in chat: gerarchia vera, il vertice di ogni fazione), null finché non caricate
   editingBackground: false,  // sta modificando il background nella Scheda Cavaliere?
   trainingPath: null,        // lo stato del percorso di Apprendistato del personaggio corrente, null finché non caricato
   trialResult: null,         // il risultato appena arrivato della Prova Finale, da mostrare prima di procedere
@@ -1577,6 +1578,16 @@ async function loadInstitutionalNpcs() {
   render();
 }
 
+async function loadDivinityNpcs() {
+  try {
+    state.divinityNpcs = await api("/divinity-npcs");
+  } catch (e) {
+    showError(e.message);
+    state.divinityNpcs = [];
+  }
+  render();
+}
+
 async function updateBackground(newText) {
   try {
     const result = await api(`/characters/${state.characterId}/background`, {
@@ -1984,27 +1995,14 @@ function renderChronicleTab() {
 function renderHierarchyTab() {
   const wrap = el("div");
 
-  // Le Figure Istituzionali (richiesto in chat): un minimo di gdr,
-  // statiche e non giocabili - Il Grande Sacerdote, Pandora, ecc.
-  // Mostrate in cima, prima dell'elenco delle armature.
-  if (state.institutionalNpcs === null) {
-    loadInstitutionalNpcs();
-  } else if (state.institutionalNpcs.length > 0) {
-    const npcCard = el("div", { class: "card" });
-    npcCard.append(el("h2", {}, "Le Figure del Sacro Imperio"));
-    for (const npc of state.institutionalNpcs) {
-      const block = el("div", { style: "margin-top:12px;" });
-      block.append(el("p", {}, el("strong", {}, `${npc.name}`), ` — ${npc.divinity}`));
-      block.append(el("p", { class: "hint" }, npc.role));
-      block.append(el("p", {}, npc.description));
-      block.append(el("p", { style: "font-style:italic;" }, `"${npc.quote}"`));
-      npcCard.append(block);
-    }
-    wrap.append(npcCard);
-  }
-
-  if (state.roster === null) {
-    loadRoster();
+  // Le Divinità e le Figure Istituzionali (richiesto in chat: gerarchia
+  // vera per fazione, non più armature come semplice etichetta) -
+  // caricate una volta, poi mostrate DENTRO la card di ciascuna
+  // Divinità invece che in un blocco globale separato in cima.
+  if (state.institutionalNpcs === null) loadInstitutionalNpcs();
+  if (state.divinityNpcs === null) loadDivinityNpcs();
+  if (state.roster === null) loadRoster();
+  if (state.roster === null || state.institutionalNpcs === null || state.divinityNpcs === null) {
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Gerarchia...")));
     return wrap;
   }
@@ -2017,20 +2015,48 @@ function renderHierarchyTab() {
   }
 
   // Le fazioni si ordinano dal livello medio delle proprie armature,
-  // più debole a più forte (corretto in chat: l'ordine alfabetico
-  // mescolava Bronze/Gold/Silver a caso, senza nessuna gerarchia
-  // vera). Il criterio si ricava dai dati stessi, niente elenco
-  // scritto a mano per ciascuna delle 13 divinità.
+  // dai gradi PIÙ ALTI scendendo (richiesto in chat: "prima i gradi
+  // alti, e poi si scende" - corretto, prima l'ordine era invertito).
+  // Il criterio si ricava dai dati stessi, niente elenco scritto a
+  // mano per ciascuna delle 13 divinità.
   const averageFactionLevel = (entries) => entries.reduce((sum, e) => sum + e.level, 0) / entries.length;
 
   for (const divinity of Object.keys(groups).sort()) {
     const divCard = el("div", { class: "card" });
-    divCard.append(el("h2", {}, divinity));
+
+    // Livello 1: la Divinità - il vertice vero della fazione
+    // (richiesto in chat: "differenzia le divinità dalle armature").
+    const divinityNpc = state.divinityNpcs.find((d) => d.divinity === divinity);
+    if (divinityNpc) {
+      divCard.append(el("h2", {}, `👑 ${divinityNpc.name}`));
+      divCard.append(el("p", { class: "hint" }, divinityNpc.role));
+      divCard.append(el("p", {}, divinityNpc.description));
+      divCard.append(el("p", { style: "font-style:italic;" }, `"${divinityNpc.quote}"`));
+    } else {
+      divCard.append(el("h2", {}, divinity));
+    }
+
+    // Livello 2: la Figura Istituzionale di QUESTA Divinità, se ne
+    // esiste una (richiesto in chat) - non tutte le 13 fazioni ne
+    // hanno una scritta, per ora.
+    const institutionalNpc = state.institutionalNpcs.find((n) => n.divinity === divinity);
+    if (institutionalNpc) {
+      const instBlock = el("div", { style: "margin-top:14px;padding-left:14px;border-left:2px solid var(--border);" });
+      instBlock.append(el("p", {}, el("strong", {}, institutionalNpc.name)));
+      instBlock.append(el("p", { class: "hint" }, institutionalNpc.role));
+      instBlock.append(el("p", {}, institutionalNpc.description));
+      instBlock.append(el("p", { style: "font-style:italic;" }, `"${institutionalNpc.quote}"`));
+      divCard.append(instBlock);
+    }
+
+    // Livello 3: i Cavalieri di questa fazione, per grado - dai più
+    // alti scendendo.
     const factionsByPower = Object.keys(groups[divinity]).sort(
-      (a, b) => averageFactionLevel(groups[divinity][a]) - averageFactionLevel(groups[divinity][b])
+      (a, b) => averageFactionLevel(groups[divinity][b]) - averageFactionLevel(groups[divinity][a])
     );
     for (const faction of factionsByPower) {
-      divCard.append(el("p", { class: "hint", style: "margin-top:10px;font-weight:600;" }, faction));
+      const factionBlock = el("div", { style: "margin-top:14px;" });
+      factionBlock.append(el("p", { class: "hint", style: "font-weight:600;" }, faction));
       const table = el("table");
       table.append(el("tr", {}, el("th", {}, "Armatura"), el("th", {}, "Livello"), el("th", {}, "Occupante")));
       for (const entry of groups[divinity][faction]) {
@@ -2062,7 +2088,8 @@ function renderHierarchyTab() {
       }
       const scrollWrap = el("div", { class: "table-scroll" });
       scrollWrap.append(table);
-      divCard.append(scrollWrap);
+      factionBlock.append(scrollWrap);
+      divCard.append(factionBlock);
     }
     wrap.append(divCard);
   }
