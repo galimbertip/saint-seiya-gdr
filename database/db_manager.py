@@ -149,6 +149,13 @@ CREATE TABLE IF NOT EXISTS roster (
     npc_injured INTEGER NOT NULL DEFAULT 0,
     npc_injury_cause TEXT NOT NULL DEFAULT '',
     npc_alignment TEXT NOT NULL DEFAULT '',
+    npc_vita_cur INTEGER NOT NULL DEFAULT 0,
+    npc_vita_max INTEGER NOT NULL DEFAULT 0,
+    npc_cosmo_cur INTEGER NOT NULL DEFAULT 0,
+    npc_cosmo_max INTEGER NOT NULL DEFAULT 0,
+    npc_stamina_cur INTEGER NOT NULL DEFAULT 0,
+    npc_stamina_max INTEGER NOT NULL DEFAULT 0,
+    npc_last_regen_minutes INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
@@ -425,6 +432,25 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE roster ADD COLUMN npc_alignment TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunta colonna npc_alignment a roster.")
+    if "npc_vita_max" not in roster_columns:
+        # Le tre barre vere anche per i PNG (richiesto in chat) - non
+        # più generate al volo ad ogni combattimento, ma persistite: un
+        # PNG che perde un duello resta debole finché non recupera nel
+        # tempo, esattamente come il giocatore. Valori a 0 qui di
+        # proposito (sentinella "non ancora inizializzato") - il
+        # catalogo delle armature potrebbe non essere ancora caricato
+        # in questo punto della migrazione; i valori VERI (in base al
+        # livello dell'armatura) vengono calcolati subito dopo da
+        # ensure_roster_populated, che gira solo a catalogo pronto.
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_vita_cur INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_vita_max INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_cosmo_cur INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_cosmo_max INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_stamina_cur INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_stamina_max INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_last_regen_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne delle tre barre (vita/cosmo/stamina) a roster.")
 
     world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
     if "last_npc_tick_minutes" not in world_clock_columns:
@@ -643,17 +669,28 @@ def get_roster_entry(conn: sqlite3.Connection, armor_name: str) -> sqlite3.Row |
     return conn.execute("SELECT * FROM roster WHERE armor_name = ?", (armor_name,)).fetchone()
 
 
-def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str, alignment: str = "") -> None:
+def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str, alignment: str = "",
+                         vita_max: int = 0, cosmo_max: int = 0, stamina_max: int = 0,
+                         last_regen_minutes: int = 0) -> None:
     """Crea lo slot per un'armatura con il suo PNG fisso - ignorata (non
     sovrascrive) se esiste già, perché il nome del PNG non deve mai
     cambiare una volta assegnato (richiesto in chat). `alignment`
     (richiesto in chat, stile D&D): il vero allineamento del PNG, mai
-    mostrato al giocatore - calcolato dal chiamante (core.alignment),
-    non qui, per non far dipendere questo modulo di basso livello da
-    logica applicativa."""
+    mostrato al giocatore. `vita_max`/`cosmo_max`/`stamina_max`
+    (richiesto in chat, tre barre vere anche per i PNG): le statistiche
+    massime del PNG, con le correnti che partono già al massimo (un
+    PNG appena creato è sano) - calcolate dal chiamante (core.alignment
+    per l'allineamento, la stessa formula di core.training_path per le
+    statistiche), non qui, per non far dipendere questo modulo di
+    basso livello da logica applicativa."""
     conn.execute(
-        "INSERT OR IGNORE INTO roster (armor_name, npc_name, claimed_by_knight_id, npc_alignment) VALUES (?, ?, NULL, ?)",
-        (armor_name, npc_name, alignment),
+        """INSERT OR IGNORE INTO roster
+           (armor_name, npc_name, claimed_by_knight_id, npc_alignment,
+            npc_vita_cur, npc_vita_max, npc_cosmo_cur, npc_cosmo_max,
+            npc_stamina_cur, npc_stamina_max, npc_last_regen_minutes)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (armor_name, npc_name, alignment, vita_max, vita_max, cosmo_max, cosmo_max,
+         stamina_max, stamina_max, last_regen_minutes),
     )
 
 
