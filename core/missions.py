@@ -609,6 +609,92 @@ def build_tournament_opponent(conn: sqlite3.Connection, bracket: dict, round_num
     return build_opponent_from_armor(conn, slot["armor_name"], guardian_name)
 
 
+INFERI_MISSION_ID = "prove_degli_inferi"
+
+# Le cinque prove (richiesto in chat: "Ade a prove", niente grafo di
+# nodi né tabellone - una sequenza di prove a dado, con un livello di
+# allerta che sale sui fallimenti). Ogni prova usa una statistica
+# diversa, per non rendere sempre conveniente lo stesso approccio.
+INFERI_STAGES = [
+    {"name": "Le Porte del Cocytus", "stat": "con",
+     "text": ("Il gelo del Cocytus ti stringe le ossa ancora prima di aver attraversato le sue porte "
+               "spezzate. Resistere, senza lasciarti notare dalle sentinelle appostate lungo le mura, è "
+               "già la prima vera prova.")},
+    {"name": "I Corridoi di Giudecca", "stat": "dex",
+     "text": ("Le pattuglie di Spettri percorrono i corridoi a ritmi regolari - un passo falso, un'ombra "
+               "fuori posto, e sarai scoperto molto prima di essere pronto.")},
+    {"name": "Il Cimitero degli Spettri Perduti", "stat": "vol",
+     "text": ("Migliaia di anime dimenticate sussurrano tra le tombe - resistere alla disperazione che "
+               "promettono richiede più forza di volontà che coraggio.")},
+    {"name": "Le Segrete dei Dannati", "stat": "tec",
+     "text": ("Un labirinto di celle e trappole dimenticate da secoli - un solo passo sbagliato può far "
+               "scattare un allarme che nessuno, qui sotto, vorrebbe sentire.")},
+    {"name": "La Sala dei Tre Giudici", "stat": "dex",
+     "text": ("La sala dove i Tre Giudici dell'Ade pronunciano le proprie sentenze - qui più che altrove, "
+               "un passo fuori posto significa la fine di tutto.")},
+]
+
+INFERI_BASE_THRESHOLD = 14        # come SKILL_CHECK_THRESHOLD altrove nel progetto
+INFERI_AMBUSH_THRESHOLD = 3       # a questo livello di allerta, la prossima prova diventa un'imboscata
+INFERI_AMBUSH_RESET_ALERT = 1     # dopo aver vinto un'imboscata resti comunque un po' scoperto, non torni a zero
+
+INFERI_REWARD_DENARO_PER_STAGE = 120
+INFERI_REWARD_DENARO_CHAMPION = 900
+INFERI_REWARD_COSMO_MAX_CHAMPION = 35
+
+# Le Surplice degli Spettri comuni (richiesto in chat: le imboscate
+# quando l'allerta sale troppo) - livello 50, un gradino sotto ai Tre
+# Giudici, per una scalata di difficoltà credibile.
+SPECTER_AMBUSH_ARMORS = [
+    "Surplice di Minotaur", "Surplice di Worm", "Surplice di Deep", "Surplice di Frog",
+    "Surplice di Cyclops", "Surplice di Gorgon", "Surplice di Dullahan", "Surplice di Acheron",
+    "Surplice di Behemoth", "Surplice di Necromancer",
+]
+# I Tre Giudici degli Inferi (richiesto in chat: il vero scontro finale
+# dopo le cinque prove) - le Surplice di Radamanthys, Minosse e Aiacos,
+# fedeli al canone anche se il catalogo le elenca coi nomi delle
+# Surplice piuttosto che dei portatori.
+JUDGE_ARMORS = ["Surplice di Wyvern", "Surplice di Garuda", "Surplice di Griffon"]
+
+
+def inferi_skill_check_threshold(alert: int) -> int:
+    """La soglia della prova sale con l'allerta accumulata (richiesto in
+    chat: "più alto sale, più dura diventa") - più attenzione c'è su
+    di te, più difficile passare inosservato."""
+    return INFERI_BASE_THRESHOLD + alert
+
+
+def resolve_inferi_skill_check(knight: dict, stat: str, alert: int) -> bool:
+    """Un vero tiro di dado per una prova dell'infiltrazione (richiesto
+    in chat) - la soglia dipende dall'allerta attuale, non è fissa
+    come le altre prove del progetto."""
+    roll = random.randint(1, 20) + knight[stat] // 2
+    return roll >= inferi_skill_check_threshold(alert)
+
+
+def get_inferi_stage(stage_index: int) -> dict | None:
+    """La prova numero `stage_index` (1-based) - None se l'indice è
+    oltre l'ultima prova (significa che è il momento del duello finale
+    contro un Giudice, gestito a parte)."""
+    if 1 <= stage_index <= len(INFERI_STAGES):
+        return INFERI_STAGES[stage_index - 1]
+    return None
+
+
+def resolve_inferi_reward(stages_completed: int, is_champion: bool) -> dict:
+    """La ricompensa dell'infiltrazione: una quota per ogni prova
+    superata, più un bonus vero solo se arrivi in fondo e superi anche
+    il Giudice finale (richiesto implicito, stesso principio già usato
+    per i tornei: un tentativo parziale vale comunque qualcosa, ma
+    molto meno di un successo completo)."""
+    denaro = INFERI_REWARD_DENARO_PER_STAGE * stages_completed
+    cosmo_max = 0
+    if is_champion:
+        denaro += INFERI_REWARD_DENARO_CHAMPION
+        cosmo_max = INFERI_REWARD_COSMO_MAX_CHAMPION
+    return {"denaro": denaro, "cosmo_max": cosmo_max}
+
+
 def resolve_tournament_reward(tournament_id: str, rounds_completed: int, is_champion: bool) -> dict:
     """La ricompensa del torneo `tournament_id`: una quota per ogni
     round superato, più un bonus vero solo se lo vinci per intero
