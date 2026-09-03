@@ -403,9 +403,14 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
                   defender_name: str, defender_dex: int, defender_con: int, defender_armor_level: int,
                   technique_name: str, technique_power: int,
                   roll_mode: str = "normale", cause_phrase: str | None = None,
-                  launch_desc: str | None = None, effect_desc: str | None = None) -> tuple[int, str]:
+                  launch_desc: str | None = None, effect_desc: str | None = None) -> tuple[int, str, int]:
     """Risolve un turno d'attacco riusando DnDEngine (CA, tiro per
     colpire, danno) - qui si orchestra soltanto, nessuna nuova formula.
+    Restituisce (danno_inflitto, messaggio_di_log, tiro_naturale_grezzo)
+    - il terzo valore (richiesto in chat, il combattimento a squadre:
+    un 1 naturale può rivoltarsi contro un compagno) espone il dado
+    grezzo così i chiamanti possono reagire a un 1/20 naturale senza
+    dover ritirare i dadi una seconda volta.
     attacker_tec/defender_con: Tecnica di chi attacca aumenta il danno
     inflitto, Costituzione di chi difende lo riduce - richiesto in
     chat: prima queste due statistiche non contavano nulla in
@@ -425,8 +430,7 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
     Un 1 naturale è sempre un fallimento critico (una disgrazia fisica
     vera, pescata a caso - non solo un'etichetta); un 20 naturale è
     sempre un successo e raddoppia il danno (colpo critico) - regole
-    richieste in chat.
-    Restituisce (danno_inflitto, messaggio_di_log)."""
+    richieste in chat."""
     defender_ac = DnDEngine.calculate_ac(
         DnDEngine.get_modifier(defender_dex), defender_armor_level, COSMO_ATTUNEMENT_FOR_AC
     )
@@ -450,7 +454,7 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
     if not hit:
         if dice_roll == 1:
             flavor = random.choice(CRITICAL_FUMBLE_FLAVORS)
-            return 0, f"{attacker_name} tenta {technique_name}{launch_clause}{prefix_note}... {flavor}! (1 naturale)"
+            return 0, f"{attacker_name} tenta {technique_name}{launch_clause}{prefix_note}... {flavor}! (1 naturale)", dice_roll
         # "ma" implica un contrasto (aveva un aiuto ma ha fallito comunque -
         # ha senso con il Vantaggio); con lo Svantaggio la schivata non è
         # una sorpresa, è la conseguenza diretta della causa - "e" invece
@@ -458,7 +462,7 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
         connector = "e" if roll_mode == "svantaggio" else "ma"
         dodge_flavor = random.choice(DODGE_FLAVORS)
         return 0, (f"{attacker_name} scaglia {technique_name}{launch_clause}{prefix_note}, {connector} "
-                    f"{dodge_flavor}: {defender_name} schiva! ({attack_total} vs CA {defender_ac})")
+                    f"{dodge_flavor}: {defender_name} schiva! ({attack_total} vs CA {defender_ac})"), dice_roll
 
     attacker_tec_mod = DnDEngine.get_modifier(attacker_tec)
     defender_con_mod = DnDEngine.get_modifier(defender_con)
@@ -475,10 +479,10 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
         damage *= 2
         flavor = random.choice(CRITICAL_HIT_FLAVORS)
         return damage, (f"{attacker_name} scatena {technique_name}{launch_clause}{prefix_note}: {flavor}!{effect_clause} "
-                         f"({attack_total} vs CA {defender_ac}, colpo raddoppiato) — Danno: {damage}")
+                         f"({attack_total} vs CA {defender_ac}, colpo raddoppiato) — Danno: {damage}"), dice_roll
     flavor = random.choice(NORMAL_HIT_FLAVORS)
     return damage, (f"{attacker_name} colpisce con {technique_name}{launch_clause}{prefix_note}: {flavor}.{effect_clause} "
-                     f"({attack_total} vs CA {defender_ac}) — Danno: {damage}")
+                     f"({attack_total} vs CA {defender_ac}) — Danno: {damage}"), dice_roll
 
 
 def format_damage_message(msg: str, actual_damage: int) -> str:
