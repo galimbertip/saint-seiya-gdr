@@ -43,6 +43,11 @@ from core.tavern import (
     ensure_tavern_bartender, ensure_tavern_seating, maybe_reshuffle_tavern, TABLE_LAYOUT,
     TAVERN_QUICK_INTENTS, TAVERN_TONES,
 )
+from core.squad_battle import (
+    DEFENSE_MISSION_ID, UNITS_PER_SIDE,
+    get_defense_team_candidates, start_defense_mission, resolve_squad_action,
+    resolve_defense_reward, _current_actor, _skip_dead_and_autoresolve_enemies,
+)
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
     ArmorNotFoundError, ArmorLevelTooHighError, ArmorAlreadyClaimedError, ensure_roster_populated,
@@ -190,6 +195,22 @@ class ArenaDeclareRequest(BaseModel):
 class ArenaReactRequest(BaseModel):
     action: Literal["difenditi", "contrattacca", "incassa"]
     battle_state: dict
+
+
+class DefenseStartRequest(BaseModel):
+    mode: Literal["random", "selected"]
+    ally_armor_names: list[str] = []  # usato solo se mode == "selected"
+
+
+class DefenseActionRequest(BaseModel):
+    battle_state: dict
+    actor_id: str
+    action: Literal["attacca", "difendi", "carica"]
+    target_id: Optional[str] = None
+    technique_name: Optional[str] = None
+    technique_power: Optional[int] = None
+    technique_type: Optional[str] = None
+    target_mode: Literal["singolo", "area"] = "singolo"
     counter_technique_name: Optional[str] = None
     counter_technique_power: Optional[int] = None
     counter_technique_type: Optional[str] = None
@@ -1853,6 +1874,97 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
         "log": log, "fight_over": False,
         "character": _knight_payload(conn, knight), "battle_state": req.battle_state,
     }
+
+
+@app.get("/characters/{knight_id}/defense-team-options")
+def api_defense_team_options(knight_id: int, conn=Depends(get_db)):
+    """I possibili alleati per "Seleziona Team" nella Difesa a Ondate
+    (richiesto in chat) - i compagni della tua fazione, più chiunque
+    abbia un legame davvero forte con te in Taverna."""
+    knight = _get_knight_or_404(conn, knight_id)
+    armor = get_armor(knight["armor_name"], conn)
+    return {"candidates": get_defense_team_candidates(conn, knight, armor)}
+
+
+@app.post("/characters/{knight_id}/defense/start")
+def api_defense_start(knight_id: int, req: DefenseStartRequest, conn=Depends(get_db)):
+    """Avvia una Difesa a Ondate (richiesto in chat: 3 contro 3,
+    ambientazione e fazione nemica casuali, squadra a scelta o
+    casuale). Lo stato della battaglia, come per l'Arena, va e viene
+    col client ad ogni azione - non è persistito sul personaggio."""
+    knight = _get_knight_or_404(conn, knight_id)
+    _require_mission_ready(knight)
+    if knight["mission_id"]:
+        raise HTTPException(status_code=400, detail="Hai già una missione in corso.")
+    armor = get_armor(knight["armor_name"], conn)
+
+    chosen = None
+    if req.mode == "selected":
+        if len(req.ally_armor_names) != UNITS_PER_SIDE - 1:
+            raise HTTPException(status_code=400, detail=f"Servono esattamente {UNITS_PER_SIDE - 1} alleati.")
+        candidates = {c["armor_name"] for c in get_defense_team_candidates(conn, knight, armor)}
+        for name in req.ally_armor_names:
+            if name not in candidates:
+                raise HTTPException(status_code=400, detail=f"{name} non è un alleato disponibile.")
+        chosen = req.ally_armor_names
+
+    state = start_defense_mission(conn, knight, armor, chosen_ally_armor_names=chosen)
+    return {"battle_state": state}
+
+
+@app.post("/characters/{knight_id}/defense/action")
+def api_defense_action(knight_id: int, req: DefenseActionRequest, conn=Depends(get_db)):
+    """Un'azione nella Difesa a Ondate (richiesto in chat: iniziativa
+    stile D&D, ordini semplici agli alleati) - `actor_id` è chi agisce
+    in questo momento (tu, o un alleato a cui stai dando un ordine),
+    deve corrispondere a chi tocca davvero nell'ordine di iniziativa.
+    Dopo l'azione, i turni nemici (e quelli degli alleati non ancora
+    ordinati) proseguono da soli finché non torna un turno che
+    richiede una decisione."""
+    knight = _get_knight_or_404(conn, knight_id)
+    state = req.battle_state
+    if state.get("outcome") is not None:
+        raise HTTPException(status_code=400, detail="La battaglia è già conclusa.")
+
+    actor = state["units"].get(req.actor_id)
+    if actor is None or not actor["is_alive"] or actor["side"] != "allies":
+        raise HTTPException(status_code=400, detail="Unità non valida, già caduta, o non è un tuo alleato.")
+    current = _current_actor(state)
+    if current is None or current["id"] != req.actor_id:
+        raise HTTPException(status_code=400, detail="Non è il turno di questa unità.")
+
+    resolve_squad_action(
+        conn, state, req.actor_id, req.action, target_id=req.target_id,
+        technique_name=req.technique_name, technique_power=req.technique_power,
+        technique_type=req.technique_type, target_mode=req.target_mode,
+    )
+    _skip_dead_and_autoresolve_enemies(conn, state)
+
+    result = {"battle_state": state}
+    if state["outcome"] is not None:
+        waves_completed = state["total_waves"] if state["outcome"] == "victory" else state["wave_number"] - 1
+        reward = resolve_defense_reward(waves_completed, state["outcome"] == "victory")
+        knight["denaro"] += reward["denaro"]
+        if reward["cosmo_max"]:
+            knight["cosmo_max"] += reward["cosmo_max"]
+            knight["cosmo_cur"] = knight["cosmo_max"]
+        save_knight(conn, knight)
+        cal = get_calendar_display(knight["game_minutes"])
+        if state["outcome"] == "victory":
+            add_biography_entry(
+                conn, knight["id"], knight["game_minutes"],
+                f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} difende "
+                f"{state['setting']} da {state['enemy_faction']}, respingendo tutte le ondate.",
+            )
+        else:
+            add_biography_entry(
+                conn, knight["id"], knight["game_minutes"],
+                f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene "
+                f"sopraffatto difendendo {state['setting']}, dopo aver respinto {waves_completed} ondate.",
+            )
+        result["reward"] = reward
+        result["character"] = _knight_payload(conn, knight)
+    return result
 
 
 @app.post("/characters/{knight_id}/arena/retreat")
