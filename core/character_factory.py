@@ -35,6 +35,7 @@ STARTING_STAT_BASE = 10
 # altre formule di bilanciamento di questo progetto.
 VITA_BASE = 100
 VITA_PER_CON = 2
+NPC_STAMINA_MAX = 100  # richiesto in chat, tre barre vere anche per i PNG - scala fissa, come quella del giocatore
 
 # Corporatura: richiesta in chat, sposta la Costituzione di partenza -
 # un cavaliere robusto incassa meglio, uno minuto un po' meno. Piccoli
@@ -186,13 +187,23 @@ def ensure_roster_populated(conn: sqlite3.Connection) -> int:
     (richiesto in chat). Sicura da richiamare più volte: ignora le
     armature che hanno già uno slot (il nome del PNG non deve mai
     cambiare una volta assegnato). Restituisce quanti PNG nuovi sono
-    stati generati in questa chiamata."""
-    all_armors = conn.execute("SELECT name FROM armors").fetchall()
+    stati generati in questa chiamata. Ogni PNG nuovo nasce già con le
+    tre barre vere al massimo (richiesto in chat) - stessa formula già
+    usata per gli avversari veri in core.training_path."""
+    all_armors = conn.execute("SELECT name, level FROM armors").fetchall()
+    world_minutes = get_world_minutes(conn)
     creati = 0
     for row in all_armors:
         if get_roster_entry(conn, row["name"]) is None:
             npc_name = generate_full_name()
-            insert_roster_entry(conn, row["name"], npc_name, alignment=random_alignment())
+            cosmo_max = 100 + row["level"]
+            con_value = 10 + row["level"] // 10
+            vita_max = 100 + con_value * 2  # stessa formula di build_opponent_from_armor
+            insert_roster_entry(
+                conn, row["name"], npc_name, alignment=random_alignment(),
+                vita_max=vita_max, cosmo_max=cosmo_max, stamina_max=NPC_STAMINA_MAX,
+                last_regen_minutes=world_minutes,
+            )
             creati += 1
     conn.commit()
     return creati
