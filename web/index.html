@@ -1800,6 +1800,22 @@ async function attemptMissionSkillCheck() {
   }
 }
 
+async function answerInferiPuzzle(answerIndex) {
+  // Le Prove degli Inferi (richiesto in chat): una vera risposta a un
+  // enigma, non un tiro di dado - stesso endpoint di
+  // attemptMissionSkillCheck, ma con la risposta scelta nel corpo
+  // della richiesta.
+  try {
+    state.missionActionResult = await api(`/characters/${state.characterId}/mission/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ answer_index: answerIndex }),
+    });
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 async function startMissionDuel() {
   // Sia per la Scalata (contro il Guardiano della Casa attuale) sia
   // per le Colonne (contro chi popola il nodo attuale) - stesso motore
@@ -2842,9 +2858,16 @@ function renderInferiStatus(inferi) {
   } else if (inferi.is_ambush) {
     card.append(el("p", { style: "color:var(--danger);font-weight:700;margin-top:8px;" }, "⚠ Sei stato scoperto! Uno Spettro ti intercetta - non puoi più tentare la prova finché non lo affronti."));
     card.append(el("button", { onClick: startMissionDuel }, "⚔ Affronta lo Spettro"));
-  } else {
-    card.append(el("p", { class: "hint", style: "margin-top:8px;" }, `Statistica richiesta: ${inferi.stat} · soglia attuale: ${inferi.next_threshold}`));
-    card.append(el("button", { onClick: attemptMissionSkillCheck }, "🎲 Tenta la prova"));
+  } else if (inferi.puzzle) {
+    // Un vero enigma (richiesto in chat: "non un lanciadadi... mettiamo
+    // indovinelli/giochi di logica"), non più un tiro di dado pesato
+    // dalla statistica - il giocatore deve risolverlo per davvero.
+    card.append(el("p", { style: "font-weight:700;margin-top:10px;" }, inferi.puzzle.question));
+    const optionsBox = el("div", { style: "display:flex;flex-direction:column;gap:6px;margin-top:8px;" });
+    inferi.puzzle.options.forEach((opt, idx) => {
+      optionsBox.append(el("button", { class: "secondary", onClick: () => answerInferiPuzzle(idx) }, opt));
+    });
+    card.append(optionsBox);
   }
   return card;
 }
