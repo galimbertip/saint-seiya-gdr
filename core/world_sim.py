@@ -23,6 +23,7 @@ from core.arena_manager import generate_full_name
 from core.alignment import random_alignment, ALIGNMENT_FATE_CATEGORY_WEIGHTS
 from core.tavern import alignment_to_mood
 from core.institutional_npcs import INSTITUTIONAL_NPCS
+from core.divinities import DIVINITY_NPCS
 from database.db_manager import (
     add_world_event, get_roster_entry, get_institutional_alignment, set_institutional_alignment,
 )
@@ -309,6 +310,112 @@ def ensure_institutional_alignments(conn) -> None:
             set_institutional_alignment(conn, npc["id"], random_alignment(), generation=1)
 
 
+# La reincarnazione delle Divinità (richiesto in chat) - un evento
+# MOLTO più raro della successione delle Figure Istituzionali (qui non
+# è un cambio di carica, è la Divinità stessa che muore e rinasce in
+# un nuovo ospite) - un decimo della frequenza usata per loro.
+# PLACEHOLDER, come le altre probabilità di questo modulo.
+DIVINE_REINCARNATION_CHANCE_PER_DAY = 0.0004
+
+# Un solo testo per Divinità (non differenziato per umore come le
+# Figure Istituzionali) - un evento così raro e importante pesa più
+# per la sua rarità che per la sua variazione; l'allineamento cambia
+# comunque per davvero sotto al testo, anche se il testo stesso resta
+# fisso.
+DIVINE_REINCARNATION_TEXTS = {
+    "divinity-athena": (
+        "Un nuovo Cosmo si risveglia da qualche parte nel mondo, ignaro di cosa sia diventato. "
+        "Athena è di nuovo tra i vivi - il Santuario lo sa prima ancora di saperne il volto."
+    ),
+    "divinity-hades": (
+        "Negli Inferi qualcosa si riscuote da un sonno troppo lungo. Un nuovo ospite porta ora "
+        "il peso del Signore dei Morti - gli Specter più anziani lo sentono prima di vederlo."
+    ),
+    "divinity-black-saint": (
+        "Una nuova ombra prende il posto di quella precedente dietro le Black Cloth corrotte - "
+        "nessuno ha visto il passaggio di consegne, ma tutti ne sentono già il peso."
+    ),
+    "divinity-odino": (
+        "Un nuovo Cosmo si risveglia nel gelo di Asgard, portando con sé l'autorità del Padre di "
+        "Tutti - i Guerrieri Divini lo riconoscono ancora prima che parli."
+    ),
+    "divinity-nettuno": (
+        "Le acque dei Sette Mari si agitano senza una tempesta a spiegarlo - un nuovo ospite ha "
+        "appena ricevuto l'anima del Sovrano degli Abissi."
+    ),
+    "divinity-apollo": (
+        "Una luce nuova si accende dove prima ce n'era una spenta da tempo - Apollo è tornato, "
+        "in un corpo che ancora non sa bene cosa fare di quella luce."
+    ),
+    "divinity-ares": (
+        "Da qualche parte, un conflitto che sembrava concluso riprende senza una vera ragione - "
+        "un segno, per chi sa leggerlo, che Ares è di nuovo tra i vivi."
+    ),
+    "divinity-saturno": (
+        "Il tempo stesso sembra vacillare per un istante impercettibile - Crono di Saturno ha "
+        "appena trovato un nuovo ospite in cui misurare le ere a venire."
+    ),
+    "divinity-crono": (
+        "Un potere più antico di quasi ogni altra cosa si risveglia in un nuovo corpo - Kronos "
+        "cammina di nuovo, per la prima volta in un'era che nessuno ricorda per intero."
+    ),
+    "divinity-eris": (
+        "Una discordia piccola e apparentemente innocua nasce dal nulla in un luogo lontano - "
+        "il segno che Eris ha trovato un nuovo modo di camminare tra gli uomini."
+    ),
+    "divinity-lucifero": (
+        "Un patto sussurrato in un angolo dimenticato del mondo trova finalmente chi è disposto "
+        "ad ascoltarlo fino in fondo - Lucifero è tornato."
+    ),
+    "divinity-artemide": (
+        "Un ululato lontano, mai sentito prima in quella foresta, annuncia senza parole che "
+        "Artemide ha trovato un nuovo corpo in cui cacciare."
+    ),
+    "divinity-zeus": (
+        "Un tuono rimbomba in un cielo altrimenti sereno, senza nessuna tempesta a giustificarlo "
+        "- il segno più antico che si conosca per l'arrivo di un nuovo Zeus."
+    ),
+}
+
+
+def ensure_divinity_alignments(conn) -> None:
+    """Assegna un allineamento vero a ogni Divinità che non ne ha ancora
+    uno (richiesto in chat: "differenziamole" dalle semplici armature -
+    anche loro hanno un vero allineamento persistito) - va richiamata
+    all'avvio, come ensure_institutional_alignments. Riusa la stessa
+    tabella institutional_alignments (le chiavi non collidono mai: le
+    Divinità usano il prefisso "divinity-", le Figure Istituzionali i
+    propri id originali) - non serve una tabella gemella quasi
+    identica solo per un livello diverso della stessa gerarchia."""
+    for npc in DIVINITY_NPCS:
+        if get_institutional_alignment(conn, npc["id"]) is None:
+            set_institutional_alignment(conn, npc["id"], random_alignment(), generation=1)
+
+
+def _tick_divine_reincarnations(conn, elapsed_minutes: int, current_world_minutes: int) -> list[dict]:
+    """Le Divinità, molto raramente, muoiono e rinascono in un nuovo
+    ospite (richiesto in chat) - un nuovo allineamento vero ad ogni
+    reincarnazione, esattamente come per le Figure Istituzionali, ma
+    con una frequenza molto più bassa: qui non è un cambio di carica,
+    è la Divinità stessa a rinascere."""
+    events = []
+    for npc in DIVINITY_NPCS:
+        if not _roll_chance(elapsed_minutes, DIVINE_REINCARNATION_CHANCE_PER_DAY):
+            continue
+        current = get_institutional_alignment(conn, npc["id"])
+        new_generation = (current["generation"] + 1) if current else 1
+        set_institutional_alignment(conn, npc["id"], random_alignment(), new_generation)
+
+        text = DIVINE_REINCARNATION_TEXTS.get(npc["id"])
+        if not text:
+            continue
+        add_world_event(conn, current_world_minutes, npc["name"], text)
+        events.append({"armor_name": npc["name"], "entry": text})
+    return events
+
+
+
+
 def resolve_npc_fate(alignment: str = "") -> str:
     """Un destino narrativo per UN PNG che lascia il proprio posto
     (richiesto in chat) - stesso principio di
@@ -514,6 +621,7 @@ def tick_world_events(conn, elapsed_minutes: int, current_world_minutes: int) ->
     events.extend(_tick_common_npc_departures(conn, elapsed_minutes, current_world_minutes))
     events.extend(_tick_common_npc_graduations(conn, current_world_minutes))
     events.extend(_tick_institutional_events(conn, elapsed_minutes, current_world_minutes))
+    events.extend(_tick_divine_reincarnations(conn, elapsed_minutes, current_world_minutes))
 
     divinities = [r["divinity"] for r in conn.execute("SELECT DISTINCT divinity FROM armors").fetchall()]
     events.extend(_tick_world_flavor_events(conn, elapsed_minutes, current_world_minutes, divinities))
