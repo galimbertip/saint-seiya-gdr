@@ -21,8 +21,11 @@ import random
 
 from core.arena_manager import generate_full_name
 from core.alignment import random_alignment, ALIGNMENT_FATE_CATEGORY_WEIGHTS
+from core.tavern import alignment_to_mood
 from core.institutional_npcs import INSTITUTIONAL_NPCS
-from database.db_manager import add_world_event, get_roster_entry
+from database.db_manager import (
+    add_world_event, get_roster_entry, get_institutional_alignment, set_institutional_alignment,
+)
 
 WORLD_TICK_MINUTES_PER_DAY = 1440
 
@@ -231,24 +234,79 @@ NPC_GRADUATION_TEXTS = [
 # core/institutional_npcs.py: maschere, volti nascosti, identità mai
 # rivelate) - l'evento racconta il PASSAGGIO, mai un nome proprio.
 INSTITUTIONAL_SUCCESSION_TEXTS = {
-    "grande-sacerdote": (
-        "La maschera dorata del Grande Sacerdote passa a un nuovo volto, in una cerimonia "
-        "che nessuno al di fuori del Tempio ha potuto vedere. Il Santuario non si è fermato "
-        "nemmeno per un giorno."
-    ),
-    "pandora": (
-        "Un nuovo volto amministra ora il Castello di Hades in nome del Signore degli Inferi - "
-        "della precedente amministratrice, negli Inferi, non si parla più."
-    ),
-    "generale-dei-sette-mari": (
-        "Un nuovo Generale Supremo prende il comando dei Sette Mari - le Colonne non hanno mai "
-        "smesso di rispondere a quel titolo, chiunque lo porti."
-    ),
-    "guardiano-di-asgard": (
-        "Un nuovo Guardiano veglia ora sul Palazzo di Valhalla - l'armatura d'inverno è passata "
-        "di mano. Il gelo no."
-    ),
+    "grande-sacerdote": {
+        "buono": (
+            "La maschera dorata del Grande Sacerdote passa a un nuovo volto - si dice che il "
+            "Tempio abbia accolto il cambio con un silenzio quasi sollevato, come se la nuova "
+            "guida portasse con sé un peso più leggero."
+        ),
+        "neutrale": (
+            "La maschera dorata del Grande Sacerdote passa a un nuovo volto, in una cerimonia "
+            "che nessuno al di fuori del Tempio ha potuto vedere. Il Santuario non si è fermato "
+            "nemmeno per un giorno."
+        ),
+        "malvagio": (
+            "La maschera dorata del Grande Sacerdote passa a un nuovo volto - e da quel giorno, "
+            "le udienze nel Tempio si sono fatte più brevi, e più temute."
+        ),
+    },
+    "pandora": {
+        "buono": (
+            "Un nuovo volto amministra ora il Castello di Hades in nome del Signore degli Inferi - "
+            "gli Specter più anziani sussurrano che, per la prima volta in molto tempo, un giudizio "
+            "è stato rimandato invece che eseguito."
+        ),
+        "neutrale": (
+            "Un nuovo volto amministra ora il Castello di Hades in nome del Signore degli Inferi - "
+            "della precedente amministratrice, negli Inferi, non si parla più."
+        ),
+        "malvagio": (
+            "Un nuovo volto amministra ora il Castello di Hades in nome del Signore degli Inferi - "
+            "e il Muro dei Lamenti, dicono gli Specter, non è mai stato tanto attivo quanto in "
+            "questi primi giorni."
+        ),
+    },
+    "generale-dei-sette-mari": {
+        "buono": (
+            "Un nuovo Generale Supremo prende il comando dei Sette Mari - le Colonne non hanno mai "
+            "smesso di rispondere a quel titolo, ma i marinai raccontano di ordini più clementi "
+            "verso chi si arrende senza combattere."
+        ),
+        "neutrale": (
+            "Un nuovo Generale Supremo prende il comando dei Sette Mari - le Colonne non hanno mai "
+            "smesso di rispondere a quel titolo, chiunque lo porti."
+        ),
+        "malvagio": (
+            "Un nuovo Generale Supremo prende il comando dei Sette Mari - e le acque, dicono i "
+            "pescatori più superstiziosi, sembrano più fredde da quando è salito al comando."
+        ),
+    },
+    "guardiano-di-asgard": {
+        "buono": (
+            "Un nuovo Guardiano veglia ora sul Palazzo di Valhalla - l'armatura d'inverno è passata "
+            "di mano, e con essa un rispetto insolito per chi chiede asilo lungo il confine."
+        ),
+        "neutrale": (
+            "Un nuovo Guardiano veglia ora sul Palazzo di Valhalla - l'armatura d'inverno è passata "
+            "di mano. Il gelo no."
+        ),
+        "malvagio": (
+            "Un nuovo Guardiano veglia ora sul Palazzo di Valhalla - e chi ha provato ad attraversare "
+            "il confine senza permesso, da allora, non ha più fatto ritorno per raccontarlo."
+        ),
+    },
 }
+
+
+def ensure_institutional_alignments(conn) -> None:
+    """Assegna un allineamento vero a ogni Figura Istituzionale che non
+    ne ha ancora uno (richiesto in chat: estendere l'allineamento
+    anche a loro, non solo ai PNG comuni) - va richiamata all'avvio,
+    come ensure_roster_populated. Mai mostrato al giocatore, come
+    sempre."""
+    for npc in INSTITUTIONAL_NPCS:
+        if get_institutional_alignment(conn, npc["id"]) is None:
+            set_institutional_alignment(conn, npc["id"], random_alignment(), generation=1)
 
 
 def resolve_npc_fate(alignment: str = "") -> str:
@@ -282,12 +340,22 @@ def _tick_institutional_events(conn, elapsed_minutes: int, current_world_minutes
     """Le Figure Istituzionali cambiano nel tempo anche loro (richiesto
     in chat) - restano anonime, l'evento racconta solo il passaggio di
     consegne, mai un nome proprio (coerente con come sono già scritte:
-    maschere, volti nascosti)."""
+    maschere, volti nascosti). Il nuovo successore riceve anche un
+    nuovo allineamento vero (richiesto in chat: esteso anche a loro,
+    non solo ai PNG comuni) - il testo dell'evento ne lascia trapelare
+    il tono, mai l'etichetta."""
     events = []
     for npc in INSTITUTIONAL_NPCS:
         if not _roll_chance(elapsed_minutes, INSTITUTIONAL_EVENT_CHANCE_PER_DAY):
             continue
-        text = INSTITUTIONAL_SUCCESSION_TEXTS.get(npc["id"])
+        current = get_institutional_alignment(conn, npc["id"])
+        new_alignment = random_alignment()
+        new_generation = (current["generation"] + 1) if current else 1
+        set_institutional_alignment(conn, npc["id"], new_alignment, new_generation)
+
+        mood = alignment_to_mood(new_alignment)
+        texts_by_mood = INSTITUTIONAL_SUCCESSION_TEXTS.get(npc["id"], {})
+        text = texts_by_mood.get(mood) or texts_by_mood.get("neutrale")
         if not text:
             continue
         add_world_event(conn, current_world_minutes, npc["name"], text)
