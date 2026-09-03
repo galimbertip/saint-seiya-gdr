@@ -616,31 +616,161 @@ INFERI_MISSION_ID = "prove_degli_inferi"
 # allerta che sale sui fallimenti). Ogni prova usa una statistica
 # diversa, per non rendere sempre conveniente lo stesso approccio.
 INFERI_STAGES = [
-    {"name": "Le Porte del Cocytus", "stat": "con",
+    {"name": "Le Porte del Cocytus",
      "text": ("Il gelo del Cocytus ti stringe le ossa ancora prima di aver attraversato le sue porte "
-               "spezzate. Resistere, senza lasciarti notare dalle sentinelle appostate lungo le mura, è "
-               "già la prima vera prova.")},
-    {"name": "I Corridoi di Giudecca", "stat": "dex",
-     "text": ("Le pattuglie di Spettri percorrono i corridoi a ritmi regolari - un passo falso, un'ombra "
-               "fuori posto, e sarai scoperto molto prima di essere pronto.")},
-    {"name": "Il Cimitero degli Spettri Perduti", "stat": "vol",
-     "text": ("Migliaia di anime dimenticate sussurrano tra le tombe - resistere alla disperazione che "
-               "promettono richiede più forza di volontà che coraggio.")},
-    {"name": "Le Segrete dei Dannati", "stat": "tec",
-     "text": ("Un labirinto di celle e trappole dimenticate da secoli - un solo passo sbagliato può far "
-               "scattare un allarme che nessuno, qui sotto, vorrebbe sentire.")},
-    {"name": "La Sala dei Tre Giudici", "stat": "dex",
+               "spezzate. Un'iscrizione antica blocca il passaggio - solo chi la risolve può proseguire "
+               "senza allertare le sentinelle appostate lungo le mura.")},
+    {"name": "I Corridoi di Giudecca",
+     "text": ("Le pattuglie di Spettri percorrono i corridoi a ritmi regolari - un enigma inciso su una "
+               "delle colonne sembra l'unico modo per calcolare la finestra giusta in cui muoversi senza "
+               "essere visto.")},
+    {"name": "Il Cimitero degli Spettri Perduti",
+     "text": ("Migliaia di anime dimenticate sussurrano tra le tombe un indovinello, sempre lo stesso, come "
+               "un disco rotto - rispondere bene è l'unico modo per attraversare senza che la disperazione "
+               "che promettono ti faccia perdere l'orientamento.")},
+    {"name": "Le Segrete dei Dannati",
+     "text": ("Un labirinto di celle e trappole dimenticate da secoli - un vecchio meccanismo a enigmi "
+               "regola i passaggi sicuri. Sbagliare significa far scattare un allarme che nessuno, qui "
+               "sotto, vorrebbe sentire.")},
+    {"name": "La Sala dei Tre Giudici",
      "text": ("La sala dove i Tre Giudici dell'Ade pronunciano le proprie sentenze - qui più che altrove, "
-               "un passo fuori posto significa la fine di tutto.")},
+               "un enigma sbagliato significa la fine di tutto.")},
 ]
 
-INFERI_BASE_THRESHOLD = 14        # come SKILL_CHECK_THRESHOLD altrove nel progetto
 INFERI_AMBUSH_THRESHOLD = 3       # a questo livello di allerta, la prossima prova diventa un'imboscata
 INFERI_AMBUSH_RESET_ALERT = 1     # dopo aver vinto un'imboscata resti comunque un po' scoperto, non torni a zero
 
 INFERI_REWARD_DENARO_PER_STAGE = 120
 INFERI_REWARD_DENARO_CHAMPION = 900
 INFERI_REWARD_COSMO_MAX_CHAMPION = 35
+
+# Gli enigmi veri (richiesto in chat: "non un lanciadadi... mettiamo
+# indovinelli / giochi di logica" - non un tiro di dado pesato dalla
+# statistica, ma una prova vera che il giocatore deve risolvere
+# davvero). Dieci varianti per ciascuna delle 5 prove, scelte a caso
+# ad ogni tentativo (richiesto in chat: "non 1 fisso per livello, ma
+# 10 diversi a rotazione casuale") - jolly abbastanza ampio da non
+# ripetersi identico ad ogni tentativo della stessa run. Ogni voce:
+# (domanda, [opzioni], indice della risposta corretta).
+INFERI_PUZZLES = [
+    # Prova 1 - Le Porte del Cocytus (tema: ghiaccio, resistenza, tempo)
+    [
+        ("Non ho vita, ma posso morire. Non ho polmoni, ma ho bisogno d'aria. Non ho bocca, ma l'acqua mi uccide. Cosa sono?",
+         ["Il fuoco", "Il ghiaccio", "Il fiume", "Il vento"], 0),
+        ("Completa la sequenza: 1, 1, 2, 3, 5, 8, ?",
+         ["11", "12", "13", "15"], 2),
+        ("Più ne togli, più diventa grande. Cos'è?",
+         ["Una buca", "Una montagna", "Un fiume", "Un ghiacciaio"], 0),
+        ("Ho città ma non case, foreste ma non alberi, fiumi ma non una goccia d'acqua vera. Cosa sono?",
+         ["Una mappa", "Un sogno", "Uno specchio", "Un ricordo"], 0),
+        ("Ghiaccio sta a Freddo come Fuoco sta a...?",
+         ["Caldo", "Luce", "Cenere", "Fumo"], 0),
+        ("Se tre sentinelle di ghiaccio impiegano 3 ore a sciogliersi sotto lo stesso sole, quante ore impiegano 6 sentinelle identiche?",
+         ["3 ore", "6 ore", "9 ore", "1 ora e mezza"], 0),
+        ("Sono fatto d'acqua, ma se mi tocchi a mani nude posso farti male. Cosa sono?",
+         ["Il ghiaccio", "Il vapore", "La grandine", "La rugiada"], 0),
+        ("Quale parola non appartiene al gruppo: Gelo, Brina, Vampa, Neve?",
+         ["Gelo", "Brina", "Vampa", "Neve"], 2),
+        ("Cammino sempre avanti, non torno mai indietro, e ogni mio passo è un anno che passa. Cosa sono?",
+         ["Il tempo", "Il fiume", "Il vento", "Il destino"], 0),
+        ("Quale numero completa la sequenza: 100, 81, 64, 49, ?",
+         ["36", "42", "30", "40"], 0),
+    ],
+    # Prova 2 - I Corridoi di Giudecca (tema: furtività, ombre, pattuglie)
+    [
+        ("Più ce n'è, meno si vede. Cos'è?",
+         ["Il buio", "La nebbia", "Il fumo", "Il silenzio"], 0),
+        ("Ti seguo sempre ma non mi tocchi mai. Cosa sono?",
+         ["L'ombra", "L'eco", "Il destino", "Il ricordo"], 0),
+        ("Una pattuglia passa ogni 12 minuti, un'altra ogni 18. Ogni quanti minuti passano insieme?",
+         ["30", "36", "24", "18"], 1),
+        ("Non ho voce ma ti parlo, non ho gambe ma ti seguo dovunque tu vada nel buio. Cosa sono?",
+         ["L'ombra", "Il pensiero", "La paura", "La coscienza"], 0),
+        ("Silenzio sta a Rumore come Buio sta a...?",
+         ["Luce", "Notte", "Ombra", "Cieco"], 0),
+        ("In una fila di sentinelle, la quinta da sinistra è anche la terza da destra. Quante sentinelle ci sono in totale?",
+         ["5", "6", "7", "8"], 2),
+        ("Più ne prendi, più ne lasci dietro di te. Cosa sono?",
+         ["I passi", "I ricordi", "Le impronte", "Il tempo"], 0),
+        ("Quale animale è da sempre simbolo di furtività silenziosa nella notte?",
+         ["Il gatto", "Il cane", "Il cavallo", "Il toro"], 0),
+        ("Completa la sequenza di lettere: A, C, F, J, ?",
+         ["N", "O", "P", "M"], 1),
+        ("Ho molte chiavi ma nessuna apre una porta. Cosa sono?",
+         ["Un pianoforte", "Un mazzo di carte", "Una mappa", "Un enigma"], 0),
+    ],
+    # Prova 3 - Il Cimitero degli Spettri Perduti (tema: anime, memoria, indovinelli classici)
+    [
+        ("Cosa cammina al mattino su quattro zampe, a mezzogiorno su due, e alla sera su tre?",
+         ["L'uomo", "Il tempo", "La vita", "Il ragno"], 0),
+        ("Non sono vivo, ma posso crescere. Non ho polmoni, ma ho bisogno d'aria. Non ho bocca, ma l'acqua mi uccide. Cosa sono?",
+         ["Il fuoco", "Un ricordo", "Un'ombra", "Un fantasma"], 0),
+        ("Che cosa è tuo, ma lo usano gli altri più spesso di te?",
+         ["Il tuo nome", "Il tuo tempo", "Il tuo cuore", "Il tuo destino"], 0),
+        ("Ho un volto ma non un corpo, appaio quando c'è luce e scompaio quando non c'è. Cosa sono?",
+         ["L'ombra", "Il riflesso", "Il fantasma", "Il ricordo"], 0),
+        ("Cosa si può rompere senza mai essere toccato?",
+         ["Una promessa", "Un silenzio", "Un cuore", "Uno specchio"], 0),
+        ("Sono l'inizio della fine, la fine di ogni luogo. Sono l'inizio dell'eternità, la fine del tempo e dello spazio. Quale lettera sono?",
+         ["E", "F", "T", "N"], 0),
+        ("Un cimitero ha 100 tombe. Ogni anno ne vengono aggiunte 5. Dopo quanti anni ce ne saranno 150?",
+         ["5", "10", "15", "20"], 1),
+        ("Non ho occhi ma vedo tutto quello che è stato. Cosa sono?",
+         ["La memoria", "Lo specchio", "Il tempo", "Il destino"], 0),
+        ("Cosa è pieno di buchi ma trattiene ancora l'acqua?",
+         ["Una spugna", "Un setaccio", "Un cesto", "Una rete"], 0),
+        ("Due anime dei morti rispondono sempre allo stesso modo a una domanda su se stesse, quale che sia la domanda. Una dice sempre la verità, l'altra mente sempre. Se chiedi a entrambe 'Sei tu quella sincera?', cosa rispondono?",
+         ["Entrambe dicono sì", "Entrambe dicono no", "Una dice sì, l'altra no", "Nessuna delle due risponde"], 0),
+    ],
+    # Prova 4 - Le Segrete dei Dannati (tema: trappole, logica, deduzione)
+    [
+        ("Due porte, due guardiani: uno mente sempre, l'altro dice sempre la verità. Puoi fare una sola domanda a un solo guardiano per trovare la porta sicura. Qual è la domanda giusta?",
+         ["\"Qual è la porta sicura?\"", "\"Sei quello che dice sempre la verità?\"",
+          "\"Se chiedessi all'altro guardiano quale porta è sicura, cosa direbbe?\"", "\"Quale porta sceglieresti tu?\""], 2),
+        ("Hai 8 sfere identiche, una più pesante delle altre. Con una bilancia a due piatti, in quante pesate minime trovi quella più pesante?",
+         ["1", "2", "3", "4"], 1),
+        ("Completa la sequenza: 3, 6, 12, 24, ?",
+         ["36", "42", "48", "30"], 2),
+        ("Un labirinto ha 3 bivi, e ad ogni bivio puoi scegliere tra 2 strade. Quante strade diverse portano in totale alla fine?",
+         ["6", "8", "9", "12"], 1),
+        ("Quale numero non appartiene al gruppo: 4, 9, 16, 20, 25?",
+         ["4", "9", "20", "25"], 2),
+        ("Se 5 dannati scavano 5 tunnel in 5 giorni, quanti giorni servono a 10 dannati per scavare 10 tunnel identici?",
+         ["5", "10", "2", "25"], 0),
+        ("In fila ci sono 10 celle numerate da 1 a 10. Le celle con numero pari sono aperte. Quante celle sono aperte?",
+         ["4", "5", "6", "10"], 1),
+        ("Completa la sequenza di lettere: B, D, F, H, ?",
+         ["I", "J", "K", "G"], 1),
+        ("Se A è più alto di B, e B è più alto di C, chi è il più basso dei tre?",
+         ["A", "B", "C", "Non si può sapere"], 2),
+        ("Una cella si allaga: l'acqua raddoppia ogni minuto e la riempie del tutto al minuto 60. A che minuto era piena a metà?",
+         ["30", "45", "59", "55"], 2),
+    ],
+    # Prova 5 - La Sala dei Tre Giudici (tema: verità, giudizio, gli enigmi più ardui)
+    [
+        ("Tre Giudici: il primo dice sempre la verità, il secondo mente sempre, il terzo risponde a caso. Di quale dei tre non ti puoi mai fidare, nemmeno per una sola risposta?",
+         ["Quello che dice sempre la verità", "Quello che mente sempre", "Quello che risponde a caso", "Nessuno dei tre"], 2),
+        ("Cosa è più pesante: un chilo di piume o un chilo di pietre?",
+         ["Le piume", "Le pietre", "Pesano uguale", "Dipende dalla bilancia"], 2),
+        ("Un Giudice dice: \"Domani mentirò.\" Se oggi ha detto la verità, cosa deve succedere domani perché non si contraddica?",
+         ["Deve mentire", "Deve dire la verità", "È un paradosso senza soluzione", "Non è vincolato a nulla"], 0),
+        ("Su un piatto della bilancia ci sono 3 pesi da 4 kg, sull'altro un solo peso da 12 kg. Sono in equilibrio?",
+         ["Sì", "No, manca 1 kg", "No, manca 2 kg", "No, ne avanza 1 kg"], 0),
+        ("Tre anime devono attraversare un ponte di notte con una sola torcia. Il ponte regge al massimo 2 alla volta. Le loro velocità sono 1, 2 e 5 minuti (chi va più piano rallenta chi va più veloce). Qual è il tempo minimo per farle attraversare tutte?",
+         ["6 minuti", "7 minuti", "8 minuti", "10 minuti"], 2),
+        ("\"Tutti i Giudici sono giusti. Radamanthys è un Giudice.\" Cosa puoi concludere con certezza?",
+         ["Radamanthys è giusto", "Radamanthys è ingiusto", "Non si può concludere nulla", "Radamanthys non è un Giudice"], 0),
+        ("Completa la sequenza: 2, 6, 12, 20, 30, ?",
+         ["36", "40", "42", "44"], 2),
+        ("Un'anima onesta dice sempre la verità, una bugiarda mente sempre. Incontri due anime, A e B. A dice: \"Almeno una di noi due mente.\" Chi mente davvero?",
+         ["A mente", "B mente", "Entrambe mentono", "Nessuna delle due mente"], 1),
+        ("Se nessuna bugia può essere vera, e qualcuno dice \"questa frase che sto dicendo è una bugia\", quella frase è vera o falsa?",
+         ["È vera", "È falsa", "È un paradosso: non può essere coerentemente né vera né falsa", "Dipende da chi la dice"], 2),
+        ("Un Giudice pesa le anime su una bilancia a due piatti: un'anima pesa quanto 2 piume più 1 pietra, un'altra quanto 3 piume. Se pietra e piuma non pesano uguale, quale delle due anime è più pesante, sapendo che una pietra pesa più di una piuma?",
+         ["La prima", "La seconda", "Pesano uguale", "Non si può stabilire con questi dati"], 0),
+    ],
+]
+
 
 # Le Surplice degli Spettri comuni (richiesto in chat: le imboscate
 # quando l'allerta sale troppo) - livello 50, un gradino sotto ai Tre
@@ -657,19 +787,27 @@ SPECTER_AMBUSH_ARMORS = [
 JUDGE_ARMORS = ["Surplice di Wyvern", "Surplice di Garuda", "Surplice di Griffon"]
 
 
-def inferi_skill_check_threshold(alert: int) -> int:
-    """La soglia della prova sale con l'allerta accumulata (richiesto in
-    chat: "più alto sale, più dura diventa") - più attenzione c'è su
-    di te, più difficile passare inosservato."""
-    return INFERI_BASE_THRESHOLD + alert
+def pick_inferi_puzzle(stage_index: int) -> tuple[int, dict]:
+    """Sceglie un enigma A CASO tra i 10 disponibili per questa prova
+    (richiesto in chat: "non 1 fisso per livello, ma 10 diversi a
+    rotazione casuale") - restituisce (indice dell'enigma nel pool,
+    dict con domanda/opzioni) - l'indice va persistito (mission_flags)
+    così la risposta del giocatore si confronta con l'enigma GIUSTO,
+    non uno nuovo pescato a caso ad ogni chiamata."""
+    pool = INFERI_PUZZLES[stage_index - 1]
+    puzzle_index = random.randrange(len(pool))
+    question, options, _correct_index = pool[puzzle_index]
+    return puzzle_index, {"question": question, "options": options}
 
 
-def resolve_inferi_skill_check(knight: dict, stat: str, alert: int) -> bool:
-    """Un vero tiro di dado per una prova dell'infiltrazione (richiesto
-    in chat) - la soglia dipende dall'allerta attuale, non è fissa
-    come le altre prove del progetto."""
-    roll = random.randint(1, 20) + knight[stat] // 2
-    return roll >= inferi_skill_check_threshold(alert)
+def check_inferi_answer(stage_index: int, puzzle_index: int, answer_index: int) -> bool:
+    """Confronta la risposta del giocatore con quella giusta per
+    l'enigma già scelto (richiesto in chat: una vera prova di logica,
+    non un tiro di dado)."""
+    pool = INFERI_PUZZLES[stage_index - 1]
+    _question, _options, correct_index = pool[puzzle_index]
+    return answer_index == correct_index
+
 
 
 def get_inferi_stage(stage_index: int) -> dict | None:
