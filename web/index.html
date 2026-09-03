@@ -2720,6 +2720,12 @@ function renderMissionsTab() {
     card5.append(el("p", {}, "Un torneo aperto a chiunque, indipendentemente dal rango - quattro round, sempre a eliminazione diretta, contro avversari sempre più forti."));
     card5.append(el("button", { onClick: () => startMission("torneo_stelle_libere") }, "⭐ Iscriviti al Torneo delle Stelle Libere"));
     wrap.append(card5);
+
+    const card6 = el("div", { class: "card" });
+    card6.append(el("h2", {}, "Le Prove degli Inferi"));
+    card6.append(el("p", {}, "Infiltrati negli Inferi di Ade fino alla Sala dei Tre Giudici. Cinque prove, non duelli: ogni fallimento fa salire il livello di allerta - se sale troppo, uno Spettro ti intercetta. Farsi scoprire due volte, o perdere contro un Giudice, chiude la missione."));
+    card6.append(el("button", { onClick: () => startMission("prove_degli_inferi") }, "💀 Infiltrati negli Inferi"));
+    wrap.append(card6);
     return wrap;
   }
 
@@ -2727,6 +2733,8 @@ function renderMissionsTab() {
     wrap.append(renderScalataHouse(ms.house));
   } else if (ms.tournament) {
     wrap.append(renderTournamentStatus(ms.tournament));
+  } else if (ms.inferi) {
+    wrap.append(renderInferiStatus(ms.inferi));
   } else {
     wrap.append(renderGraphMissionNode(ms.node));
   }
@@ -2800,6 +2808,43 @@ function renderGraphMissionNode(node) {
     card.append(el("button", { onClick: startMissionDuel }, "⚔ Inizia lo scontro"));
   } else if (node.type === "ending") {
     card.append(el("p", {}, node.text));
+  }
+  return card;
+}
+
+function renderInferiStatus(inferi) {
+  // Le Prove degli Inferi (richiesto in chat, struttura diversa dai
+  // tornei e dalle missioni a grafo): prove a dado in sequenza, con un
+  // livello di allerta che sale sui fallimenti - niente nodi, niente
+  // tabellone, solo la prova attuale e quanto sei vicino a farti
+  // scoprire.
+  const card = el("div", { class: "card" });
+  card.append(el("h2", {}, "Le Prove degli Inferi"));
+  if (!inferi.is_final_boss) {
+    card.append(el("p", { class: "hint" }, `Prova ${inferi.stage_index} di ${inferi.total_stages} - allerta: ${inferi.alert}/${inferi.ambush_threshold}`));
+  }
+
+  if (state.missionActionResult) {
+    const r = state.missionActionResult;
+    card.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
+    card.append(el("p", { style: r.success ? "color:var(--success);" : "color:var(--danger);" },
+      r.success ? "✅ Prova superata." : "❌ Prova fallita - l'allerta sale."));
+    if (r.ambush_triggered) {
+      card.append(el("p", { style: "color:var(--danger);font-weight:700;" }, "⚠ Sei stato scoperto!"));
+    }
+    card.append(el("button", { onClick: () => { state.missionActionResult = null; state.missionStatus = null; render(); } }, "Continua"));
+    return card;
+  }
+
+  card.append(el("p", {}, inferi.stage_text));
+  if (inferi.is_final_boss) {
+    card.append(el("button", { onClick: startMissionDuel }, "⚔ Affronta il Giudice"));
+  } else if (inferi.is_ambush) {
+    card.append(el("p", { style: "color:var(--danger);font-weight:700;margin-top:8px;" }, "⚠ Sei stato scoperto! Uno Spettro ti intercetta - non puoi più tentare la prova finché non lo affronti."));
+    card.append(el("button", { onClick: startMissionDuel }, "⚔ Affronta lo Spettro"));
+  } else {
+    card.append(el("p", { class: "hint", style: "margin-top:8px;" }, `Statistica richiesta: ${inferi.stat} · soglia attuale: ${inferi.next_threshold}`));
+    card.append(el("button", { onClick: attemptMissionSkillCheck }, "🎲 Tenta la prova"));
   }
   return card;
 }
