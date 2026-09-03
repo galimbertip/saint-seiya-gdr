@@ -192,6 +192,12 @@ CREATE TABLE IF NOT EXISTS tavern_bartenders (
     alignment TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS institutional_alignments (
+    npc_id TEXT PRIMARY KEY,
+    alignment TEXT NOT NULL,
+    generation INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS tavern_seating (
     divinity TEXT NOT NULL,
     armor_name TEXT NOT NULL,
@@ -791,6 +797,24 @@ def get_tavern_conversation(conn: sqlite3.Connection, knight_id: int, armor_name
         (knight_id, armor_name, limit),
     ).fetchall()
     return list(reversed(rows))
+
+
+def get_institutional_alignment(conn: sqlite3.Connection, npc_id: str) -> sqlite3.Row | None:
+    """Il vero allineamento (richiesto in chat, stile D&D, esteso alle
+    Figure Istituzionali) di chi occupa in questo momento un ruolo
+    istituzionale - None se non ancora assegnato."""
+    return conn.execute("SELECT * FROM institutional_alignments WHERE npc_id = ?", (npc_id,)).fetchone()
+
+
+def set_institutional_alignment(conn: sqlite3.Connection, npc_id: str, alignment: str, generation: int) -> None:
+    """Assegna (o riassegna, ad ogni successione) l'allineamento di chi
+    occupa un ruolo istituzionale - nuova persona, nuovo carattere."""
+    conn.execute(
+        """INSERT INTO institutional_alignments (npc_id, alignment, generation) VALUES (?, ?, ?)
+           ON CONFLICT (npc_id) DO UPDATE SET alignment = excluded.alignment, generation = excluded.generation""",
+        (npc_id, alignment, generation),
+    )
+    conn.commit()
 
 
 def get_tavern_bartender(conn: sqlite3.Connection, divinity: str) -> sqlite3.Row | None:
