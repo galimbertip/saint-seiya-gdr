@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS knights (
     mission_node TEXT NOT NULL DEFAULT '',
     mission_flags TEXT NOT NULL DEFAULT '',
     tournament_bracket TEXT NOT NULL DEFAULT '',
+    mission_counter INTEGER NOT NULL DEFAULT 0,
     apprentice_status TEXT NOT NULL DEFAULT ''
 );
 
@@ -347,6 +348,15 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN tournament_bracket TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunta colonna tournament_bracket a knights.")
+    if "mission_counter" not in existing_columns:
+        # Un contatore numerico generico riusabile da varie missioni per
+        # il proprio stato (richiesto in chat: "Ade a prove" - il
+        # livello di allerta che sale sui fallimenti) - non serve una
+        # colonna dedicata per ogni singola missione futura che avrà
+        # bisogno di un contatore proprio.
+        conn.execute("ALTER TABLE knights ADD COLUMN mission_counter INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunta colonna mission_counter a knights.")
     if "apprentice_status" not in existing_columns:
         # Alternative al fallimento della Prova Finale (richiesto in
         # chat) - vuoto vuol dire "addestramento normale in corso",
