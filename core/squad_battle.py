@@ -62,6 +62,20 @@ def pick_enemy_faction(conn, player_divinity: str) -> str:
     return random.choice(divinities)
 
 
+def resolve_defense_reward(waves_completed: int, is_victory: bool) -> dict:
+    """La ricompensa della difesa: una quota per ogni ondata respinta,
+    più un bonus vero solo se la difendi fino in fondo (stesso
+    principio già usato per i tornei e le Prove degli Inferi - un
+    tentativo parziale vale comunque qualcosa, molto meno di un
+    successo completo)."""
+    denaro = DEFENSE_REWARD_DENARO_PER_WAVE * waves_completed
+    cosmo_max = 0
+    if is_victory:
+        denaro += DEFENSE_REWARD_DENARO_CHAMPION
+        cosmo_max = DEFENSE_REWARD_COSMO_MAX_CHAMPION
+    return {"denaro": denaro, "cosmo_max": cosmo_max}
+
+
 def get_defense_team_candidates(conn, knight: dict, armor: dict, limit_faction: int = 12) -> list[dict]:
     """I possibili alleati per "Seleziona Team" (richiesto in chat) -
     un campione di Cavalieri della TUA fazione, più chiunque abbia
