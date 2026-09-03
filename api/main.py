@@ -43,7 +43,7 @@ from core.tavern import (
     ensure_tavern_bartender, ensure_tavern_seating, maybe_reshuffle_tavern, TABLE_LAYOUT,
     TAVERN_QUICK_INTENTS, TAVERN_TONES,
 )
-from core.world_sim import apply_npc_damage, ensure_institutional_alignments
+from core.world_sim import apply_npc_damage, ensure_institutional_alignments, ensure_divinity_alignments
 from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
     get_defense_team_candidates, start_defense_mission, resolve_squad_action,
@@ -63,6 +63,7 @@ from core.arena_manager import (
 )
 from core.version import APP_VERSION
 from core.institutional_npcs import get_institutional_npcs
+from core.divinities import get_divinity_npcs
 from core.app_logger import get_logger
 
 log = get_logger(__name__)
@@ -124,6 +125,7 @@ def _init_schema_once() -> None:
     refresh_armors_catalog(conn)
     ensure_roster_populated(conn)
     ensure_institutional_alignments(conn)
+    ensure_divinity_alignments(conn)
     conn.close()
 
 
@@ -1666,6 +1668,16 @@ def api_get_institutional_npcs():
     Grande Sacerdote, Pandora, ecc. Nessun accesso al DB, sono dati
     fissi del gioco, non legati a nessun personaggio."""
     return get_institutional_npcs()
+
+
+@app.get("/divinity-npcs")
+def api_get_divinity_npcs():
+    """Le Divinità del mondo di gioco (richiesto in chat: "differenzia
+    le divinità dalle armature" - il vertice vero di ogni fazione, non
+    giocabile per ora). Nessun accesso al DB per il testo, sono dati
+    fissi come le Figure Istituzionali - il vero allineamento persistito
+    non viene mai restituito qui, resta sempre nascosto."""
+    return get_divinity_npcs()
 
 
 @app.get("/geo-origins")
