@@ -43,7 +43,7 @@ from core.tavern import (
     ensure_tavern_bartender, ensure_tavern_seating, maybe_reshuffle_tavern, TABLE_LAYOUT,
     TAVERN_QUICK_INTENTS, TAVERN_TONES,
 )
-from core.world_sim import apply_npc_damage
+from core.world_sim import apply_npc_damage, ensure_institutional_alignments
 from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
     get_defense_team_candidates, start_defense_mission, resolve_squad_action,
@@ -123,6 +123,7 @@ def _init_schema_once() -> None:
     init_db(conn)
     refresh_armors_catalog(conn)
     ensure_roster_populated(conn)
+    ensure_institutional_alignments(conn)
     conn.close()
 
 
