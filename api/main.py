@@ -72,8 +72,8 @@ from core.missions import (
     TOURNAMENT_MISSIONS, is_eligible_for_tournament,
     generate_tournament_bracket, save_tournament_bracket, load_tournament_bracket, build_tournament_opponent,
     resolve_tournament_reward, tournament_round_label, tournament_round_label_with_preposition,
-    INFERI_MISSION_ID, INFERI_STAGES, INFERI_AMBUSH_THRESHOLD, JUDGE_ARMORS, SPECTER_AMBUSH_ARMORS,
-    get_inferi_stage, inferi_skill_check_threshold, resolve_inferi_skill_check, resolve_inferi_reward,
+    INFERI_MISSION_ID, INFERI_STAGES, INFERI_PUZZLES, INFERI_AMBUSH_THRESHOLD, JUDGE_ARMORS, SPECTER_AMBUSH_ARMORS,
+    get_inferi_stage, pick_inferi_puzzle, check_inferi_answer, resolve_inferi_reward,
 )
 from core.alignment import persuasion_flavor_line
 from core.apprentice_fates import (
@@ -684,6 +684,18 @@ def _mission_flags_set(knight: dict) -> set[str]:
     return set(f for f in knight["mission_flags"].split(",") if f)
 
 
+def _parse_inferi_flags(mission_flags: str) -> tuple[int | None, int | None]:
+    """Le Prove degli Inferi (richiesto in chat, enigmi veri invece del
+    tiro di dado) riusano mission_flags per un formato tutto loro,
+    "stage:puzzle_index" - a differenza delle missioni a grafo, che lo
+    usano come insieme di flag testuali. Restituisce (None, None) se
+    il formato non corrisponde (nessun enigma ancora assegnato)."""
+    parts = mission_flags.split(":")
+    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+        return int(parts[0]), int(parts[1])
+    return None, None
+
+
 @app.get("/characters/{knight_id}/mission")
 def api_get_mission(knight_id: int, conn=Depends(get_db)):
     """Lo stato della missione in corso, quale che sia (richiesto in
@@ -723,17 +735,32 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
     if knight["mission_id"] == INFERI_MISSION_ID:
         stage = get_inferi_stage(knight["mission_stage"])
         alert = knight["mission_counter"]
+        puzzle_data = None
+        if stage is not None and alert < INFERI_AMBUSH_THRESHOLD:
+            # Un enigma vero (richiesto in chat), non un tiro di dado -
+            # va scelto UNA SOLA volta per prova e persistito
+            # (mission_flags), altrimenti ogni ricarica della pagina
+            # pescherebbe un enigma diverso e la risposta del giocatore
+            # non avrebbe più senso rispetto a quello mostrato.
+            stored_stage, stored_puzzle_index = _parse_inferi_flags(knight["mission_flags"])
+            if stored_stage == knight["mission_stage"] and stored_puzzle_index is not None:
+                question, options, _correct = INFERI_PUZZLES[knight["mission_stage"] - 1][stored_puzzle_index]
+            else:
+                stored_puzzle_index, picked = pick_inferi_puzzle(knight["mission_stage"])
+                question, options = picked["question"], picked["options"]
+                knight["mission_flags"] = f"{knight['mission_stage']}:{stored_puzzle_index}"
+                save_knight(conn, knight)
+            puzzle_data = {"question": question, "options": options}
         return {
             "active": True, "mission_id": INFERI_MISSION_ID,
             "inferi": {
                 "stage_index": knight["mission_stage"], "total_stages": len(INFERI_STAGES),
                 "stage_name": stage["name"] if stage else "La Sala dei Tre Giudici",
                 "stage_text": stage["text"] if stage else "Hai attraversato tutte le prove. Solo un Giudice ti separa dal successo.",
-                "stat": stage["stat"] if stage else None,
                 "alert": alert, "ambush_threshold": INFERI_AMBUSH_THRESHOLD,
                 "is_ambush": stage is not None and alert >= INFERI_AMBUSH_THRESHOLD,
                 "is_final_boss": stage is None,
-                "next_threshold": inferi_skill_check_threshold(alert) if stage else None,
+                "puzzle": puzzle_data,
             },
         }
 
@@ -1004,12 +1031,19 @@ def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(g
     return {"next_node": option["next"], "text": option.get("outcome_text", "")}
 
 
+class MissionAttemptRequest(BaseModel):
+    answer_index: int | None = None
+
+
 @app.post("/characters/{knight_id}/mission/attempt")
-def api_mission_attempt(knight_id: int, conn=Depends(get_db)):
+def api_mission_attempt(knight_id: int, req: MissionAttemptRequest = MissionAttemptRequest(), conn=Depends(get_db)):
     """Un vero tiro di dado per un nodo 'skill_check' di una missione a
-    grafo, o per una prova delle Prove degli Inferi (richiesto in chat)
-    - nel primo caso porta a nodi SUCCESSIVI DIVERSI, nel secondo fa
-    salire l'allerta sui fallimenti (fino a scatenare un'imboscata)."""
+    grafo, o la risposta a un enigma vero per le Prove degli Inferi
+    (richiesto in chat: "non un lanciadadi... mettiamo indovinelli" -
+    non più un tiro pesato dalla statistica, una vera prova di logica
+    che il giocatore deve risolvere) - nel primo caso porta a nodi
+    SUCCESSIVI DIVERSI, nel secondo fa salire l'allerta sui fallimenti
+    (fino a scatenare un'imboscata)."""
     knight = _get_knight_or_404(conn, knight_id)
     _require_mission_ready(knight)
 
@@ -1019,16 +1053,25 @@ def api_mission_attempt(knight_id: int, conn=Depends(get_db)):
         stage = get_inferi_stage(knight["mission_stage"])
         if stage is None:
             raise HTTPException(status_code=400, detail="Questa fase prevede uno scontro, non una prova.")
-        success = resolve_inferi_skill_check(knight, stage["stat"], knight["mission_counter"])
+        if req.answer_index is None:
+            raise HTTPException(status_code=400, detail="Manca la risposta all'enigma.")
+        stored_stage, stored_puzzle_index = _parse_inferi_flags(knight["mission_flags"])
+        if stored_stage != knight["mission_stage"] or stored_puzzle_index is None:
+            raise HTTPException(status_code=400, detail="Nessun enigma assegnato - ricarica la missione e riprova.")
+
+        _question, options, correct_index = INFERI_PUZZLES[knight["mission_stage"] - 1][stored_puzzle_index]
+        success = check_inferi_answer(knight["mission_stage"], stored_puzzle_index, req.answer_index)
+        knight["mission_flags"] = ""  # l'enigma è stato usato - il prossimo GET ne sceglie uno nuovo tra i 10
         if success:
             knight["mission_stage"] += 1
             knight["mission_counter"] = max(0, knight["mission_counter"] - 1)
         else:
             knight["mission_counter"] += 1
         save_knight(conn, knight)
+        text = stage["text"] if success else f"Risposta sbagliata - quella giusta era: \"{options[correct_index]}\"."
         return {
             "success": success,
-            "text": stage["text"],
+            "text": text,
             "alert": knight["mission_counter"],
             "ambush_triggered": knight["mission_counter"] >= INFERI_AMBUSH_THRESHOLD,
         }
