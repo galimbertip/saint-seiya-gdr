@@ -205,6 +205,15 @@ def start_defense_mission(conn, knight: dict, armor: dict, chosen_ally_armor_nam
     state = {
         "setting": setting,
         "enemy_faction": enemy_faction,
+        # L'intera squadra alleata (te + i due alleati), FISSA per
+        # tutta la missione (richiesto in chat): un alleato scelto per
+        # legame forte può venire da un'ALTRA fazione, anche proprio
+        # quella nemica di questa missione - se poi cade in battaglia,
+        # il suo nome/armatura non deve MAI ricomparire come nemico in
+        # un'ondata successiva. A differenza dei nemici (che possono
+        # ripetersi tra un'ondata e l'altra, va bene), questi nomi
+        # restano esclusi per sempre, vivi o caduti che siano.
+        "roster_armor_names": [u["armor_name"] for u in allies],
         "wave_number": 1,
         "total_waves": TOTAL_WAVES,
         "units": {u["id"]: u for u in all_units},
@@ -431,7 +440,7 @@ def _check_wave_and_mission_outcome(conn, state: dict) -> None:
 
     state["wave_number"] += 1
     state["log"].append(f"L'ondata è respinta! Un'altra ondata di {state['enemy_faction']} si avvicina.")
-    used_armor_names = {u["armor_name"] for u in state["units"].values() if u["is_alive"]}
+    used_armor_names = {u["armor_name"] for u in state["units"].values() if u["is_alive"]} | set(state["roster_armor_names"])
     new_enemies = _build_wave_enemies(conn, state["enemy_faction"], state["wave_number"], used_armor_names)
     for enemy in new_enemies:
         state["units"][enemy["id"]] = enemy
