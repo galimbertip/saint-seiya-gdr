@@ -29,9 +29,10 @@ specifico dell'opera originale.
 import random
 import sqlite3
 
-from database.db_manager import get_roster_entry, get_armor, get_techniques_for_armor
+from database.db_manager import get_roster_entry, get_armor, get_techniques_for_armor, get_world_minutes
 from core.arena_manager import generate_full_name, generate_distinct_full_names
 from core.alignment import random_alignment
+from core.world_sim import apply_npc_regen
 
 TOTAL_STAGES = 20
 
@@ -501,28 +502,40 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
     partire da un'armatura reale del catalogo - stessa forma di
     arena_manager.generate_opponent. Condivisa tra la Prova Finale
     dell'apprendistato e i duelli delle Missioni (richiesto in chat),
-    invece di duplicare la stessa logica in più punti."""
+    invece di duplicare la stessa logica in più punti. Le tre barre
+    (richiesto in chat) ora sono quelle VERE e persistite del PNG, non
+    più sempre generate al massimo - un PNG che ha perso un duello di
+    recente arriva debole, proprio come farebbe il giocatore."""
     armor = get_armor(armor_name, conn)
     techniques = [dict(t) for t in get_techniques_for_armor(armor_name, conn)]
-    cosmo = 100 + armor["level"]
     con_value = 10 + armor["level"] // 10
-    vita = 100 + con_value * 2  # stessa formula di VITA_BASE/VITA_PER_CON in character_factory.py
-    # L'allineamento persistente del PNG (richiesto in chat, effetti
-    # più ampi) - a differenza degli avversari d'Arena generati al
-    # volo, un Maestro/Guardiano ESISTE nel roster e ha un'identità
-    # fissa: usa quella, non una a caso ogni volta.
-    roster_entry = get_roster_entry(conn, armor_name)
-    alignment = roster_entry["npc_alignment"] if roster_entry and roster_entry["npc_alignment"] else random_alignment()
+
+    world_minutes = get_world_minutes(conn)
+    roster_entry = apply_npc_regen(conn, armor_name, world_minutes)
+    if roster_entry and roster_entry["npc_vita_max"] > 0:
+        # Le statistiche vere e persistite (richiesto in chat) - già
+        # aggiornate dal recupero nel tempo appena applicato sopra.
+        cosmo_cur, cosmo_max = roster_entry["npc_cosmo_cur"], roster_entry["npc_cosmo_max"]
+        vita_cur, vita_max = roster_entry["npc_vita_cur"], roster_entry["npc_vita_max"]
+        alignment = roster_entry["npc_alignment"] or random_alignment()
+    else:
+        # Sentinella "mai inizializzato" (non dovrebbe succedere dopo
+        # ensure_roster_populated, ma resta un ripiego sicuro) - stessa
+        # formula di prima, generata al volo senza persisterla.
+        cosmo_cur = cosmo_max = 100 + armor["level"]
+        vita_cur = vita_max = 100 + con_value * 2
+        alignment = (roster_entry["npc_alignment"] if roster_entry else "") or random_alignment()
+
     return {
         "name": f"{display_name} di {armor_name}",
         "armor_name": armor_name,
         "divinity": armor["divinity"],
         "faction": armor["faction"],
         "armor_level": armor["level"],
-        "cosmo_cur": cosmo,
-        "cosmo_max": cosmo,
-        "vita_cur": vita,
-        "vita_max": vita,
+        "cosmo_cur": cosmo_cur,
+        "cosmo_max": cosmo_max,
+        "vita_cur": vita_cur,
+        "vita_max": vita_max,
         "str": 10 + armor["level"] // 10,
         "dex": 10 + armor["level"] // 10,
         "con": con_value,
@@ -531,6 +544,14 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
         "origin": "",
         "techniques": techniques,
         "alignment": alignment,
+        # Marcatore esplicito (richiesto in chat, tre barre vere per i
+        # PNG): questo avversario è il PNG CANONICO del roster, non un
+        # nome nuovo generato al volo come per gli avversari casuali
+        # dell'Arena (core.arena_manager.generate_opponent) - solo per
+        # questi ha senso persistere il danno subito, dato che
+        # rappresentano sempre la STESSA persona da uno scontro
+        # all'altro.
+        "is_roster_linked": True,
     }
 
 
