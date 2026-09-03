@@ -348,7 +348,7 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
                     elif ice_mode == "svantaggio":
                         cause_phrase = "scivola sul ghiaccio, meno preciso"
 
-                dmg, msg = resolve_turn(
+                dmg, msg, _natural_roll = resolve_turn(
                     knight["raw_name"], knight["str"], knight["tec"], armor["level"],
                     opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
                     technique_name, technique_power, roll_mode=combined_mode, cause_phrase=cause_phrase,
@@ -526,7 +526,7 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
     if roll_mode == "normale" and ice_mode == "svantaggio":
         cause_phrase = "scivola sul ghiaccio, meno preciso"
 
-    dmg2, msg2 = resolve_turn(
+    dmg2, msg2, _natural_roll2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["tec"], opponent["armor_level"],
         knight["raw_name"], knight["dex"], knight["con"], armor["level"], t["name"], t["power"],
         roll_mode=combined_mode, cause_phrase=cause_phrase,
@@ -664,7 +664,7 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
                 elif ice_mode3 == "svantaggio":
                     cause_phrase3 = "scivola sul ghiaccio, meno preciso"
 
-            dmg3, msg3 = resolve_turn(
+            dmg3, msg3, _natural_roll3 = resolve_turn(
                 knight["raw_name"], knight["str"], knight["tec"], armor["level"],
                 opponent["name"], opponent["dex"], opponent["con"], opponent["armor_level"],
                 counter_technique_name, counter_technique_power, roll_mode=combined_mode3, cause_phrase=cause_phrase3,
