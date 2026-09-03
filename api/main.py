@@ -72,6 +72,8 @@ from core.missions import (
     TOURNAMENT_MISSIONS, is_eligible_for_tournament,
     generate_tournament_bracket, save_tournament_bracket, load_tournament_bracket, build_tournament_opponent,
     resolve_tournament_reward, tournament_round_label, tournament_round_label_with_preposition,
+    INFERI_MISSION_ID, INFERI_STAGES, INFERI_AMBUSH_THRESHOLD, JUDGE_ARMORS, SPECTER_AMBUSH_ARMORS,
+    get_inferi_stage, inferi_skill_check_threshold, resolve_inferi_skill_check, resolve_inferi_reward,
 )
 from core.alignment import persuasion_flavor_line
 from core.apprentice_fates import (
@@ -297,6 +299,8 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
                     extra["mission_ending_text"] = ending_text
         elif knight["mission_id"] in TOURNAMENT_MISSIONS:
             extra.update(_conclude_tournament_round(conn, knight, winner))
+        elif knight["mission_id"] == INFERI_MISSION_ID:
+            extra.update(_conclude_inferi_duel(conn, knight, winner))
     else:
         _record_fight_outcome(conn, knight, opponent_name, winner)
 
@@ -716,6 +720,23 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
             },
         }
 
+    if knight["mission_id"] == INFERI_MISSION_ID:
+        stage = get_inferi_stage(knight["mission_stage"])
+        alert = knight["mission_counter"]
+        return {
+            "active": True, "mission_id": INFERI_MISSION_ID,
+            "inferi": {
+                "stage_index": knight["mission_stage"], "total_stages": len(INFERI_STAGES),
+                "stage_name": stage["name"] if stage else "La Sala dei Tre Giudici",
+                "stage_text": stage["text"] if stage else "Hai attraversato tutte le prove. Solo un Giudice ti separa dal successo.",
+                "stat": stage["stat"] if stage else None,
+                "alert": alert, "ambush_threshold": INFERI_AMBUSH_THRESHOLD,
+                "is_ambush": stage is not None and alert >= INFERI_AMBUSH_THRESHOLD,
+                "is_final_boss": stage is None,
+                "next_threshold": inferi_skill_check_threshold(alert) if stage else None,
+            },
+        }
+
     return {"active": False}
 
 
@@ -731,7 +752,8 @@ def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get
     _require_mission_ready(knight)
     if knight["mission_id"]:
         raise HTTPException(status_code=400, detail="Hai già una missione in corso.")
-    if req.mission_id != MISSION_ID and req.mission_id not in GRAPH_MISSIONS and req.mission_id not in TOURNAMENT_MISSIONS:
+    known_missions = {MISSION_ID, INFERI_MISSION_ID} | set(GRAPH_MISSIONS) | set(TOURNAMENT_MISSIONS)
+    if req.mission_id not in known_missions:
         raise HTTPException(status_code=400, detail="Missione sconosciuta.")
     if req.mission_id in TOURNAMENT_MISSIONS and not is_eligible_for_tournament(conn, knight, req.mission_id):
         raise HTTPException(status_code=400, detail="Non sei idoneo a iscriverti a questo torneo.")
@@ -739,6 +761,9 @@ def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get
     knight["mission_id"] = req.mission_id
     if req.mission_id == MISSION_ID:
         knight["mission_stage"] = 1
+    elif req.mission_id == INFERI_MISSION_ID:
+        knight["mission_stage"] = 1
+        knight["mission_counter"] = 0
     elif req.mission_id in TOURNAMENT_MISSIONS:
         knight["mission_stage"] = 1
         bracket = generate_tournament_bracket(conn, knight, req.mission_id)
@@ -770,6 +795,61 @@ def _complete_scalata_if_done(conn, knight: dict) -> bool:
         f"la Scalata delle Dodici Case, guadagnando {COSMO_MAX_REWARD} Cosmo massimo e {DENARO_REWARD} Dracme.",
     )
     return True
+
+
+def _conclude_inferi_duel(conn, knight: dict, winner: str) -> dict:
+    """Gestisce l'esito di uno scontro delle Prove degli Inferi
+    (richiesto in chat) - sia un'imboscata (che, se vinta, fa scendere
+    l'allerta e permette di ritentare la stessa prova, non di avanzare
+    gratis) sia il duello finale contro un Giudice (che, se vinto,
+    chiude la missione con la ricompensa piena). Perdere QUALUNQUE
+    scontro qui - imboscata o Giudice - chiude comunque la missione:
+    un'infiltrazione scoperta non si ritenta (stesso principio dei
+    tornei, coerente col tema: ti hanno preso)."""
+    stage_index = knight["mission_stage"]
+    is_final_boss = get_inferi_stage(stage_index) is None
+    cal = get_calendar_display(knight["game_minutes"])
+    extra: dict = {"tournament_champion": False}
+
+    if winner == "player":
+        if is_final_boss:
+            reward = resolve_inferi_reward(len(INFERI_STAGES), is_champion=True)
+            knight["denaro"] += reward["denaro"]
+            if reward["cosmo_max"]:
+                knight["cosmo_max"] += reward["cosmo_max"]
+                knight["cosmo_cur"] = knight["cosmo_max"]
+            knight["mission_id"] = ""
+            knight["mission_stage"] = 0
+            knight["mission_counter"] = 0
+            add_biography_entry(
+                conn, knight["id"], knight["game_minutes"],
+                f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
+                f"attraversa le Prove degli Inferi e sconfigge un Giudice nella Sala dei Tre Giudici.",
+            )
+            extra["mission_completed"] = True
+            extra["mission_ending_text"] = "Hai sconfitto un Giudice degli Inferi. L'infiltrazione è un successo completo."
+            extra["tournament_champion"] = True
+        else:
+            knight["mission_counter"] = INFERI_AMBUSH_RESET_ALERT
+    else:
+        stages_completed = stage_index - 1
+        reward = resolve_inferi_reward(stages_completed, is_champion=False)
+        knight["denaro"] += reward["denaro"]
+        knight["mission_id"] = ""
+        knight["mission_stage"] = 0
+        knight["mission_counter"] = 0
+        outcome_label = "un Giudice degli Inferi" if is_final_boss else "uno Spettro in agguato"
+        add_biography_entry(
+            conn, knight["id"], knight["game_minutes"],
+            f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} viene "
+            f"sopraffatto da {outcome_label} durante l'infiltrazione negli Inferi, con {stages_completed} "
+            f"prove superate prima di essere scoperto.",
+        )
+        extra["mission_completed"] = True
+        extra["mission_ending_text"] = f"Sei stato sopraffatto. Prove superate prima di essere scoperto: {stages_completed}."
+        extra["tournament_champion"] = False
+
+    return extra
 
 
 def _conclude_tournament_round(conn, knight: dict, winner: str) -> dict:
@@ -927,11 +1007,32 @@ def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(g
 @app.post("/characters/{knight_id}/mission/attempt")
 def api_mission_attempt(knight_id: int, conn=Depends(get_db)):
     """Un vero tiro di dado per un nodo 'skill_check' di una missione a
-    grafo (richiesto in chat) - a seconda dell'esito, porta a nodi
-    SUCCESSIVI DIVERSI (non solo testo diverso sulla stessa strada).
-    Generica (richiesto in chat, "molte più missioni")."""
+    grafo, o per una prova delle Prove degli Inferi (richiesto in chat)
+    - nel primo caso porta a nodi SUCCESSIVI DIVERSI, nel secondo fa
+    salire l'allerta sui fallimenti (fino a scatenare un'imboscata)."""
     knight = _get_knight_or_404(conn, knight_id)
     _require_mission_ready(knight)
+
+    if knight["mission_id"] == INFERI_MISSION_ID:
+        if knight["mission_counter"] >= INFERI_AMBUSH_THRESHOLD:
+            raise HTTPException(status_code=400, detail="Sei stato scoperto - devi affrontare chi ti ha intercettato.")
+        stage = get_inferi_stage(knight["mission_stage"])
+        if stage is None:
+            raise HTTPException(status_code=400, detail="Questa fase prevede uno scontro, non una prova.")
+        success = resolve_inferi_skill_check(knight, stage["stat"], knight["mission_counter"])
+        if success:
+            knight["mission_stage"] += 1
+            knight["mission_counter"] = max(0, knight["mission_counter"] - 1)
+        else:
+            knight["mission_counter"] += 1
+        save_knight(conn, knight)
+        return {
+            "success": success,
+            "text": stage["text"],
+            "alert": knight["mission_counter"],
+            "ambush_triggered": knight["mission_counter"] >= INFERI_AMBUSH_THRESHOLD,
+        }
+
     if knight["mission_id"] not in GRAPH_MISSIONS:
         raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
 
@@ -999,6 +1100,29 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         round_label = tournament_round_label(tournament_id, round_number)
         intro = (f"{round_label.capitalize()} del {settings['name']} - "
                  f"{round_number}º di {settings['rounds']}: affronti {opponent['name']}.")
+        return {"battle_state": battle_state, "intro": intro}
+
+    if knight["mission_id"] == INFERI_MISSION_ID:
+        stage = get_inferi_stage(knight["mission_stage"])
+        if stage is None:
+            # Oltre l'ultima prova: il duello finale contro uno dei Tre
+            # Giudici degli Inferi.
+            judge_armor_name = random.choice(JUDGE_ARMORS)
+            guardian_name = get_house_guardian(conn, judge_armor_name)
+            opponent = build_opponent_from_armor(conn, judge_armor_name, guardian_name)
+            battle_state = start_battle(conn, knight, armor, opponent=opponent)
+            battle_state["is_mission"] = True
+            intro = (f"Hai attraversato tutte le prove degli Inferi. Nella Sala dei Tre Giudici, "
+                      f"{opponent['name']} ti attende - l'ultima, vera barriera.")
+            return {"battle_state": battle_state, "intro": intro}
+        if knight["mission_counter"] < INFERI_AMBUSH_THRESHOLD:
+            raise HTTPException(status_code=400, detail="Non sei ancora stato scoperto - tenta la prova, non lo scontro.")
+        specter_armor_name = random.choice(SPECTER_AMBUSH_ARMORS)
+        guardian_name = get_house_guardian(conn, specter_armor_name)
+        opponent = build_opponent_from_armor(conn, specter_armor_name, guardian_name)
+        battle_state = start_battle(conn, knight, armor, opponent=opponent)
+        battle_state["is_mission"] = True
+        intro = f"L'allerta è troppo alta - {opponent['name']} ti intercetta prima che tu possa proseguire."
         return {"battle_state": battle_state, "intro": intro}
 
     raise HTTPException(status_code=400, detail="Missione sconosciuta.")
