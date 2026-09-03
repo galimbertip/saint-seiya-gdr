@@ -322,6 +322,14 @@ const state = {
   tavernArmorName: null,     // con quale armatura/PNG stai parlando ora, null se nessuna
   tavernConversation: null,  // la conversazione corrente (nome, affinità, messaggi), null finché non caricata
   tavernSelectedTone: "neutro", // il tono/atteggiamento scelto (richiesto in chat, stile Football Manager) - si applica al prossimo messaggio, sia da pulsante che da testo libero
+  defenseScreen: null,        // null | "team_select" | "battle" - la Difesa a Ondate ha un flusso proprio, separato dalle altre missioni (lo stato di battaglia va e viene col client, come l'Arena)
+  defenseTeamCandidates: null,
+  defenseTeamMode: "random",  // "random" | "selected"
+  defenseSelectedAllies: [],  // array di armor_name, max 2
+  defenseBattle: null,        // lo stato della battaglia (units, initiative_order, ecc.)
+  defenseTargetMode: "singolo", // "singolo" | "area" - scelto prima di attaccare
+  defenseSelectedTargetId: null, // il bersaglio scelto per il prossimo attacco (solo modalità singolo)
+  defenseResult: null,        // { reward, character } quando la battaglia finisce
   tavernInput: "",           // il testo che stai scrivendo
   tavernMissionOffer: null,  // l'offerta di missione appena arrivata dal PNG (richiesto in chat), null se nessuna
   biography: null,           // il Diario del personaggio corrente (abbozzo + voci), null finché non caricato
@@ -431,6 +439,12 @@ async function selectCharacter(id) {
   state.tavernInput = "";
   state.tavernSelectedTone = "neutro";
   state.tavernMissionOffer = null;
+  state.defenseScreen = null;
+  state.defenseTeamCandidates = null;
+  state.defenseSelectedAllies = [];
+  state.defenseBattle = null;
+  state.defenseSelectedTargetId = null;
+  state.defenseResult = null;
   await refreshCharacter();
   state.screen = "game";
   state.gameTab = "sheet";
@@ -1831,6 +1845,85 @@ async function startMissionDuel() {
   }
 }
 
+function openDefenseTeamSelect() {
+  // La Difesa a Ondate (richiesto in chat) ha un flusso tutto suo,
+  // separato dalle altre missioni - prima la selezione del team, poi
+  // la battaglia vera e propria.
+  state.defenseScreen = "team_select";
+  state.defenseTeamCandidates = null;
+  state.defenseTeamMode = "random";
+  state.defenseSelectedAllies = [];
+  render();
+  loadDefenseTeamCandidates();
+}
+
+async function loadDefenseTeamCandidates() {
+  try {
+    const result = await api(`/characters/${state.characterId}/defense-team-options`);
+    state.defenseTeamCandidates = result.candidates;
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+async function startDefenseMission() {
+  const body = state.defenseTeamMode === "selected"
+    ? { mode: "selected", ally_armor_names: state.defenseSelectedAllies }
+    : { mode: "random" };
+  try {
+    const result = await api(`/characters/${state.characterId}/defense/start`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    state.defenseBattle = result.battle_state;
+    state.defenseScreen = "battle";
+    state.defenseTargetMode = "singolo";
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+async function performDefenseAction(actorId, action, opts = {}) {
+  const body = {
+    battle_state: state.defenseBattle,
+    actor_id: actorId,
+    action: action,
+    target_id: opts.targetId || null,
+    technique_name: opts.techniqueName || null,
+    technique_power: opts.techniquePower != null ? opts.techniquePower : null,
+    technique_type: opts.techniqueType || null,
+    target_mode: opts.targetMode || "singolo",
+  };
+  try {
+    const result = await api(`/characters/${state.characterId}/defense/action`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    state.defenseBattle = result.battle_state;
+    state.defenseTargetMode = "singolo";
+    state.defenseSelectedTargetId = null;
+    if (result.reward) {
+      state.defenseResult = { reward: result.reward };
+      state.character = result.character;
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+
+function closeDefenseMission() {
+  state.defenseScreen = null;
+  state.defenseBattle = null;
+  state.defenseTeamCandidates = null;
+  state.defenseSelectedAllies = [];
+  state.defenseResult = null;
+  state.missionStatus = null;
+  render();
+}
+
 async function abandonMission() {
   try {
     await api(`/characters/${state.characterId}/mission/abandon`, { method: "POST" });
@@ -2657,6 +2750,17 @@ function renderSoldierTab() {
 
 function renderMissionsTab() {
   const wrap = el("div");
+
+  // La Difesa a Ondate ha un flusso tutto suo, separato dal resto
+  // delle missioni (richiesto in chat) - selezione team, poi
+  // battaglia multi-unità, prima di tornare all'elenco normale.
+  if (state.defenseScreen === "team_select") {
+    return renderDefenseTeamSelect();
+  }
+  if (state.defenseScreen === "battle") {
+    return renderDefenseBattle();
+  }
+
   wrap.append(el("h1", {}, "Missioni"));
 
   // Un combattimento di missione è in corso (richiesto in chat) -
@@ -2742,6 +2846,12 @@ function renderMissionsTab() {
     card6.append(el("p", {}, "Infiltrati negli Inferi di Ade fino alla Sala dei Tre Giudici. Cinque prove, non duelli: ogni fallimento fa salire il livello di allerta - se sale troppo, uno Spettro ti intercetta. Farsi scoprire due volte, o perdere contro un Giudice, chiude la missione."));
     card6.append(el("button", { onClick: () => startMission("prove_degli_inferi") }, "💀 Infiltrati negli Inferi"));
     wrap.append(card6);
+
+    const card7 = el("div", { class: "card" });
+    card7.append(el("h2", {}, "Difesa a Ondate"));
+    card7.append(el("p", {}, "Un'ambientazione e una fazione nemica sempre diverse (mai la tua), 3 contro 3, iniziativa vera - respingi 4 ondate al fianco di due alleati. La squadra è fissa: chi cade resta caduto."));
+    card7.append(el("button", { onClick: openDefenseTeamSelect }, "🛡️ Prepara la Difesa"));
+    wrap.append(card7);
     return wrap;
   }
 
@@ -2826,6 +2936,172 @@ function renderGraphMissionNode(node) {
     card.append(el("p", {}, node.text));
   }
   return card;
+}
+
+function renderDefenseTeamSelect() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Difesa a Ondate — Selezione Team"));
+  wrap.append(el("button", { class: "secondary", onClick: closeDefenseMission }, "◄ Annulla"));
+
+  const modeRow = el("div", { class: "row", style: "margin:12px 0;" });
+  modeRow.append(el("button", {
+    class: state.defenseTeamMode === "random" ? "" : "secondary",
+    onClick: () => { state.defenseTeamMode = "random"; state.defenseSelectedAllies = []; render(); },
+  }, "🎲 Team Casuale"));
+  modeRow.append(el("button", {
+    class: state.defenseTeamMode === "selected" ? "" : "secondary",
+    onClick: () => { state.defenseTeamMode = "selected"; render(); },
+  }, "✋ Seleziona Team"));
+  wrap.append(modeRow);
+
+  if (state.defenseTeamMode === "random") {
+    wrap.append(el("p", { class: "hint" }, "Due alleati pescati a caso dalla tua fazione."));
+  } else if (state.defenseTeamCandidates === null) {
+    wrap.append(el("p", { class: "hint" }, "Caricamento dei candidati..."));
+  } else {
+    wrap.append(el("p", { class: "hint" }, `Scegli esattamente 2 alleati (${state.defenseSelectedAllies.length}/2 scelti). I legami forti in Taverna possono venire anche da un'altra fazione.`));
+    const listCard = el("div", { class: "card" });
+    for (const c of state.defenseTeamCandidates) {
+      const isSelected = state.defenseSelectedAllies.includes(c.armor_name);
+      const label = c.source === "legame"
+        ? `${c.npc_name} - ${c.armor_name} (legame forte, affinità ${c.affinity})`
+        : `${c.npc_name} - ${c.armor_name}`;
+      listCard.append(el("button", {
+        class: isSelected ? "" : "secondary",
+        onClick: () => {
+          if (isSelected) {
+            state.defenseSelectedAllies = state.defenseSelectedAllies.filter((n) => n !== c.armor_name);
+          } else if (state.defenseSelectedAllies.length < 2) {
+            state.defenseSelectedAllies = [...state.defenseSelectedAllies, c.armor_name];
+          }
+          render();
+        },
+      }, label));
+    }
+    wrap.append(listCard);
+  }
+
+  const canStart = state.defenseTeamMode === "random" || state.defenseSelectedAllies.length === 2;
+  const startBtn = el("button", { onClick: startDefenseMission }, "⚔ Inizia la Difesa");
+  if (!canStart) startBtn.setAttribute("disabled", "disabled");
+  wrap.append(startBtn);
+  return wrap;
+}
+
+function renderDefenseUnitCard(u, isCurrent) {
+  const card = el("div", { class: "card", style: isCurrent ? "border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);" : "" });
+  card.append(el("p", { style: "font-weight:700;margin-bottom:4px;" }, `${u.name}${u.is_alive ? "" : " 💀"}`));
+  card.append(renderMiniBar("Vita", u.vita_cur, u.vita_max, "vita"));
+  card.append(renderMiniBar("Cosmo", u.cosmo_cur, u.cosmo_max, "cosmo"));
+  const tags = [];
+  if (u.is_defending) tags.push("🛡 In difesa");
+  if (u.charged_turns > 0) tags.push(`🔥 Carico (${u.charged_turns})`);
+  if (tags.length) card.append(el("p", { class: "hint" }, tags.join(" · ")));
+  return card;
+}
+
+function renderDefenseActionPanel(currentUnit, battle) {
+  const card = el("div", { class: "card" });
+  const isPlayer = currentUnit.id === "player";
+  card.append(el("h3", {}, isPlayer ? "Il tuo turno" : `Ordina a ${currentUnit.name}`));
+
+  const opposingSide = currentUnit.side === "allies" ? "enemies" : "allies";
+  const targets = Object.values(battle.units).filter((u) => u.side === opposingSide && u.is_alive);
+
+  const modeRow = el("div", { class: "row", style: "margin-bottom:8px;flex-wrap:wrap;" });
+  modeRow.append(el("button", {
+    class: state.defenseTargetMode === "singolo" ? "" : "secondary",
+    onClick: () => { state.defenseTargetMode = "singolo"; render(); },
+  }, "🎯 Bersaglio singolo"));
+  modeRow.append(el("button", {
+    class: state.defenseTargetMode === "area" ? "" : "secondary",
+    onClick: () => { state.defenseTargetMode = "area"; render(); },
+  }, "💥 Tutto campo"));
+  card.append(modeRow);
+
+  if (state.defenseTargetMode === "singolo") {
+    card.append(el("p", { class: "hint" }, "Bersaglio:"));
+    const targetRow = el("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:8px;" });
+    for (const t of targets) {
+      const selected = state.defenseSelectedTargetId === t.id;
+      targetRow.append(el("button", {
+        class: selected ? "" : "secondary",
+        onClick: () => { state.defenseSelectedTargetId = t.id; render(); },
+      }, `${t.name} (${t.vita_cur}/${t.vita_max})`));
+    }
+    card.append(targetRow);
+  }
+
+  card.append(el("p", { class: "hint" }, "Tecnica:"));
+  const techBox = el("div", { style: "display:flex;flex-direction:column;gap:6px;margin-bottom:10px;" });
+  const allTechniques = [{ name: "Attacco Base", power: 20 }, ...(currentUnit.techniques || [])];
+  const targetReady = state.defenseTargetMode === "area" || state.defenseSelectedTargetId;
+  for (const t of allTechniques) {
+    const btn = el("button", { class: "secondary" }, `${t.name} (${t.power})`);
+    if (targetReady) {
+      btn.addEventListener("click", () => performDefenseAction(currentUnit.id, "attacca", {
+        techniqueName: t.name, techniquePower: t.power, techniqueType: t.tech_type,
+        targetMode: state.defenseTargetMode,
+        targetId: state.defenseTargetMode === "singolo" ? state.defenseSelectedTargetId : null,
+      }));
+    } else {
+      btn.setAttribute("disabled", "disabled");
+    }
+    techBox.append(btn);
+  }
+  card.append(techBox);
+
+  const otherRow = el("div", { class: "row" });
+  otherRow.append(el("button", { class: "secondary", onClick: () => performDefenseAction(currentUnit.id, "difendi") }, "🛡 Difenditi"));
+  otherRow.append(el("button", { class: "secondary", onClick: () => performDefenseAction(currentUnit.id, "carica") }, "🔥 Carica il Cosmo"));
+  card.append(otherRow);
+
+  return card;
+}
+
+function renderDefenseBattle() {
+  const battle = state.defenseBattle;
+  const wrap = el("div");
+  wrap.append(el("h1", {}, `Difesa: ${battle.setting}`));
+  wrap.append(el("p", { class: "hint" }, `Contro ${battle.enemy_faction} · Ondata ${battle.wave_number}/${battle.total_waves} · Round ${battle.round_number}`));
+
+  if (state.defenseResult) {
+    const isVictory = battle.outcome === "victory";
+    const resCard = el("div", { class: "card" });
+    resCard.append(el("h2", {}, isVictory ? "🏆 Difesa riuscita!" : "⚔ Difesa fallita"));
+    resCard.append(el("p", { class: "hint" }, `Dracme guadagnate: ${state.defenseResult.reward.denaro}${state.defenseResult.reward.cosmo_max ? ` · Cosmo massimo: +${state.defenseResult.reward.cosmo_max}` : ""}`));
+    resCard.append(el("button", { onClick: closeDefenseMission }, "Continua"));
+    wrap.append(resCard);
+    return wrap;
+  }
+
+  const currentId = battle.initiative_order[battle.turn_index % battle.initiative_order.length];
+
+  const teamsRow = el("div", { style: "display:flex;gap:16px;flex-wrap:wrap;" });
+  const alliesCol = el("div", { style: "flex:1;min-width:220px;" });
+  alliesCol.append(el("h3", {}, "La tua squadra"));
+  for (const u of Object.values(battle.units).filter((u) => u.side === "allies")) {
+    alliesCol.append(renderDefenseUnitCard(u, u.id === currentId));
+  }
+  const enemiesCol = el("div", { style: "flex:1;min-width:220px;" });
+  enemiesCol.append(el("h3", {}, battle.enemy_faction));
+  for (const u of Object.values(battle.units).filter((u) => u.side === "enemies" && u.is_alive)) {
+    enemiesCol.append(renderDefenseUnitCard(u, u.id === currentId));
+  }
+  teamsRow.append(alliesCol, enemiesCol);
+  wrap.append(teamsRow);
+
+  const logCard = el("div", { class: "card log-box" });
+  for (const line of battle.log.slice(-10)) {
+    logCard.append(el("p", { class: "hint", style: "margin:2px 0;" }, line));
+  }
+  wrap.append(logCard);
+
+  const currentUnit = battle.units[currentId];
+  if (currentUnit && currentUnit.side === "allies" && currentUnit.is_alive) {
+    wrap.append(renderDefenseActionPanel(currentUnit, battle));
+  }
+  return wrap;
 }
 
 function renderInferiStatus(inferi) {
