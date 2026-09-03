@@ -43,6 +43,7 @@ from core.tavern import (
     ensure_tavern_bartender, ensure_tavern_seating, maybe_reshuffle_tavern, TABLE_LAYOUT,
     TAVERN_QUICK_INTENTS, TAVERN_TONES,
 )
+from core.world_sim import apply_npc_damage
 from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
     get_defense_team_candidates, start_defense_mission, resolve_squad_action,
@@ -258,6 +259,15 @@ def _handle_fight_conclusion(conn, knight: dict, battle_state: dict, winner: str
     opponent_name = battle_state["opponent"]["name"]
     finalize_fight(knight)
     extra: dict = {}
+
+    # Le tre barre vere anche per i PNG (richiesto in chat) - se
+    # l'avversario era il PNG canonico del roster (non un nome casuale
+    # dell'Arena), persiste quanta Vita/Cosmo gli restano: la prossima
+    # volta che lo incontri, arriverà ancora debole se ha perso di
+    # recente, non di nuovo al massimo come se nulla fosse successo.
+    opponent = battle_state["opponent"]
+    if opponent.get("is_roster_linked") and opponent.get("armor_name"):
+        apply_npc_damage(conn, opponent["armor_name"], opponent["vita_cur"], opponent["cosmo_cur"], knight["game_minutes"])
 
     if battle_state.get("is_trial"):
         cal = get_calendar_display(knight["game_minutes"])
@@ -1942,6 +1952,14 @@ def api_defense_action(knight_id: int, req: DefenseActionRequest, conn=Depends(g
 
     result = {"battle_state": state}
     if state["outcome"] is not None:
+        # Le tre barre vere anche per i PNG (richiesto in chat) -
+        # persiste quanta Vita/Cosmo restano a OGNI unità del roster
+        # coinvolta (alleati veri e nemici, MAI il giocatore stesso -
+        # le sue statistiche vivono sul personaggio, non sul roster).
+        for unit in state["units"].values():
+            if unit["id"] != "player" and unit.get("is_roster_linked"):
+                apply_npc_damage(conn, unit["armor_name"], unit["vita_cur"], unit["cosmo_cur"], knight["game_minutes"])
+
         waves_completed = state["total_waves"] if state["outcome"] == "victory" else state["wave_number"] - 1
         reward = resolve_defense_reward(waves_completed, state["outcome"] == "victory")
         knight["denaro"] += reward["denaro"]
