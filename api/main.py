@@ -44,6 +44,11 @@ from core.tavern import (
     TAVERN_QUICK_INTENTS, TAVERN_TONES,
 )
 from core.world_sim import apply_npc_damage, ensure_institutional_alignments, ensure_divinity_alignments
+from core.renown import (
+    RENOWN_SCALATA_COMPLETE, RENOWN_GRAPH_MISSION_COMPLETE, RENOWN_TOURNAMENT_PER_ROUND,
+    RENOWN_TOURNAMENT_CHAMPION_BONUS, RENOWN_INFERI_COMPLETE, RENOWN_DEFENSE_PER_WAVE,
+    RENOWN_DEFENSE_VICTORY_BONUS, renown_title,
+)
 from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
     get_defense_team_candidates, start_defense_mission, resolve_squad_action,
@@ -199,6 +204,16 @@ class ArenaDeclareRequest(BaseModel):
 class ArenaReactRequest(BaseModel):
     action: Literal["difenditi", "contrattacca", "incassa"]
     battle_state: dict
+    defense_technique_name: Optional[str] = None
+    defense_technique_power: Optional[int] = None
+    defense_technique_type: Optional[str] = None
+    defense_technique_launch_desc: Optional[str] = None
+    defense_technique_effect_desc: Optional[str] = None
+    counter_technique_name: Optional[str] = None
+    counter_technique_power: Optional[int] = None
+    counter_technique_type: Optional[str] = None
+    counter_technique_launch_desc: Optional[str] = None
+    counter_technique_effect_desc: Optional[str] = None
 
 
 class DefenseStartRequest(BaseModel):
@@ -360,6 +375,10 @@ def _knight_payload(conn, knight: dict) -> dict:
         "senses": senses,
         "movement_points": movement_points,
         "weekly_schedule_list": parse_weekly_schedule(knight["weekly_schedule"]),
+        # Il titolo onorifico derivato dalla Renown (richiesto in chat,
+        # dalla roadmap) - calcolato qui, non salvato: cambia da solo
+        # quando la Renown supera una soglia, niente da tenere in sync.
+        "renown_title": renown_title(knight["renown"]),
         # Il dizionario già interpretato (non la stringa JSON grezza),
         # stesso principio di weekly_schedule_list qui sopra.
         "arena_backgrounds": json.loads(knight["arena_backgrounds"] or "{}"),
@@ -847,6 +866,7 @@ def _complete_scalata_if_done(conn, knight: dict) -> bool:
     knight["cosmo_max"] += COSMO_MAX_REWARD
     knight["cosmo_cur"] = knight["cosmo_max"]
     knight["denaro"] += DENARO_REWARD
+    knight["renown"] += RENOWN_SCALATA_COMPLETE
     knight["mission_id"] = ""
     knight["mission_stage"] = 0
     cal = get_calendar_display(knight["game_minutes"])
@@ -876,6 +896,7 @@ def _conclude_inferi_duel(conn, knight: dict, winner: str) -> dict:
         if is_final_boss:
             reward = resolve_inferi_reward(len(INFERI_STAGES), is_champion=True)
             knight["denaro"] += reward["denaro"]
+            knight["renown"] += RENOWN_INFERI_COMPLETE
             if reward["cosmo_max"]:
                 knight["cosmo_max"] += reward["cosmo_max"]
                 knight["cosmo_cur"] = knight["cosmo_max"]
@@ -935,6 +956,7 @@ def _conclude_tournament_round(conn, knight: dict, winner: str) -> dict:
     is_champion = winner == "player"
     reward = resolve_tournament_reward(tournament_id, rounds_completed, is_champion)
     knight["denaro"] += reward["denaro"]
+    knight["renown"] += RENOWN_TOURNAMENT_PER_ROUND * rounds_completed + (RENOWN_TOURNAMENT_CHAMPION_BONUS if is_champion else 0)
     if reward["cosmo_max"]:
         knight["cosmo_max"] += reward["cosmo_max"]
         knight["cosmo_cur"] = knight["cosmo_max"]
@@ -979,6 +1001,7 @@ def _complete_graph_mission_if_done(conn, knight: dict) -> tuple[bool, str]:
     knight["cosmo_max"] += COSMO_MAX_REWARD
     knight["cosmo_cur"] = knight["cosmo_max"]
     knight["denaro"] += DENARO_REWARD + ending["bonus"].get("denaro", 0)
+    knight["renown"] += RENOWN_GRAPH_MISSION_COMPLETE
     knight["mission_id"] = ""
     knight["mission_node"] = ""
     knight["mission_flags"] = ""
@@ -1976,6 +1999,7 @@ def api_defense_action(knight_id: int, req: DefenseActionRequest, conn=Depends(g
         waves_completed = state["total_waves"] if state["outcome"] == "victory" else state["wave_number"] - 1
         reward = resolve_defense_reward(waves_completed, state["outcome"] == "victory")
         knight["denaro"] += reward["denaro"]
+        knight["renown"] += RENOWN_DEFENSE_PER_WAVE * waves_completed + (RENOWN_DEFENSE_VICTORY_BONUS if state["outcome"] == "victory" else 0)
         if reward["cosmo_max"]:
             knight["cosmo_max"] += reward["cosmo_max"]
             knight["cosmo_cur"] = knight["cosmo_max"]
