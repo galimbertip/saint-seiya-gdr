@@ -2517,6 +2517,7 @@ function renderSheetTab() {
   // parte nella Scheda vera e propria, solo di sfuggita a fine
   // missione) - sempre visibili qui, non solo in quel momento.
   idCard.append(el("p", { class: "hint" }, `💰 ${k.denaro} Dracme`));
+  idCard.append(el("p", { class: "hint" }, `🎖️ ${k.renown_title} (Renown: ${k.renown})`));
   grid.append(idCard);
 
   // --- BG Personaggio: solo l'abbozzo scritto alla creazione, non le
