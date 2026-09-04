@@ -23,6 +23,8 @@ from database.db_manager import (
 )
 from core.arena_manager import generate_full_name
 from core.alignment import random_alignment
+from core.tavern import alignment_to_mood
+from core.personality import generate_personality
 from core.training_path import select_master, generate_companions
 from core.fm_manager import get_calendar_display
 
@@ -189,7 +191,9 @@ def ensure_roster_populated(conn: sqlite3.Connection) -> int:
     cambiare una volta assegnato). Restituisce quanti PNG nuovi sono
     stati generati in questa chiamata. Ogni PNG nuovo nasce già con le
     tre barre vere al massimo (richiesto in chat) - stessa formula già
-    usata per gli avversari veri in core.training_path."""
+    usata per gli avversari veri in core.training_path - e con un
+    Tratto/Ideale/Legame/Difetto (richiesto in chat, dalla roadmap:
+    caratterizzazione più profonda) coerente col proprio allineamento."""
     all_armors = conn.execute("SELECT name, level FROM armors").fetchall()
     world_minutes = get_world_minutes(conn)
     creati = 0
@@ -199,10 +203,14 @@ def ensure_roster_populated(conn: sqlite3.Connection) -> int:
             cosmo_max = 100 + row["level"]
             con_value = 10 + row["level"] // 10
             vita_max = 100 + con_value * 2  # stessa formula di build_opponent_from_armor
+            alignment = random_alignment()
+            personality = generate_personality(alignment_to_mood(alignment))
             insert_roster_entry(
-                conn, row["name"], npc_name, alignment=random_alignment(),
+                conn, row["name"], npc_name, alignment=alignment,
                 vita_max=vita_max, cosmo_max=cosmo_max, stamina_max=NPC_STAMINA_MAX,
                 last_regen_minutes=world_minutes,
+                trait=personality["trait"], ideal=personality["ideal"],
+                bond=personality["bond"], flaw=personality["flaw"],
             )
             creati += 1
     conn.commit()
