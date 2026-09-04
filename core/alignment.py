@@ -142,13 +142,28 @@ ALIGNMENT_COMBAT_WEIGHTS = {
 }
 
 
-def combat_action_weights(alignment: str) -> tuple[float, float]:
+FACTION_DISPOSITION_COMBAT_NUDGE = {
+    "buono": -0.03, "neutrale": 0.0, "malvagio": 0.03,
+}  # richiesto in chat, "modi di agire delle fazioni": un tocco leggero in più oltre al solo allineamento personale del PNG
+
+
+def combat_action_weights(alignment: str, faction_disposition: str = "neutrale") -> tuple[float, float]:
     """I pesi (attacca, carica) per la scelta dell'azione proattiva di
     un avversario (richiesto in chat) - quelli di default
     (Legale Neutrale/Neutrale Puro, 0.80/0.20) se l'allineamento non è
     riconosciuto o è vuoto (retrocompatibilità con avversari generati
-    prima di questa modifica)."""
-    return ALIGNMENT_COMBAT_WEIGHTS.get(alignment, (0.80, 0.20))
+    prima di questa modifica). `faction_disposition` (richiesto in
+    chat, "gli obiettivi, i modi di agire delle fazioni"): il clima
+    imposto dalla leadership della fazione (Divinità + Figura
+    Istituzionale, vedi core.world_sim.get_faction_disposition) pesa
+    anche lui, più leggermente del solo allineamento personale - non
+    lo sovrasta, lo affianca. Prende una stringa già calcolata, non
+    calcola nulla da sé (core.arena_manager non può importare da
+    core.world_sim: ciclo di import, world_sim importa già da qui)."""
+    attack_weight, charge_weight = ALIGNMENT_COMBAT_WEIGHTS.get(alignment, (0.80, 0.20))
+    nudge = FACTION_DISPOSITION_COMBAT_NUDGE.get(faction_disposition, 0.0)
+    attack_weight = min(0.95, max(0.55, attack_weight + nudge))
+    return attack_weight, 1.0 - attack_weight
 
 
 # Lo stesso vale per il peso dei destini nella simulazione del mondo
