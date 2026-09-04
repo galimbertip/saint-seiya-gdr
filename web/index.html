@@ -2152,6 +2152,174 @@ function renderHierarchyTab() {
   return wrap;
 }
 
+// ============================================================
+// ANIMAZIONE SPRITE STILE LPC (richiesto in chat: "usiamo lo stile
+// LPC Medieval Fantasy Character Sprites" per i combattenti, dopo i
+// tentativi falliti con sagome 3D e icone esterne). Canvas 2D puro,
+// nessuna libreria esterna - lo spritesheet è un'immagine a griglia
+// fissa (64x64 per fotogramma, lo standard "Universal LPC
+// Spritesheet"), ritagliata un fotogramma alla volta con drawImage.
+// ============================================================
+
+const LPC_FRAME_SIZE = 64;
+
+// La disposizione standard di un "Universal LPC Spritesheet" - ogni
+// blocco di animazione occupa 4 righe consecutive (una per
+// direzione: su, sinistra, giù, destra). Se lo spritesheet scaricato
+// dal generatore avesse un ordine leggermente diverso, va corretto
+// SOLO qui - il resto del codice non sa nulla della disposizione,
+// legge solo questa tabella.
+const LPC_LAYOUT = {
+  spellcast: { rowStart: 0, frames: 7, fps: 8 },
+  thrust: { rowStart: 4, frames: 8, fps: 10 },
+  walk: { rowStart: 8, frames: 8, fps: 8 },
+  slash: { rowStart: 12, frames: 6, fps: 12 },
+  shoot: { rowStart: 16, frames: 13, fps: 10 },
+  hurt: { rowStart: 20, frames: 6, fps: 10 },
+};
+const LPC_DIRECTION_ROW_OFFSET = { up: 0, left: 1, down: 2, right: 3 };
+
+/**
+ * Anima UNO spritesheet LPC dentro un elemento <canvas> - ritaglia il
+ * fotogramma giusto ad ogni frame di animazione e lo disegna
+ * ingrandito (pixel art nitida, niente sfocatura). Non conosce nulla
+ * del combattimento: chiama `setAnimation` per cambiare cosa mostra
+ * (es. "walk" per l'idle, "slash" quando attacca, "hurt" quando
+ * subisce un colpo), `update(deltaMs)` ad ogni frame del ciclo di
+ * rendering del chiamante.
+ */
+class LPCSpriteAnimator {
+  constructor(canvas, image, options = {}) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.image = image;
+    this.frameSize = options.frameSize || LPC_FRAME_SIZE;
+    this.scale = options.scale || 2;
+    this.currentAnim = options.initialAnim || "walk";
+    this.currentDirection = options.initialDirection || "down";
+    this.frameIndex = 0;
+    this.elapsedMs = 0;
+    this.playing = true;
+    this.onAnimationComplete = null; // richiamata una volta sola quando un'animazione NON in loop (es. slash, hurt) finisce
+
+    canvas.width = this.frameSize * this.scale;
+    canvas.height = this.frameSize * this.scale;
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
+  setAnimation(animName, direction) {
+    if (!LPC_LAYOUT[animName]) return;
+    this.currentAnim = animName;
+    if (direction) this.currentDirection = direction;
+    this.frameIndex = 0;
+    this.elapsedMs = 0;
+  }
+
+  _currentFrameRect() {
+    const anim = LPC_LAYOUT[this.currentAnim];
+    const dirOffset = LPC_DIRECTION_ROW_OFFSET[this.currentDirection] || 0;
+    const row = anim.rowStart + dirOffset;
+    return { sx: this.frameIndex * this.frameSize, sy: row * this.frameSize, sw: this.frameSize, sh: this.frameSize };
+  }
+
+  update(deltaMs) {
+    if (!this.playing) return;
+    const anim = LPC_LAYOUT[this.currentAnim];
+    const isLooping = this.currentAnim === "walk" || this.currentAnim === "spellcast";
+    const frameDuration = 1000 / anim.fps;
+    this.elapsedMs += deltaMs;
+    while (this.elapsedMs >= frameDuration) {
+      this.elapsedMs -= frameDuration;
+      if (this.frameIndex < anim.frames - 1) {
+        this.frameIndex += 1;
+      } else if (isLooping) {
+        this.frameIndex = 0;
+      } else if (this.onAnimationComplete) {
+        this.onAnimationComplete(this.currentAnim);
+      }
+    }
+    this.draw();
+  }
+
+  draw() {
+    const { sx, sy, sw, sh } = this._currentFrameRect();
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(this.image, sx, sy, sw, sh, 0, 0, this.canvas.width, this.canvas.height);
+  }
+}
+
+// La mappa Divinità -> spritesheet (richiesto in chat: personaggi
+// caratterizzati per fazione). Vuota di proposito per ora - nessuno
+// spritesheet vero è stato ancora prodotto col generatore LPC.
+// L'intera integrazione sotto è già pronta e testata: il giorno che
+// una voce qui riceve un vero "spriteUrl", quella fazione mostra
+// automaticamente lo sprite animato al posto della scheda; finché
+// resta null, il gioco si comporta esattamente come oggi, nessuna
+// differenza visibile.
+const DIVINITY_SPRITE_CONFIG = {
+  "Athena": { spriteUrl: null },
+  "Hades": { spriteUrl: null },
+  "Black Saint": { spriteUrl: null },
+  "Odino": { spriteUrl: null },
+  "Nettuno": { spriteUrl: null },
+  "Apollo": { spriteUrl: null },
+  "Ares": { spriteUrl: null },
+  "Saturno": { spriteUrl: null },
+  "Crono": { spriteUrl: null },
+  "Eris": { spriteUrl: null },
+  "Lucifero": { spriteUrl: null },
+  "Artemide": { spriteUrl: null },
+  "Zeus": { spriteUrl: null },
+};
+
+// Le animazioni già caricate (richiesto in chat: non ricaricare lo
+// stesso file immagine più volte se compare più volte a schermo).
+const _lpcImageCache = {};
+
+function _loadLpcImage(url) {
+  if (_lpcImageCache[url]) return _lpcImageCache[url];
+  const img = new Image();
+  img.src = url;
+  _lpcImageCache[url] = img;
+  return img;
+}
+
+/**
+ * Costruisce (se possibile) il canvas animato di un combattente per
+ * una Divinità - restituisce null se non c'è ancora nessuno
+ * spritesheet configurato per quella Divinità, così il chiamante può
+ * ricadere sulla vista a schede già esistente senza bisogno di
+ * controlli sparsi in giro (richiesto in chat: l'integrazione non
+ * deve rompere nulla finché non ci sono file veri).
+ */
+function tryRenderFighterSprite(divinity, options = {}) {
+  const config = DIVINITY_SPRITE_CONFIG[divinity];
+  if (!config || !config.spriteUrl) return null;
+
+  const canvas = document.createElement("canvas");
+  const image = _loadLpcImage(config.spriteUrl);
+  const animator = new LPCSpriteAnimator(canvas, image, {
+    scale: options.scale || 3,
+    initialAnim: "walk",
+    initialDirection: options.direction || "down",
+  });
+
+  let lastTime = performance.now();
+  let rafId = null;
+  function loop(now) {
+    rafId = requestAnimationFrame(loop);
+    const delta = now - lastTime;
+    lastTime = now;
+    if (image.complete && image.naturalWidth > 0) animator.update(delta);
+  }
+  rafId = requestAnimationFrame(loop);
+
+  canvas.dataset.animatorAttached = "true";
+  canvas._lpcAnimator = animator; // esposto per chi vuole cambiare animazione (es. "slash" quando attacca)
+  canvas._lpcStop = () => cancelAnimationFrame(rafId); // il chiamante deve fermarlo quando la schermata cambia, per non lasciare cicli fantasma
+  return canvas;
+}
+
 function renderMiniBar(label, value, max, kind) {
   const wrap = el("div", { class: "mini-bar" });
   const barWrap = el("div", { class: "bar-wrap" });
@@ -3339,6 +3507,16 @@ function appendBattleColumns(wrap) {
 
   // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
   const leftPanel = el("div", { class: "fighter-panel" });
+  // Lo sprite animato (richiesto in chat, stile LPC) - compare SOLO
+  // se questa Divinità ha già uno spritesheet vero configurato
+  // (DIVINITY_SPRITE_CONFIG); finché non ce l'ha, tryRenderFighterSprite
+  // restituisce null e qui non cambia nulla rispetto a prima.
+  const leftSprite = tryRenderFighterSprite(k.armor.divinity, { direction: "right" });
+  if (leftSprite) {
+    leftSprite.style.display = "block";
+    leftSprite.style.margin = "0 auto 8px auto";
+    leftPanel.append(leftSprite);
+  }
   leftPanel.append(el("h2", {}, k.formal_name));
   leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
   leftPanel.append(renderFullBar(k.vita_cur, k.vita_max, sharedMaxVita, "Vita", "vita"));
@@ -3431,6 +3609,12 @@ function appendBattleColumns(wrap) {
   // scegliere ciascuno le proprie tecniche dalla stessa schermata
   // (richiesto in chat).
   const rightPanel = el("div", { class: "fighter-panel opponent-panel" });
+  const rightSprite = tryRenderFighterSprite(o.divinity, { direction: "left" });
+  if (rightSprite) {
+    rightSprite.style.display = "block";
+    rightSprite.style.margin = "0 auto 8px auto";
+    rightPanel.append(rightSprite);
+  }
   rightPanel.append(el("h2", {}, o.name));
   rightPanel.append(el("p", { class: "hint" }, `${o.divinity} / ${o.faction} · Livello armatura ${o.armor_level}`));
   rightPanel.append(renderFullBar(o.vita_cur, o.vita_max, sharedMaxVita, "Vita", "vita"));
