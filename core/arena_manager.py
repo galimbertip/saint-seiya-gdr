@@ -1093,16 +1093,18 @@ def resolve_defense(raw_damage: int, defense_technique_power: int | None) -> int
     return max(0, raw_damage - reduction)
 
 
-def choose_opponent_action(opponent: dict) -> tuple[str, dict | None]:
+def choose_opponent_action(opponent: dict, faction_disposition: str = "neutrale") -> tuple[str, dict | None]:
     """Sceglie l'azione PROATTIVA dell'avversario: Attacca o Carica.
     Difendi non è più una scelta proattiva 'alla cieca' - è reattiva
     (vedi opponent_reacts), decisa solo quando è l'avversario a SUBIRE
     un attacco, non quando lo dichiara lui. I pesi dipendono dal vero
     allineamento dell'avversario (richiesto in chat, effetti più
     ampi): un Malvagio è più aggressivo e meno paziente, un Buono più
-    misurato - una sfumatura leggera, non un'altra difficoltà
-    mascherata."""
-    attack_weight, charge_weight = combat_action_weights(opponent.get("alignment", ""))
+    misurato. `faction_disposition` (richiesto in chat, "i modi di
+    agire delle fazioni"): un tocco leggero in più dalla leadership
+    della sua fazione, sopra all'allineamento personale - una
+    sfumatura, non un'altra difficoltà mascherata."""
+    attack_weight, charge_weight = combat_action_weights(opponent.get("alignment", ""), faction_disposition)
     action = random.choices(["attacca", "carica"], weights=[attack_weight, charge_weight])[0]
 
     if action == "attacca":
