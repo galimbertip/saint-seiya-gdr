@@ -10,7 +10,7 @@ Il changelog qui sotto è la cronologia delle versioni concordate in chat.
 Si aggiorna insieme al codice, non a posteriori.
 """
 
-APP_VERSION = "PG_V2.2.0"
+APP_VERSION = "PG_V3.0.0"
 
 CHANGELOG = [
     {
@@ -228,5 +228,96 @@ CHANGELOG = [
                 "future resistenze). Gli avversari generati in Arena ora hanno anche Costituzione/"
                 "Tecnica/Volontà (prima solo Forza/Destrezza), scalate come le altre col livello "
                 "armatura.",
+    },
+    {
+        "version": "PG_V2.3.0",
+        "desc": "TAVERNA: 13 taverne separate per regno, con mappa interattiva a griglia (stesso "
+                "principio di posizionamento già usato in Arena) - segnalino libero, taverniere "
+                "fisso per regno, tavoli con occupanti che si rimescolano nel tempo. Dialogo con "
+                "riconoscimento di intenti (saluto, sfida, domanda sul mondo...) più pulsanti di "
+                "argomento e di tono (stile Football Manager: Sorriso caloroso/Braccia aperte/"
+                "Sguardo freddo) che amplificano o smorzano l'effetto sull'affinità. Relazioni tra "
+                "fazioni (alleata/neutrale/diffidente/ostile) che moltiplicano quanto pesano gesti "
+                "positivi e negativi. Oltre una soglia di affinità, il PNG offre spontaneamente la "
+                "missione del proprio regno. Bug corretto: l'armor_name con '/' rompeva il routing "
+                "HTTP quando passato nell'URL - spostato in query string/corpo della richiesta.",
+    },
+    {
+        "version": "PG_V2.4.0",
+        "desc": "TORNEI a eliminazione diretta: Le Guerre Galattiche (solo Bronze Saint, 3 round) e "
+                "il Torneo delle Stelle Libere (iscrizione aperta a chiunque, 4 round). Tabellone "
+                "generato per intero all'iscrizione, con incontri futuri 'fantasma' (simulati "
+                "internamente confrontando i livelli) mai rivelati in anticipo al giocatore - solo "
+                "'Vincente Round X Incontro Y' finché non tocca davvero giocarli. Perdere un round "
+                "chiude il torneo, nessun ritentativo, ricompensa proporzionale ai round superati.",
+    },
+    {
+        "version": "PG_V2.5.0",
+        "desc": "PROVE DEGLI INFERI: infiltrazione fino alla Sala dei Tre Giudici (Radamanthys/"
+                "Minosse/Aiacos, le vere Surplice di Wyvern/Garuda/Griffon). Cinque prove in "
+                "sequenza con un livello di allerta che sale sui fallimenti - alla soglia, "
+                "un'imboscata (uno Spettro) interrompe la prova invece del solito tentativo; "
+                "vincerla fa scendere l'allerta ma non a zero. Versione iniziale a tiro di dado "
+                "pesato dalla statistica, poi SOSTITUITA su segnalazione diretta ('non un "
+                "lanciadadi, mettiamo indovinelli') con 50 enigmi veri scritti a mano (10 per ogni "
+                "prova, scelti a caso ad ogni tentativo, persistiti finché non si risponde per non "
+                "pescarne uno nuovo ad ogni ricarica della pagina).",
+    },
+    {
+        "version": "PG_V2.6.0",
+        "desc": "DIFESA A ONDATE: il capitolo più grosso della sessione, motore di combattimento "
+                "multi-unità scritto da zero (core/squad_battle.py) - 3 contro 3, iniziativa vera "
+                "in stile D&D (tutte le unità di entrambi i lati in un unico ordine, non più turni "
+                "1v1), 4 ondate, squadra fissa (chi cade resta caduto). Selezione team prima "
+                "dell'inizio: casuale dalla propria fazione, oppure a scelta tra i compagni di "
+                "fazione E chiunque abbia un legame davvero forte in Taverna (soglia alta apposta, "
+                "anche da un'altra fazione). Attacco a bersaglio singolo o a tutto campo (stessa "
+                "tecnica, potenza divisa tra i bersagli) scelto ad ogni turno. Il fallimento "
+                "critico (1 naturale) può rivoltarsi contro un compagno della propria squadra, non "
+                "solo mancare il colpo - richiesto esplicitamente in chat, esteso resolve_turn "
+                "perché esponesse il tiro grezzo senza rompere l'Arena 1v1 che lo usa già. Due bug "
+                "veri trovati e corretti giocando la battaglia fino in fondo, non a revisione: il "
+                "turno non avanzava mai dopo un'azione del giocatore/alleato (bloccato per sempre "
+                "sullo stesso attore); con fazioni piccole (es. Zeus, 4 armature) la quarta ondata "
+                "restava vuota perché l'esclusione delle armature già usate si accumulava da tutte "
+                "le ondate precedenti invece delle sole unità ancora vive. Corretto anche un caso "
+                "limite più sottile: un alleato scelto per legame forte da un'altra fazione, se "
+                "caduto in battaglia, poteva ricomparire come nemico in un'ondata successiva della "
+                "stessa fazione - risolto tracciando la squadra alleata come esclusione fissa per "
+                "l'intera missione, non solo tra le unità vive.",
+    },
+    {
+        "version": "PG_V2.7.0",
+        "desc": "TRE BARRE VERE ANCHE PER I PNG: vita/cosmo/stamina dei PNG canonici del roster "
+                "(Maestri, Guardiani, avversari dei tornei, alleati/nemici della Difesa a Ondate) "
+                "ora sono persistite sul roster, non più generate sempre al massimo ad ogni "
+                "incontro - un PNG battuto di recente arriva ancora debole, e recupera nel tempo "
+                "con gli stessi tassi già usati per il giocatore. Distinzione voluta dagli "
+                "avversari CASUALI dell'Arena (generate_opponent, nome sempre nuovo apposta): quelli "
+                "restano ephemeral come prima, non rappresentano mai la stessa persona due volte.",
+    },
+    {
+        "version": "PG_V3.0.0",
+        "desc": "GERARCHIA VERA PER FAZIONE - cambio strutturale, non solo una nuova funzionalità: "
+                "le Divinità (nuovo core/divinities.py, 13 entità con armatura di vertice reale del "
+                "catalogo) e le Figure Istituzionali ora hanno un vero allineamento persistito, "
+                "mai mostrato, che cambia con una successione (Figure Istituzionali) o una "
+                "reincarnazione molto più rara (Divinità - la Divinità stessa muore e rinasce, non "
+                "solo un cambio di carica). La disposizione dell'intera fazione (media pesata tra "
+                "allineamento della Divinità e della sua Figura Istituzionale, dove esiste) ora "
+                "influenza anche lei i destini dei PNG comuni nella simulazione del mondo e "
+                "l'aggressività dell'IA in combattimento - sopra al peso già dato dall'allineamento "
+                "personale del singolo PNG, non al suo posto. La schermata Gerarchia è stata "
+                "ricostruita per intero: non più un blocco globale di Figure Istituzionali separato "
+                "da un elenco piatto di armature, ma una vera piramide dentro ogni card di fazione "
+                "(Divinità -> Figura Istituzionale -> Cavalieri per grado, dai più alti scendendo - "
+                "prima l'ordine era invertito). Bug di import circolare scoperto e aggirato: "
+                "core.world_sim importa già da core.arena_manager, quindi core.arena_manager non "
+                "può calcolare la disposizione di fazione da sé (ciclo) - la calcola il chiamante "
+                "in api/arena_session.py e la passa come stringa alle funzioni di livello più "
+                "basso, che restano pure. Recupero di changelog: questa voce e le cinque precedenti "
+                "(da PG_V2.3.0) erano già in gioco da tempo ma non erano mai state registrate qui - "
+                "disciplina di aggiornare la versione insieme al codice, non a posteriori, da "
+                "riprendere sul serio da qui in avanti.",
     },
 ]
