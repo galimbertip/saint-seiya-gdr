@@ -2126,7 +2126,14 @@ function renderHierarchyTab() {
           // nome del predecessore, ormai andato via.
           occupantCell = el("td", {}, el("span", { style: "color:var(--text-secondary);font-style:italic;" }, `${entry.npc_training_candidate} (in addestramento)`));
         } else {
-          occupantCell = el("td", {}, entry.npc_name, el("span", {
+          // Tratto/Ideale/Legame/Difetto (richiesto in chat, dalla
+          // roadmap: caratterizzazione più profonda) - visibili al
+          // passaggio del mouse sul nome, stesso schema leggero già
+          // usato per il destino del predecessore: niente nuova
+          // interfaccia, un tooltip in più.
+          const personalityTooltip =
+            `Tratto: ${entry.npc_trait}\nIdeale: ${entry.npc_ideal}\nLegame: ${entry.npc_bond}\nDifetto: ${entry.npc_flaw}`;
+          occupantCell = el("td", {}, el("span", { title: personalityTooltip, style: "cursor:help;" }, entry.npc_name), el("span", {
               style: "background:var(--gold);color:#1a1a1a;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;font-weight:700;",
             }, "PNG"),
             // Il mondo che vive per conto suo (richiesto in chat): se
@@ -2256,21 +2263,99 @@ class LPCSpriteAnimator {
 // automaticamente lo sprite animato al posto della scheda; finché
 // resta null, il gioco si comporta esattamente come oggi, nessuna
 // differenza visibile.
-const DIVINITY_SPRITE_CONFIG = {
-  "Athena": { spriteUrl: null },
-  "Hades": { spriteUrl: null },
-  "Black Saint": { spriteUrl: null },
-  "Odino": { spriteUrl: null },
-  "Nettuno": { spriteUrl: null },
-  "Apollo": { spriteUrl: null },
-  "Ares": { spriteUrl: null },
-  "Saturno": { spriteUrl: null },
-  "Crono": { spriteUrl: null },
-  "Eris": { spriteUrl: null },
-  "Lucifero": { spriteUrl: null },
-  "Artemide": { spriteUrl: null },
-  "Zeus": { spriteUrl: null },
+// La tavolozza dei 7 colori (richiesto in chat: "pochi colori di
+// vestiario - giallo, rosso, blu, verde, viola, marrone e bianco -
+// scelti a seconda di quale colore si avvicina di più al colore di
+// quell'armatura"). Un solo spritesheet per colore (7 in tutto,
+// invece di uno per ciascuna delle 250 armature) - ognuno viene
+// scelto automaticamente per la Divinità/armatura più vicina
+// cromaticamente, non serve produrne uno per fazione.
+const SPRITE_PALETTE = {
+  giallo: { hex: "#D4AF37", spriteUrl: null },
+  rosso: { hex: "#B03A2E", spriteUrl: null },
+  blu: { hex: "#2E6DA4", spriteUrl: null },
+  verde: { hex: "#4A7C3C", spriteUrl: null },
+  viola: { hex: "#6B3FA0", spriteUrl: null },
+  marrone: { hex: "#6B4A2E", spriteUrl: null },
+  bianco: { hex: "#E8E4D6", spriteUrl: null },
 };
+
+// Il colore-tema di ciascuna Divinità (richiesto in chat,
+// caratterizzazione per fazione) - usato SOLO per scegliere quale dei
+// 7 colori della tavolozza gli si avvicina di più, non per
+// ricolorare nulla via codice (lezione imparata dai tentativi
+// precedenti: niente più trucchi CSS/URL fragili, solo la scelta tra
+// file reali già pronti).
+const DIVINITY_THEME_COLORS = {
+  "Athena": "#D4AF37", "Hades": "#3A1B4D", "Black Saint": "#1A1A1A", "Odino": "#6FA8C9",
+  "Nettuno": "#0E6E7C", "Apollo": "#E8A93B", "Ares": "#8C1E1E", "Saturno": "#9C7A3C",
+  "Crono": "#5C3A87", "Eris": "#6B8C3C", "Lucifero": "#7A1020", "Artemide": "#8FA9C9", "Zeus": "#E0C440",
+};
+
+function _hexToRgb(hex) {
+  const clean = hex.replace("#", "");
+  return {
+    r: parseInt(clean.substring(0, 2), 16),
+    g: parseInt(clean.substring(2, 4), 16),
+    b: parseInt(clean.substring(4, 6), 16),
+  };
+}
+
+// La sola distanza RGB confonde luminosità e tonalità (un colore
+// molto scuro come Ade finiva abbinato al marrone solo perché
+// entrambi sono "scuri", non perché la tinta si somigli davvero) -
+// convertendo in HSL e pesando la tonalità molto più della
+// luminosità, l'abbinamento segue l'intuito umano molto meglio
+// (scoperto testando i risultati su tutte e 13 le Divinità, non
+// assunto a priori).
+function _hexToHsl(hex) {
+  const { r, g, b } = _hexToRgb(hex);
+  const rN = r / 255, gN = g / 255, bN = b / 255;
+  const max = Math.max(rN, gN, bN), min = Math.min(rN, gN, bN);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === rN) h = ((gN - bN) / d + (gN < bN ? 6 : 0)) / 6;
+  else if (max === gN) h = ((bN - rN) / d + 2) / 6;
+  else h = ((rN - gN) / d + 4) / 6;
+  return { h: h * 360, s, l };
+}
+
+function _colorDistance(hexA, hexB) {
+  const a = _hexToHsl(hexA), b = _hexToHsl(hexB);
+  let hueDiff = Math.abs(a.h - b.h);
+  if (hueDiff > 180) hueDiff = 360 - hueDiff; // la tonalità è circolare (0° e 360° sono lo stesso rosso)
+  // Pesi scelti apposta (richiesto in chat: abbinamento sensato per
+  // occhio umano) - la tonalità conta molto di più della luminosità,
+  // altrimenti un colore scuro qualsiasi finisce vicino a un altro
+  // colore scuro qualsiasi, indipendentemente dalla tinta vera.
+  const hueWeight = 2.2, satWeight = 0.6, lightWeight = 0.3;
+  return Math.sqrt(
+    (hueDiff / 180) ** 2 * hueWeight +
+    (a.s - b.s) ** 2 * satWeight +
+    (a.l - b.l) ** 2 * lightWeight,
+  );
+}
+
+/**
+ * Trova il colore della tavolozza più vicino a quello di questa
+ * Divinità (richiesto in chat: scelta automatica per distanza
+ * cromatica, non una mappa scritta a mano voce per voce) - semplice
+ * distanza euclidea in RGB, sufficiente per 7 colori ben distinti tra
+ * loro.
+ */
+function pickClosestPaletteColor(divinity) {
+  const themeHex = DIVINITY_THEME_COLORS[divinity];
+  if (!themeHex) return "bianco"; // ripiego neutro se la Divinità non è in mappa
+  let best = null, bestDistance = Infinity;
+  for (const [name, entry] of Object.entries(SPRITE_PALETTE)) {
+    const d = _colorDistance(themeHex, entry.hex);
+    if (d < bestDistance) { bestDistance = d; best = name; }
+  }
+  return best;
+}
 
 // Le animazioni già caricate (richiesto in chat: non ricaricare lo
 // stesso file immagine più volte se compare più volte a schermo).
@@ -2293,7 +2378,8 @@ function _loadLpcImage(url) {
  * deve rompere nulla finché non ci sono file veri).
  */
 function tryRenderFighterSprite(divinity, options = {}) {
-  const config = DIVINITY_SPRITE_CONFIG[divinity];
+  const colorName = pickClosestPaletteColor(divinity);
+  const config = SPRITE_PALETTE[colorName];
   if (!config || !config.spriteUrl) return null;
 
   const canvas = document.createElement("canvas");
