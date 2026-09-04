@@ -5,36 +5,68 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saint Seiya: Sacro Imperio</title>
 <style>
+  /* Un solo carattere per l'identità visiva del gioco (richiesto in
+     chat: passaggio grafico) - Cinzel per i titoli, ispirato alle
+     iscrizioni romane e alle mappe celesti, mai usato per il corpo
+     del testo. Il corpo resta su un carattere di sistema, per
+     restare leggibile e veloce anche se il font esterno non carica
+     (fallback su serif esplicito). Un solo font esterno, non due, per
+     limitare la dipendenza da un servizio esterno. */
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&display=swap');
+
   :root {
-    --bg-darkest: #0B0F1A;
-    --bg-panel: #141B2E;
-    --bg-panel-alt: #1B2438;
+    --bg-darkest: #0A0D16;
+    --bg-panel: #131A2C;
+    --bg-panel-alt: #1C2540;
+    --bg-panel-raised: #232E4C;
     --border: #2A3550;
-    --gold: #D4AF37;
+    --border-bright: #3D4A6B;
+    --gold: #C9A536;
     --gold-dim: #8A7229;
-    --cosmo-blue: #3FA9F5;
+    --cosmo-blue: #4B93DE;
     --cosmo-blue-dim: #245A7C;
-    --text-primary: #EAE6DA;
-    --text-secondary: #9BA3B7;
+    --text-primary: #E9E4D6;
+    --text-secondary: #838BA3;
     --danger: #C0392B;
     --success: #3FA96A;
+    --font-display: "Cinzel", Georgia, "Times New Roman", serif;
+    --font-body: "Segoe UI", Arial, sans-serif;
   }
   * { box-sizing: border-box; }
   body {
     background: var(--bg-darkest);
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(75,147,222,0.08), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(201,165,54,0.06), transparent 55%);
+    background-attachment: fixed;
     color: var(--text-primary);
-    font-family: "Segoe UI", Arial, sans-serif;
+    font-family: var(--font-body);
     margin: 0;
     padding: 24px;
   }
-  h1, h2, h3 { margin: 0 0 12px 0; }
-  h1 { color: var(--gold); font-size: 26px; }
-  h2 { color: var(--cosmo-blue); font-size: 16px; }
+  h1, h2, h3 {
+    margin: 0 0 12px 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  h1 {
+    color: var(--gold);
+    font-size: 26px;
+    padding-bottom: 10px;
+    border-bottom: none;
+    background-image: linear-gradient(90deg, var(--gold-dim) 0%, transparent 55%);
+    background-repeat: no-repeat;
+    background-position: bottom left;
+    background-size: 100% 1px;
+  }
+  h2 { color: var(--cosmo-blue); font-size: 16px; letter-spacing: 0.03em; }
+  h3 { color: var(--text-primary); font-size: 14px; font-weight: 600; }
   .hint { color: var(--text-secondary); font-size: 13px; }
   .card {
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 16px 18px;
     margin-bottom: 16px;
   }
@@ -46,6 +78,7 @@
     cursor: pointer;
     font-size: 13px;
     color: var(--text-primary);
+    transition: border-color 0.15s, background 0.15s;
   }
   .tone-pill:hover { border-color: var(--gold-dim); }
   .tone-pill-active {
@@ -58,21 +91,27 @@
     background: var(--gold-dim);
     color: var(--bg-darkest);
     border: none;
-    border-radius: 6px;
+    border-radius: 5px;
     padding: 10px 16px;
     font-weight: 600;
     cursor: pointer;
     font-size: 14px;
     margin: 4px 4px 4px 0;
+    transition: background 0.15s, transform 0.05s;
   }
   button:hover { background: var(--gold); }
-  button:disabled { background: var(--border); color: var(--text-secondary); cursor: not-allowed; }
+  button:active { transform: translateY(1px); }
+  button:disabled { background: var(--border); color: var(--text-secondary); cursor: not-allowed; transform: none; }
   button.secondary {
     background: transparent;
     color: var(--cosmo-blue);
     border: 1px solid var(--cosmo-blue-dim);
   }
   button.secondary:hover { background: var(--bg-panel-alt); }
+  button:focus-visible, .tone-pill:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--cosmo-blue);
+    outline-offset: 2px;
+  }
   input, select {
     background: var(--bg-panel-alt);
     border: 1px solid var(--border);
@@ -94,11 +133,11 @@
   }
   .bar-fill {
     height: 100%;
-    background: var(--cosmo-blue);
-    transition: width 0.2s;
+    background: linear-gradient(90deg, var(--cosmo-blue-dim), var(--cosmo-blue));
+    transition: width 0.35s ease-out;
   }
-  .bar-fill.stamina { background: var(--gold); }
-  .bar-fill.vita { background: var(--danger); }
+  .bar-fill.stamina { background: linear-gradient(90deg, var(--gold-dim), var(--gold)); }
+  .bar-fill.vita { background: linear-gradient(90deg, #7A2318, var(--danger)); }
   .bar-label {
     position: absolute;
     inset: 0;
@@ -112,18 +151,18 @@
   }
   .stats-grid { display: flex; gap: 10px; flex-wrap: wrap; }
   .stat-chip {
-    background: var(--bg-panel-alt);
+    background: var(--bg-panel-raised);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 10px 14px;
     text-align: center;
     min-width: 80px;
   }
-  .stat-chip .value { font-size: 20px; font-weight: 700; }
+  .stat-chip .value { font-size: 20px; font-weight: 700; font-family: var(--font-display); }
   .stat-chip .label { font-size: 11px; color: var(--text-secondary); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-  th { color: var(--gold); }
+  th { color: var(--gold); font-weight: 600; letter-spacing: 0.02em; }
   tr.selectable { cursor: pointer; }
   tr.selectable:hover { background: var(--bg-panel-alt); }
   tr.selected { background: var(--cosmo-blue-dim); }
@@ -136,6 +175,7 @@
     border-radius: 0;
     padding: 10px 16px;
     margin: 0;
+    font-family: var(--font-body);
   }
   .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); font-weight: 700; }
   .log-line { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -147,11 +187,11 @@
     flex-wrap: wrap;
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 10px 18px;
     margin-bottom: 16px;
   }
-  .status-bar .calendar { color: var(--cosmo-blue); font-weight: 600; white-space: nowrap; }
+  .status-bar .calendar { color: var(--cosmo-blue); font-weight: 600; white-space: nowrap; font-family: var(--font-display); }
   .status-bar .mini-bar { width: 240px; }
   .status-bar .mini-bar .bar-wrap { height: 26px; margin: 0; }
   .status-bar .mini-bar .bar-label { font-size: 13px; font-weight: 700; }
@@ -165,6 +205,21 @@
   }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+  /* Un lampo di Cosmo quando un numero cambia davvero (danno subito,
+     guadagno di risorsa) - richiesto in chat, "curiamo la grafica":
+     un solo movimento mirato, non un'animazione su ogni elemento. Si
+     applica aggiungendo/rimuovendo questa classe via JS quando serve. */
+  @keyframes cosmo-flash {
+    0% { box-shadow: 0 0 0 0 rgba(75,147,222,0.55); }
+    100% { box-shadow: 0 0 0 8px rgba(75,147,222,0); }
+  }
+  .cosmo-flash { animation: cosmo-flash 0.5s ease-out; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bar-fill { transition: none; }
+    .cosmo-flash { animation: none; }
+  }
+
   /* Disposizione dell'Arena: pannello combattente sinistro, mappa al
      centro, pannello combattente destro - pensata per estendersi in
      futuro a più cavalieri per lato (richiesto in chat). Su schermi
@@ -175,7 +230,7 @@
     min-width: 220px;
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px;
   }
   .fighter-panel.opponent-panel button { opacity: 0.55; cursor: not-allowed; }
