@@ -34,6 +34,7 @@ from core.arena_manager import (
     BASE_ATTACK_POWER, technique_cosmo_cost,
 )
 from core.fm_manager import RosterManager, ARENA_ROUND_MINUTES
+from core.world_sim import get_faction_disposition
 
 
 def list_opponent_candidates(conn, armor: dict, difficulty: str = DEFAULT_DIFFICULTY, count: int = 5) -> list[dict]:
@@ -446,7 +447,7 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
         battle_state["pending_opponent_technique"] = None
         return log, False, None
 
-    opp_action, detail = choose_opponent_action(opponent)
+    opp_action, detail = choose_opponent_action(opponent, get_faction_disposition(conn, opponent.get("divinity", "")))
     if opp_action == "carica":
         # Stesso raffreddamento del giocatore (richiesto in chat) - se
         # l'IA "vorrebbe" ricaricare ma è già carica, il turno va
