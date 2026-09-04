@@ -156,6 +156,10 @@ CREATE TABLE IF NOT EXISTS roster (
     npc_stamina_cur INTEGER NOT NULL DEFAULT 0,
     npc_stamina_max INTEGER NOT NULL DEFAULT 0,
     npc_last_regen_minutes INTEGER NOT NULL DEFAULT 0,
+    npc_trait TEXT NOT NULL DEFAULT '',
+    npc_ideal TEXT NOT NULL DEFAULT '',
+    npc_bond TEXT NOT NULL DEFAULT '',
+    npc_flaw TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
@@ -457,6 +461,18 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE roster ADD COLUMN npc_last_regen_minutes INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         log.info("Migrazione: aggiunte colonne delle tre barre (vita/cosmo/stamina) a roster.")
+    if "npc_trait" not in roster_columns:
+        # Il sistema Tratto/Ideale/Legame/Difetto (richiesto in chat,
+        # dalla roadmap: "caratterizzazione più profonda dei PNG") -
+        # stesso principio già seguito per npc_alignment: colonne
+        # vuote qui, riempite dalla migrazione applicativa in
+        # ensure_roster_populated una volta che il catalogo è pronto.
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_trait TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_ideal TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_bond TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_flaw TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne Tratto/Ideale/Legame/Difetto a roster.")
 
     world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
     if "last_npc_tick_minutes" not in world_clock_columns:
@@ -660,6 +676,7 @@ def get_roster(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         """
         SELECT r.armor_name, r.npc_name, r.claimed_by_knight_id, r.npc_generation, r.npc_fate,
                r.npc_status, r.npc_training_candidate,
+               r.npc_trait, r.npc_ideal, r.npc_bond, r.npc_flaw,
                a.divinity, a.faction, a.level,
                k.raw_name AS claimed_by_raw_name, k.surname AS claimed_by_surname,
                k.player_level AS claimed_by_level
@@ -677,7 +694,8 @@ def get_roster_entry(conn: sqlite3.Connection, armor_name: str) -> sqlite3.Row |
 
 def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str, alignment: str = "",
                          vita_max: int = 0, cosmo_max: int = 0, stamina_max: int = 0,
-                         last_regen_minutes: int = 0) -> None:
+                         last_regen_minutes: int = 0, trait: str = "", ideal: str = "",
+                         bond: str = "", flaw: str = "") -> None:
     """Crea lo slot per un'armatura con il suo PNG fisso - ignorata (non
     sovrascrive) se esiste già, perché il nome del PNG non deve mai
     cambiare una volta assegnato (richiesto in chat). `alignment`
@@ -685,18 +703,21 @@ def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str
     mostrato al giocatore. `vita_max`/`cosmo_max`/`stamina_max`
     (richiesto in chat, tre barre vere anche per i PNG): le statistiche
     massime del PNG, con le correnti che partono già al massimo (un
-    PNG appena creato è sano) - calcolate dal chiamante (core.alignment
-    per l'allineamento, la stessa formula di core.training_path per le
-    statistiche), non qui, per non far dipendere questo modulo di
-    basso livello da logica applicativa."""
+    PNG appena creato è sano). `trait`/`ideal`/`bond`/`flaw` (richiesto
+    in chat, dalla roadmap: caratterizzazione più profonda) - le
+    quattro frasi di personalità, generate dal chiamante
+    (core.personality) in base all'umore derivato dall'allineamento -
+    non qui, per non far dipendere questo modulo di basso livello da
+    logica applicativa."""
     conn.execute(
         """INSERT OR IGNORE INTO roster
            (armor_name, npc_name, claimed_by_knight_id, npc_alignment,
             npc_vita_cur, npc_vita_max, npc_cosmo_cur, npc_cosmo_max,
-            npc_stamina_cur, npc_stamina_max, npc_last_regen_minutes)
-           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            npc_stamina_cur, npc_stamina_max, npc_last_regen_minutes,
+            npc_trait, npc_ideal, npc_bond, npc_flaw)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (armor_name, npc_name, alignment, vita_max, vita_max, cosmo_max, cosmo_max,
-         stamina_max, stamina_max, last_regen_minutes),
+         stamina_max, stamina_max, last_regen_minutes, trait, ideal, bond, flaw),
     )
 
 
