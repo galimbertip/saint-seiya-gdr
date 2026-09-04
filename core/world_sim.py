@@ -23,7 +23,7 @@ from core.arena_manager import generate_full_name
 from core.alignment import random_alignment, ALIGNMENT_FATE_CATEGORY_WEIGHTS
 from core.tavern import alignment_to_mood
 from core.institutional_npcs import INSTITUTIONAL_NPCS
-from core.divinities import DIVINITY_NPCS
+from core.divinities import DIVINITY_NPCS, get_divinity_npc
 from database.db_manager import (
     add_world_event, get_roster_entry, get_institutional_alignment, set_institutional_alignment,
 )
@@ -378,6 +378,35 @@ DIVINE_REINCARNATION_TEXTS = {
 }
 
 
+def get_faction_disposition(conn, divinity: str) -> str:
+    """La 'disposizione' di un'intera fazione (richiesto in chat:
+    "Divinità e Figure Istituzionali, col loro allineamento,
+    determinano anche gli obiettivi, i modi di agire delle fazioni") -
+    un umore a 3 categorie (buono/neutrale/malvagio), ricavato dagli
+    allineamenti VERI di chi sta al vertice: la Divinità pesa il
+    doppio (è il vertice vero), la Figura Istituzionale la metà, se ne
+    esiste una per questa fazione. Non è l'allineamento del singolo
+    PNG che affronti - è il "clima" che la leadership della fazione
+    diffonde su tutti i suoi membri."""
+    divinity_npc = get_divinity_npc(divinity)
+    if divinity_npc is None:
+        return "neutrale"
+    divinity_row = get_institutional_alignment(conn, divinity_npc["id"])
+    divinity_mood = alignment_to_mood(divinity_row["alignment"]) if divinity_row else "neutrale"
+
+    institutional_npc = next((n for n in INSTITUTIONAL_NPCS if n["divinity"] == divinity), None)
+    if institutional_npc is None:
+        return divinity_mood
+
+    institutional_row = get_institutional_alignment(conn, institutional_npc["id"])
+    institutional_mood = alignment_to_mood(institutional_row["alignment"]) if institutional_row else "neutrale"
+
+    votes = {"buono": 0, "neutrale": 0, "malvagio": 0}
+    votes[divinity_mood] += 2
+    votes[institutional_mood] += 1
+    return max(votes, key=votes.get)
+
+
 def ensure_divinity_alignments(conn) -> None:
     """Assegna un allineamento vero a ogni Divinità che non ne ha ancora
     uno (richiesto in chat: "differenziamole" dalle semplici armature -
@@ -416,7 +445,18 @@ def _tick_divine_reincarnations(conn, elapsed_minutes: int, current_world_minute
 
 
 
-def resolve_npc_fate(alignment: str = "") -> str:
+# La disposizione di fazione pesa anche lei sui destini (richiesto in
+# chat, "effetti più ampi" - stavolta non il singolo PNG, la leadership
+# dell'intera fazione) - un tocco più leggero rispetto al peso
+# dell'allineamento personale del PNG, non lo sovrasta, lo affianca.
+FACTION_DISPOSITION_FATE_WEIGHTS = {
+    "buono": (0.85, 1.1, 0.9),
+    "neutrale": (1.0, 1.0, 1.0),
+    "malvagio": (1.2, 0.85, 1.05),
+}  # (morte, ritiro, sparizione)
+
+
+def resolve_npc_fate(alignment: str = "", faction_disposition: str = "neutrale") -> str:
     """Un destino narrativo per UN PNG che lascia il proprio posto
     (richiesto in chat) - stesso principio di
     core.apprentice_fates.resolve_companion_fate, qui applicato ai PNG
@@ -424,11 +464,18 @@ def resolve_npc_fate(alignment: str = "") -> str:
     (richiesto in chat, effetti più ampi): il vero allineamento del
     PNG pesa quale CATEGORIA di destino è più probabile (un Malvagio
     più incline a una fine violenta o a sparire in circostanze losche,
-    un Buono più incline a un ritiro pacifico) - la scelta della frase
-    specifica dentro la categoria resta uniforme."""
-    multipliers = ALIGNMENT_FATE_CATEGORY_WEIGHTS.get(alignment, (1.0, 1.0, 1.0))
+    un Buono più incline a un ritiro pacifico). `faction_disposition`
+    (richiesto in chat, "gli obiettivi, i modi di agire delle
+    fazioni"): il clima imposto dalla leadership della fazione (vedi
+    get_faction_disposition) pesa anche lui, più leggermente - la
+    scelta della frase specifica dentro la categoria resta uniforme."""
+    personal_mult = ALIGNMENT_FATE_CATEGORY_WEIGHTS.get(alignment, (1.0, 1.0, 1.0))
+    faction_mult = FACTION_DISPOSITION_FATE_WEIGHTS.get(faction_disposition, (1.0, 1.0, 1.0))
     categories = list(NPC_FATE_CATEGORY_BASE_WEIGHTS.keys())  # ["morte", "ritiro", "sparizione"], stesso ordine dei moltiplicatori
-    weighted = [NPC_FATE_CATEGORY_BASE_WEIGHTS[cat] * mult for cat, mult in zip(categories, multipliers)]
+    weighted = [
+        NPC_FATE_CATEGORY_BASE_WEIGHTS[cat] * p_mult * f_mult
+        for cat, p_mult, f_mult in zip(categories, personal_mult, faction_mult)
+    ]
     category = random.choices(categories, weights=weighted, k=1)[0]
     return random.choice(NPC_FATE_CATEGORIES[category])
 
@@ -552,9 +599,16 @@ def _tick_common_npc_departures(conn, elapsed_minutes: int, current_world_minute
     _tick_common_npc_graduations per quando lo completa davvero)."""
     events = []
     rows = conn.execute(
-        "SELECT * FROM roster WHERE claimed_by_knight_id IS NULL AND npc_alive = 1 "
-        "AND npc_status = 'occupied' AND npc_injured = 0"
+        "SELECT r.*, a.divinity AS armor_divinity FROM roster r JOIN armors a ON a.name = r.armor_name "
+        "WHERE r.claimed_by_knight_id IS NULL AND r.npc_alive = 1 "
+        "AND r.npc_status = 'occupied' AND r.npc_injured = 0"
     ).fetchall()
+    # La disposizione di fazione (richiesto in chat, effetti più ampi
+    # ancora: non solo il singolo PNG, anche il "clima" imposto dalla
+    # leadership) - calcolata UNA volta per divinità in questo giro,
+    # non ad ogni singolo PNG: con 228 armature su 13 fazioni sarebbe
+    # lo stesso calcolo ripetuto decine di volte inutilmente.
+    disposition_cache: dict[str, str] = {}
     for row in rows:
         if not _roll_chance(elapsed_minutes, NPC_EVENT_CHANCE_PER_DAY):
             continue
@@ -568,7 +622,10 @@ def _tick_common_npc_departures(conn, elapsed_minutes: int, current_world_minute
             add_world_event(conn, current_world_minutes, row["armor_name"], entry)
             events.append({"armor_name": row["armor_name"], "entry": entry})
         else:
-            fate = resolve_npc_fate(row["npc_alignment"])
+            divinity = row["armor_divinity"]
+            if divinity not in disposition_cache:
+                disposition_cache[divinity] = get_faction_disposition(conn, divinity)
+            fate = resolve_npc_fate(row["npc_alignment"], disposition_cache[divinity])
             events.extend(_start_departure(conn, row, fate, current_world_minutes))
     return events
 
