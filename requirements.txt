@@ -3,3 +3,4 @@ qtawesome
 openpyxl
 fastapi
 uvicorn[standard]
+scikit-learn
