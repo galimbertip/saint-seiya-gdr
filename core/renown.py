@@ -53,3 +53,39 @@ def renown_next_threshold(renown: int) -> tuple[int, str] | None:
         if renown < threshold:
             return threshold, name
     return None
+
+
+# Lo staff oltre al solo Maestro (richiesto in chat, dalla roadmap:
+# "Football Manager - staff, non solo il singolo Maestro: scout,
+# medici, allenatori... trasformerebbe il tempo speso in gestione da
+# puramente reattivo a proattivo"). Sbloccato dalla Renown invece che
+# comprato o assegnato a mano - un aggancio concreto in più alla
+# reputazione di fazione, non un sistema scollegato dal resto.
+# PLACEHOLDER, come le altre soglie/curve del progetto.
+STAFF_MEDICO_RENOWN_THRESHOLD = 150   # la stessa soglia del titolo "Rispettato"
+STAFF_MEDICO_REGEN_MULTIPLIER = 1.5   # +50% al recupero passivo di Vita/Cosmo
+
+STAFF_OSSERVATORE_RENOWN_THRESHOLD = 300  # la stessa soglia del titolo "Onorato"
+STAFF_OSSERVATORE_AFFINITY_THRESHOLD = 15  # più basso della soglia "legame forte" (25) della Difesa a Ondate - qui basta un rapporto promettente, non già solido
+
+
+def has_staff_medico(renown: int) -> bool:
+    """Il Medico (richiesto in chat) accelera il recupero passivo di
+    Vita e Cosmo - sbloccato quando la fazione ti riconosce
+    abbastanza da assegnartene uno, non comprato con le Dracme."""
+    return renown >= STAFF_MEDICO_RENOWN_THRESHOLD
+
+
+def regen_multiplier(renown: int) -> float:
+    """Il moltiplicatore da applicare al recupero passivo di Vita/Cosmo
+    (richiesto in chat) - 1.0 (nessun effetto) finché non si sblocca
+    il Medico, altrimenti il bonus vero."""
+    return STAFF_MEDICO_REGEN_MULTIPLIER if has_staff_medico(renown) else 1.0
+
+
+def has_staff_osservatore(renown: int) -> bool:
+    """L'Osservatore (richiesto in chat: "un Osservatore che segnala
+    PNG con affinità già alta prima ancora di parlarci") - sbloccato a
+    una soglia di Renown più alta del Medico, dato che è un vantaggio
+    informativo più ampio (tutta la Taverna, non solo il tuo corpo)."""
+    return renown >= STAFF_OSSERVATORE_RENOWN_THRESHOLD
