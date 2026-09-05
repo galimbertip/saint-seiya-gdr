@@ -3298,11 +3298,16 @@ function renderDefenseTeamSelect() {
   } else {
     wrap.append(el("p", { class: "hint" }, `Scegli esattamente 2 alleati (${state.defenseSelectedAllies.length}/2 scelti). I legami forti in Taverna possono venire anche da un'altra fazione.`));
     const listCard = el("div", { class: "card" });
+    // Un'icona per il ruolo di combattimento (richiesto in chat, dalla
+    // roadmap: "sinergie di squadra" - un aiuto in più per scegliere
+    // una squadra bilanciata, non solo per affinità/fazione).
+    const roleIcons = { "Attacco Pesante": "⚔️", "Difensore": "🛡️", "Controllo": "🕸️", "Equilibrato": "⚖️" };
     for (const c of state.defenseTeamCandidates) {
       const isSelected = state.defenseSelectedAllies.includes(c.armor_name);
+      const roleTag = `${roleIcons[c.combat_role] || "⚖️"} ${c.combat_role}`;
       const label = c.source === "legame"
-        ? `${c.npc_name} - ${c.armor_name} (legame forte, affinità ${c.affinity})`
-        : `${c.npc_name} - ${c.armor_name}`;
+        ? `${c.npc_name} - ${c.armor_name} (legame forte, affinità ${c.affinity}) · ${roleTag}`
+        : `${c.npc_name} - ${c.armor_name} · ${roleTag}`;
       listCard.append(el("button", {
         class: isSelected ? "" : "secondary",
         onClick: () => {
