@@ -13,7 +13,6 @@
      (fallback su serif esplicito). Un solo font esterno, non due, per
      limitare la dipendenza da un servizio esterno. */
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&display=swap');
-
   :root {
     --bg-darkest: #0A0D16;
     --bg-panel: #131A2C;
@@ -204,7 +203,6 @@
     margin-bottom: 16px;
   }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-
   /* Un lampo di Cosmo quando un numero cambia davvero (danno subito,
      guadagno di risorsa) - richiesto in chat, "curiamo la grafica":
      un solo movimento mirato, non un'animazione su ogni elemento. Si
@@ -214,12 +212,10 @@
     100% { box-shadow: 0 0 0 8px rgba(75,147,222,0); }
   }
   .cosmo-flash { animation: cosmo-flash 0.5s ease-out; }
-
   @media (prefers-reduced-motion: reduce) {
     .bar-fill { transition: none; }
     .cosmo-flash { animation: none; }
   }
-
   /* Disposizione dell'Arena: pannello combattente sinistro, mappa al
      centro, pannello combattente destro - pensata per estendersi in
      futuro a più cavalieri per lato (richiesto in chat). Su schermi
@@ -235,7 +231,6 @@
   }
   .fighter-panel.opponent-panel button { opacity: 0.55; cursor: not-allowed; }
   .arena-map-column { flex: 2 1 340px; min-width: 300px; }
-
   /* Scheda Cavaliere/Home come "carta d'identità" (richiesta in chat,
      schizzo fornito): immagine grande a sinistra, a destra impilati
      Dati Anagrafici / BG Personaggio / Statistiche+Progressione;
@@ -257,7 +252,6 @@
   .sheet-stats { grid-area: stats; }
   .sheet-techniques { grid-area: techniques; }
   .sheet-diary { grid-area: diary; }
-
   /* --- Schermi stretti (smartphone) --- */
   @media (max-width: 640px) {
     body { padding: 12px; }
@@ -265,7 +259,6 @@
     h2 { font-size: 15px; }
     .card { padding: 12px 14px; }
     button { padding: 10px 14px; font-size: 13px; }
-
     /* La barra di stato: da riga unica (calendario + 2 barre da 240px,
        non ci stanno in 360px di schermo) a colonna impilata, ogni
        elemento largo quanto lo schermo - segnalato in chat, prima
@@ -273,17 +266,14 @@
     .status-bar { flex-direction: column; align-items: stretch; gap: 10px; }
     .status-bar .calendar { white-space: normal; text-align: center; }
     .status-bar .mini-bar { width: 100%; }
-
     .stat-chip { min-width: 64px; padding: 8px 10px; }
     .stat-chip .value { font-size: 17px; }
     .tab-btn { padding: 8px 10px; font-size: 13px; }
-
     /* Le tabelle (elenco partite, elenco armature) restano leggibili:
        invece di schiacciarsi o sforare lo schermo, scorrono in
        orizzontale con un dito - vedi .table-scroll nel markup. */
     table { font-size: 12px; }
     th, td { padding: 5px 6px; }
-
     /* La carta d'identità: da due colonne a una sola, impilata
        nell'ordine naturale di lettura. */
     .sheet-grid {
@@ -294,17 +284,14 @@
 </style>
 </head>
 <body>
-
 <div id="error-banner" class="hidden"></div>
 <div id="app"></div>
-
 <script>
 const $ = (sel) => document.querySelector(sel);
 // Potenza della Difesa Base generica (richiesto in chat: "Difesa Base
 // + tecniche di difesa", stessa struttura dell'Attacco Base) - deve
 // combaciare con DEFAULT_DEFENSE_POWER lato backend.
 const DEFAULT_DEFENSE_POWER = 10;
-
 // Il Cosmo come risorsa per le tecniche (richiesto in chat, le tre
 // barre) - stessa formula del backend (core/arena_manager.py,
 // technique_cosmo_cost), per mostrare il costo e disabilitare i
@@ -315,7 +302,6 @@ function techniqueCosmoCost(name, power) {
   if (name === "Attacco Base" || !power) return 0;
   return Math.max(1, Math.floor(power / TECHNIQUE_COSMO_COST_DIVISOR));
 }
-
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -336,7 +322,6 @@ const el = (tag, attrs = {}, ...children) => {
   }
   return node;
 };
-
 // Toglie i numeri "da regolamento" (tiro vs CA, dado naturale) E le
 // icone usate come segnaposto visivo negli elenchi, lasciando una
 // frase pulita da poter leggere come prosa - deciso in chat: la prima
@@ -351,7 +336,6 @@ function stripTechnicalDetails(line) {
     .replace(/^[⚔🎲⚠️☠️🏆💀✨⚡🎉🌟]+\s*/u, "")
     .trim();
 }
-
 // --- Stato globale della pagina (nessun framework, solo un oggetto e un render()) ---
 const state = {
   screen: "startPage",       // startPage | loadGame | creation | game
@@ -415,7 +399,6 @@ const state = {
   trainingLog: [],
   arenaLog: [],
 };
-
 // --- Chiamate API: stesso indirizzo della pagina, nessun URL da configurare ---
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -428,14 +411,12 @@ async function api(path, options = {}) {
   }
   return res.json();
 }
-
 function showError(msg) {
   const banner = $("#error-banner");
   banner.textContent = msg;
   banner.classList.remove("hidden");
   setTimeout(() => banner.classList.add("hidden"), 6000);
 }
-
 // --- Pagina Iniziale (Nuova/Carica Partita) e schermata "Carica Partita" ---
 // Rinominata da "Home" in chat: la vera Home (una volta dentro al
 // gioco) sarà la Scheda Cavaliere - questa è solo la porta d'ingresso
@@ -450,7 +431,6 @@ async function loadStartPage() {
   }
   render();
 }
-
 async function loadStartScreen() {
   // "Carica Partita": l'elenco dei salvataggi tra cui scegliere -
   // usata sia dal pulsante omonimo in home, sia per tornare qui dopo
@@ -465,7 +445,6 @@ async function loadStartScreen() {
   }
   render();
 }
-
 async function selectCharacter(id) {
   state.characterId = id;
   state.biography = null;  // il diario del personaggio precedente non deve restare in vista
@@ -509,7 +488,6 @@ async function selectCharacter(id) {
   maybeShowTutorial();
   render();
 }
-
 // --- Tutorial iniziale, saltabile (richiesto in chat) ---
 // Sei passaggi essenziali, non un manuale completo - le meccaniche più
 // fini (affinità elementale, effetti sul terreno nel dettaglio, ecc.)
@@ -542,14 +520,12 @@ const TUTORIAL_STEPS = [
     body: "Nella scheda Gerarchia trovi tutte le armature del gioco, ciascuna con un cavaliere assegnato - un PNG (etichettato in giallo) se nessun giocatore l'ha ancora presa, o il personaggio di chi l'ha reclamata.",
   },
 ];
-
 function maybeShowTutorial() {
   if (state.character && !state.character.tutorial_seen) {
     state.showTutorial = true;
     state.tutorialStep = 0;
   }
 }
-
 async function closeTutorial() {
   state.showTutorial = false;
   if (state.character) state.character.tutorial_seen = true;
@@ -564,7 +540,6 @@ async function closeTutorial() {
     }
   }
 }
-
 function renderTutorialOverlay() {
   if (!state.showTutorial) return null;
   const step = TUTORIAL_STEPS[state.tutorialStep];
@@ -575,7 +550,6 @@ function renderTutorialOverlay() {
   box.append(el("p", { class: "hint" }, `Passo ${state.tutorialStep + 1} di ${TUTORIAL_STEPS.length}`));
   box.append(el("h2", {}, step.title));
   box.append(el("p", {}, step.body));
-
   const btnRow = el("div", { class: "row", style: "margin-top:16px;justify-content:space-between;" });
   if (state.tutorialStep > 0) {
     btnRow.append(el("button", { class: "secondary", onClick: () => { state.tutorialStep--; render(); } }, "◄ Indietro"));
@@ -587,11 +561,9 @@ function renderTutorialOverlay() {
   }
   box.append(btnRow);
   box.append(el("button", { class: "secondary", style: "margin-top:10px;width:100%;", onClick: closeTutorial }, "Salta tutorial"));
-
   overlay.append(box);
   return overlay;
 }
-
 async function deleteCharacter(id, name) {
   if (!confirm(`Eliminare definitivamente "${name}"? Non si può annullare.`)) return;
   try {
@@ -601,7 +573,6 @@ async function deleteCharacter(id, name) {
     showError(e.message);
   }
 }
-
 // --- Creazione personaggio ---
 async function loadCreationScreen() {
   state.screen = "creation";
@@ -622,13 +593,11 @@ async function loadCreationScreen() {
   }
   render();
 }
-
 const RANDOM_NAMES_MALE = ["Kenji", "Marco", "Aleksei", "Diego", "Chen", "Andrea", "Erik", "Rafael", "Luca", "Dmitri"];
 const RANDOM_NAMES_FEMALE = ["Amara", "Sofia", "Yuki", "Elena", "Priya"];
 const RANDOM_SURNAMES = ["Takeda", "Rossi", "Volkov", "Fernandez", "Wang", "Costa", "Nilsson", "Silva", "Moreau", "Petrova"];
 const RANDOM_GENDERS = ["Maschio", "Femmina"];
 const BUILD_OPTIONS = ["Minuta", "Media", "Robusta"];
-
 // Pesca una nazione a caso dall'intero albero geografico (state.geoOrigins,
 // caricato da GET /geo-origins) - usata dal Personaggio Casuale.
 function randomCountryFromGeo() {
@@ -637,11 +606,9 @@ function randomCountryFromGeo() {
   const zones = Object.values(randomFrom(continents));
   return randomFrom(randomFrom(zones).countries);
 }
-
 function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
-
 async function createRandomCharacter() {
   if (state.armors.length === 0) return showError("Nessuna armatura disponibile.");
   const armor = randomFrom(state.armors);
@@ -659,7 +626,6 @@ async function createRandomCharacter() {
   };
   await createCharacter(randomFrom(namePool), armor.name, details);
 }
-
 async function createCharacter(rawName, armorName, details = {}) {
   try {
     const character = await api("/characters", {
@@ -686,13 +652,11 @@ async function createCharacter(rawName, armorName, details = {}) {
     showError(e.message);
   }
 }
-
 // --- Dati del personaggio corrente ---
 async function refreshCharacter() {
   state.character = await api(`/characters/${state.characterId}`);
   state.weeklySchedule = [...state.character.weekly_schedule_list];
 }
-
 // --- Allenamento ---
 async function doTrain(mode) {
   try {
@@ -716,7 +680,6 @@ async function doTrain(mode) {
     showError(e.message);
   }
 }
-
 // --- Arena ---
 async function searchOpponent(difficulty) {
   try {
@@ -728,7 +691,6 @@ async function searchOpponent(difficulty) {
     showError(e.message);
   }
 }
-
 async function challengeOpponent(opponent) {
   try {
     const result = await api(`/characters/${state.characterId}/arena/opponent`, {
@@ -743,7 +705,6 @@ async function challengeOpponent(opponent) {
     showError(e.message);
   }
 }
-
 // Fase 1 della mappa 2D: lo spostamento è ancora solo visivo, non
 // blocca né abilita nessuna azione di combattimento - vedi
 // api/arena_session.py per i dettagli.
@@ -761,7 +722,6 @@ async function movePlayerTo(x, y) {
     showError(e.message);
   }
 }
-
 async function declareAttack(techniqueName, techniquePower, techniqueType, techniqueLaunchDesc, techniqueEffectDesc) {
   try {
     const result = await api(`/characters/${state.characterId}/arena/declare`, {
@@ -781,7 +741,6 @@ async function declareAttack(techniqueName, techniquePower, techniqueType, techn
     showError(e.message);
   }
 }
-
 async function declareCharge() {
   try {
     const result = await api(`/characters/${state.characterId}/arena/declare`, {
@@ -793,7 +752,6 @@ async function declareCharge() {
     showError(e.message);
   }
 }
-
 async function reactToAttack(action, technique) {
   try {
     const body = { action, battle_state: state.battle };
@@ -823,7 +781,6 @@ async function reactToAttack(action, technique) {
     showError(e.message);
   }
 }
-
 async function retreat() {
   try {
     const result = await api(`/characters/${state.characterId}/arena/retreat`, { method: "POST" });
@@ -838,7 +795,6 @@ async function retreat() {
     showError(e.message);
   }
 }
-
 // Chiamata dal pulsante "Torna alla Sala dei Cavalieri" (rinominato in
 // chat da "Torna al Santuario" - troppo legato ad Athena, un nome che
 // non presuppone nessuna divinità specifica visto che ormai il gioco
@@ -859,7 +815,6 @@ async function goToKnightsHall() {
   state.opponentCandidates = null;
   await loadStartScreen();
 }
-
 function applyArenaResult(result) {
   // Riconosce se lo scontro appena concluso era la Prova Finale o uno
   // scontro leggero d'allenamento (richiesto in chat: ora sono veri
@@ -911,7 +866,6 @@ function applyArenaResult(result) {
   }
   render();
 }
-
 // --- Rendering ---
 function render() {
   const app = $("#app");
@@ -920,10 +874,8 @@ function render() {
   else if (state.screen === "loadGame") app.append(renderLoadGameScreen());
   else if (state.screen === "creation") app.append(renderCreationScreen());
   else if (state.screen === "game") app.append(renderGameScreen());
-
   const tutorialOverlay = renderTutorialOverlay();
   if (tutorialOverlay) app.append(tutorialOverlay);
-
   // Ogni render ricostruisce la pagina da zero, quindi la cronaca
   // perdeva sempre lo scorrimento e tornava a mostrare i messaggi più
   // vecchi (segnalato in chat) - la riportiamo in fondo, dove sta
@@ -933,7 +885,6 @@ function render() {
     box.scrollTop = box.scrollHeight;
   });
 }
-
 function renderEmblem() {
   // Emblema originale (nessuna grafica ufficiale Saint Seiya): un
   // cerchio dorato con una stella cosmica a otto punte e qualche
@@ -954,13 +905,11 @@ function renderEmblem() {
     </svg>`;
   return holder.firstElementChild;
 }
-
 function renderStartPage() {
   const wrap = el("div", { style: "max-width:420px;margin:40px auto;text-align:center;" });
   wrap.append(renderEmblem());
   wrap.append(el("h1", {}, "SAINT SEIYA"));
   wrap.append(el("p", { class: "hint" }, "Sacro Imperio" + (state.appVersion ? ` · ${state.appVersion}` : "")));
-
   const btnWrap = el("div", { style: "margin-top:24px;" });
   btnWrap.append(el("button", { style: "width:100%;", onClick: loadCreationScreen }, "⚔ Nuova Partita"));
   const loadLabel = state.characters.length === 0 ? "📂 Carica Partita (nessun salvataggio)" : "📂 Carica Partita";
@@ -970,17 +919,13 @@ function renderStartPage() {
     ...(state.characters.length === 0 ? { disabled: "disabled" } : {}),
   }, loadLabel));
   wrap.append(btnWrap);
-
   return wrap;
 }
-
 function renderLoadGameScreen() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Carica Partita"));
-
   const card = el("div", { class: "card" });
   card.append(el("h2", {}, "Partite salvate"));
-
   if (state.characters.length === 0) {
     card.append(el("p", { class: "hint" }, "Nessuna partita salvata."));
   } else {
@@ -1001,15 +946,12 @@ function renderLoadGameScreen() {
     card.append(scrollWrap);
   }
   wrap.append(card);
-
   wrap.append(el("button", { class: "secondary", onClick: loadStartPage }, "◄ Indietro"));
   return wrap;
 }
-
 function renderCreationScreen() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Crea il tuo Cavaliere"));
-
   if (!state.creationMode) {
     const modeCard = el("div", { class: "card" });
     modeCard.append(el("h2", {}, "Come vuoi iniziare?"));
@@ -1022,17 +964,14 @@ function renderCreationScreen() {
     wrap.append(el("button", { class: "secondary", onClick: loadStartPage }, "Annulla"));
     return wrap;
   }
-
   // --- Modalità "Crea Come Vuoi Tu": modulo esteso, richiesto in chat ---
   const nameCard = el("div", { class: "card" });
   nameCard.append(el("h2", {}, "Chi è il tuo Cavaliere"));
-
   const row1 = el("div", { class: "row" });
   const nameInput = el("input", { placeholder: "Nome (es. Seiya)" });
   const surnameInput = el("input", { placeholder: "Cognome (opzionale)" });
   row1.append(nameInput, surnameInput);
   nameCard.append(row1);
-
   const row2 = el("div", { class: "row" });
   const ageInput = el("input", { type: "number", placeholder: "Età", value: "15", min: "10", max: "99" });
   const genderSelect = el("select", {});
@@ -1045,7 +984,6 @@ function renderCreationScreen() {
   }
   row2.append(ageInput, genderSelect, buildSelect);
   nameCard.append(row2);
-
   // Provenienza: menu a cascata Continente -> Macrozona -> Nazione
   // (richiesto in chat: l'elenco piatto di 10 nazioni era troppo
   // scarno). L'albero arriva da GET /geo-origins, la stessa fonte di
@@ -1054,14 +992,12 @@ function renderCreationScreen() {
   const continentSelect = el("select", {});
   const macrozoneSelect = el("select", { disabled: "disabled" });
   const countrySelect = el("select", { disabled: "disabled" });
-
   continentSelect.append(el("option", { value: "" }, "Continente (opzionale)"));
   for (const continent of Object.keys(state.geoOrigins || {}).sort()) {
     continentSelect.append(el("option", { value: continent }, continent));
   }
   macrozoneSelect.append(el("option", { value: "" }, "Macrozona"));
   countrySelect.append(el("option", { value: "" }, "Nazione"));
-
   continentSelect.addEventListener("change", () => {
     macrozoneSelect.innerHTML = "";
     countrySelect.innerHTML = "";
@@ -1079,7 +1015,6 @@ function renderCreationScreen() {
       macrozoneSelect.append(el("option", { value: zone }, zone));
     }
   });
-
   macrozoneSelect.addEventListener("change", () => {
     countrySelect.innerHTML = "";
     const continent = continentSelect.value;
@@ -1095,11 +1030,9 @@ function renderCreationScreen() {
       countrySelect.append(el("option", { value: country }, country));
     }
   });
-
   row3.append(continentSelect, macrozoneSelect, countrySelect);
   nameCard.append(row3);
   nameCard.append(el("p", { class: "hint" }, "La provenienza dà un piccolo bonus/resistenza con l'elemento della sua macrozona. La corporatura sposta la Costituzione di partenza."));
-
   // Background (richiesto in chat): l'abbozzo iniziale del diario, da
   // cui il gioco continua a scrivere da solo (level up, Sensi,
   // vittorie/sconfitte) man mano che si gioca.
@@ -1110,7 +1043,6 @@ function renderCreationScreen() {
   nameCard.append(el("p", { class: "hint", style: "margin-top:12px;" }, "Il tuo diario comincia da qui - il gioco continuerà a scriverlo da solo man mano che giochi."));
   nameCard.append(biographyInput);
   wrap.append(nameCard);
-
   const armorCard = el("div", { class: "card" });
   armorCard.append(el("h2", {}, `Scegli l'armatura (${state.armors.length} disponibili al livello 1)`));
   const table = el("table");
@@ -1130,7 +1062,6 @@ function renderCreationScreen() {
   armorScrollWrap.append(table);
   armorCard.append(armorScrollWrap);
   wrap.append(armorCard);
-
   const createBtn = el("button", {
     onClick: () => {
       const name = nameInput.value.trim();
@@ -1151,11 +1082,9 @@ function renderCreationScreen() {
   wrap.append(el("button", { class: "secondary", onClick: () => { state.creationMode = null; render(); } }, "◄ Indietro"));
   return wrap;
 }
-
 function renderGameScreen() {
   const wrap = el("div");
   const k = state.character;
-
   // --- Barra di stato, sempre visibile ---
   const statusBar = el("div", { class: "status-bar" });
   statusBar.append(el("span", { class: "calendar" }, "📅 " + k.calendar.label));
@@ -1163,7 +1092,6 @@ function renderGameScreen() {
   statusBar.append(renderMiniBar("Cosmo", k.cosmo_cur, k.cosmo_max, "cosmo"));
   statusBar.append(renderMiniBar("Stamina", k.stamina, 100, "stamina"));
   wrap.append(statusBar);
-
   // --- Tabs ---
   const tabs = el("div", { class: "tabs" });
   // Finché è Apprendista (richiesto in chat), Allenamento e Arena sono
@@ -1171,7 +1099,7 @@ function renderGameScreen() {
   // se sono comunque bloccati lato server.
   const isSoldier = !k.is_knight && k.apprentice_status === "soldier";
   const tabDefs = k.is_knight
-    ? [["sheet", "Scheda Cavaliere"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
+    ? [["sheet", "Scheda Cavaliere"], ["today", "Oggi"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
     : isSoldier
     ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
     : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]];
@@ -1205,8 +1133,8 @@ function renderGameScreen() {
     onClick: () => { state.showTutorial = true; state.tutorialStep = 0; render(); },
   }, "❓"));
   wrap.append(tabs);
-
   if (state.gameTab === "sheet") wrap.append(renderSheetTab());
+  else if (state.gameTab === "today") wrap.append(renderTodayTab());
   else if (state.gameTab === "percorso") wrap.append(renderTrainingPathTab());
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
@@ -1215,11 +1143,9 @@ function renderGameScreen() {
   else if (state.gameTab === "chronicle") wrap.append(renderChronicleTab());
   else if (state.gameTab === "tavern") wrap.append(renderTavernTab());
   else if (state.gameTab === "hierarchy") wrap.append(renderHierarchyTab());
-
   wrap.append(el("button", { class: "secondary", onClick: goToKnightsHall }, "◄ Torna alla Sala dei Cavalieri"));
   return wrap;
 }
-
 async function loadRoster() {
   try {
     state.roster = await api("/roster");
@@ -1229,7 +1155,6 @@ async function loadRoster() {
   }
   render();
 }
-
 async function loadChronicle() {
   try {
     state.chronicle = await api("/world-chronicle");
@@ -1239,7 +1164,6 @@ async function loadChronicle() {
   }
   render();
 }
-
 async function loadTavernRealms() {
   try {
     state.tavernRealms = await api(`/characters/${state.characterId}/taverns`);
@@ -1249,7 +1173,6 @@ async function loadTavernRealms() {
   }
   render();
 }
-
 async function openTavernRealm(divinity) {
   state.tavernDivinity = divinity;
   state.tavernRealmRoster = null;
@@ -1264,7 +1187,6 @@ async function openTavernRealm(divinity) {
   }
   render();
 }
-
 async function refreshTavernMap() {
   // "Aspetta un po'" (richiesto in chat: la disposizione è dinamica) -
   // ricarica la mappa, che ricontrolla da sola se è ora di
@@ -1277,7 +1199,6 @@ async function refreshTavernMap() {
   }
   render();
 }
-
 function closeTavernRealm() {
   state.tavernDivinity = null;
   state.tavernRealmRoster = null;
@@ -1286,7 +1207,6 @@ function closeTavernRealm() {
   state.tavernPlayerY = 9.3;
   render();
 }
-
 async function openTavernConversation(armorName) {
   state.tavernArmorName = armorName;
   state.tavernConversation = null;
@@ -1299,14 +1219,12 @@ async function openTavernConversation(armorName) {
   }
   render();
 }
-
 function closeTavernConversation() {
   state.tavernArmorName = null;
   state.tavernConversation = null;
   state.tavernMissionOffer = null;
   render();
 }
-
 async function sendTavernMessage(overrideText, intent) {
   // overrideText/intent: capacità rimasta per compatibilità, ma non
   // più usata da nessun pulsante (richiesto in chat: "vorrei lasciare
@@ -1343,7 +1261,6 @@ async function sendTavernMessage(overrideText, intent) {
   }
   render();
 }
-
 async function acceptTavernMissionOffer() {
   const missionId = state.tavernMissionOffer;
   state.tavernMissionOffer = null;
@@ -1362,11 +1279,9 @@ async function acceptTavernMissionOffer() {
   }
   render();
 }
-
 const TAVERN_RELATION_LABELS = {
   alleata: "🤝 Alleata", neutrale: "⚖️ Neutrale", diffidente: "⚠️ Diffidente", ostile: "⚔️ Ostile",
 };
-
 // Le zone fisse della mappa della Taverna (richiesto in chat:
 // movimento libero come l'Arena, non caselle cliccabili) - stessa
 // griglia 0-10 già usata da renderArenaMap, per coerenza visiva.
@@ -1381,7 +1296,6 @@ const TAVERN_ZONES = [
   { key: "table-5", x: 8, y: 6.6, w: 1.8, h: 1.8, radius: 1.3, label: "Tavolo 5" },
   { key: "door", x: 5, y: 9.3, w: 1.6, h: 0.9, radius: 1.4, label: "Porta" },
 ];
-
 function tavernZoneAtPosition(x, y) {
   // Quale zona è abbastanza vicina da poterci interagire (richiesto in
   // chat: "in base a dove si trova, compare il menu di dialogo con le
@@ -1398,7 +1312,6 @@ function tavernZoneAtPosition(x, y) {
   }
   return closest;
 }
-
 function renderTavernMapCanvas(mapData) {
   const SIZE = 340;
   const canvas = document.createElement("canvas");
@@ -1412,10 +1325,8 @@ function renderTavernMapCanvas(mapData) {
   canvas.style.border = "1px solid var(--border)";
   canvas.style.borderRadius = "8px";
   canvas.style.cursor = "crosshair";
-
   const ctx = canvas.getContext("2d");
   const scale = SIZE / 10;
-
   // Sfondo a griglia leggera, stesso stile dell'Arena.
   ctx.strokeStyle = "rgba(120,130,150,0.2)";
   ctx.lineWidth = 1;
@@ -1429,12 +1340,10 @@ function renderTavernMapCanvas(mapData) {
     ctx.lineTo(SIZE, i * scale);
     ctx.stroke();
   }
-
   // Le zone: il bancone come rettangolo dorato, i tavoli come cerchi,
   // la porta come rettangolo stretto.
   const occupantsByTable = {};
   for (const table of mapData.tables) occupantsByTable[`table-${table.table_number}`] = table.occupants;
-
   for (const zone of TAVERN_ZONES) {
     const px = zone.x * scale, py = zone.y * scale;
     ctx.lineWidth = 2;
@@ -1462,7 +1371,6 @@ function renderTavernMapCanvas(mapData) {
     ctx.textAlign = "center";
     ctx.fillText(zone.label, px, py + (zone.key === "bar" || zone.key === "door" ? 4 : (zone.h * scale) / 2 + 14));
   }
-
   // Il tuo segnalino.
   const playerPx = { x: state.tavernPlayerX * scale, y: state.tavernPlayerY * scale };
   ctx.fillStyle = "var(--gold)";
@@ -1472,7 +1380,6 @@ function renderTavernMapCanvas(mapData) {
   ctx.arc(playerPx.x, playerPx.y, 9, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-
   canvas.addEventListener("click", (e) => {
     const rect = canvas.getBoundingClientRect();
     const gridX = ((e.clientX - rect.left) / rect.width) * 10;
@@ -1482,14 +1389,11 @@ function renderTavernMapCanvas(mapData) {
     state.tavernPlayerPosition = tavernZoneAtPosition(state.tavernPlayerX, state.tavernPlayerY);
     render();
   });
-
   return canvas;
 }
-
 function renderTavernTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Taverna"));
-
   // Livello 3 (richiesto in chat, taverne separate per regno): dentro
   // una conversazione con un PNG specifico.
   if (state.tavernArmorName) {
@@ -1502,7 +1406,6 @@ function renderTavernTab() {
     card.append(el("button", { class: "secondary", onClick: closeTavernConversation }, "◄ Torna alla mappa"));
     card.append(el("h2", {}, conv.npc_name));
     card.append(el("p", { class: "hint" }, `Affinità: ${conv.affinity}`));
-
     const logBox = el("div", { class: "log-box" });
     if (conv.messages.length === 0) {
       logBox.append(el("div", { class: "log-line hint" }, `${conv.npc_name} ti guarda in attesa che tu dica qualcosa.`));
@@ -1513,14 +1416,12 @@ function renderTavernTab() {
         isPlayer ? `Tu: ${msg.text}` : `${conv.npc_name}: ${msg.text}`));
     }
     card.append(logBox);
-
     // Il reclutamento per missione (richiesto in chat): un pulsante
     // ben visibile per accettare, non solo testo.
     if (state.tavernMissionOffer) {
       card.append(el("button", { onClick: acceptTavernMissionOffer }, "✅ Accetta l'incarico"));
       card.append(el("button", { class: "secondary", onClick: () => { state.tavernMissionOffer = null; render(); } }, "Non ora"));
     }
-
     // Il tono/atteggiamento (richiesto in chat, stile Football
     // Manager: "Nessuna reazione / Braccia distese / Sorriso caloroso
     // / Apri le braccia") - un asse separato da COSA dici, si applica
@@ -1536,7 +1437,6 @@ function renderTavernTab() {
       }, t.label));
     }
     card.append(toneRow);
-
     const inputRow = el("div", { class: "row" });
     const textInput = el("input", {
       type: "text", value: state.tavernInput, placeholder: "Scrivi cosa vuoi dire...",
@@ -1549,14 +1449,12 @@ function renderTavernTab() {
     wrap.append(card);
     return wrap;
   }
-
   // Livello 2: dentro un regno - la mappa vera della Taverna
   // (richiesto in chat: non più un elenco da cui scegliere, una
   // stanza con un bancone e dei tavoli, dove ti muovi e interagisci
   // in base a dove ti trovi).
   if (state.tavernDivinity) {
     wrap.append(el("button", { class: "secondary", onClick: closeTavernRealm }, "◄ Esci dalla Taverna"));
-
     if (state.tavernRealmRoster === null) {
       wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Taverna...")));
       return wrap;
@@ -1564,9 +1462,7 @@ function renderTavernTab() {
     const map = state.tavernRealmRoster;
     wrap.append(el("h2", {}, map.name));
     wrap.append(el("p", { class: "hint" }, `${TAVERN_RELATION_LABELS[map.relation] || map.relation} - la disposizione della sala cambia nel tempo. Clicca sulla mappa per muoverti.`));
-
     wrap.append(renderTavernMapCanvas(map));
-
     // La scena, romanzata, in base a dove ti trovi (richiesto in
     // chat: "non farei il menu stile Arena, la farei romanzata" - per
     // il movimento sì, per l'interazione no).
@@ -1594,7 +1490,6 @@ function renderTavernTab() {
     wrap.append(sceneCard);
     return wrap;
   }
-
   // Livello 1: la scelta di quale delle 13 Taverne visitare (richiesto
   // in chat: separate, non un'unica Taverna con tutti dentro) - con
   // la relazione tra la tua fazione e quella del regno, così sai già
@@ -1604,9 +1499,7 @@ function renderTavernTab() {
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento delle Taverne...")));
     return wrap;
   }
-
   wrap.append(el("p", { class: "hint" }, "Scrivi liberamente - non c'è una vera intelligenza artificiale dietro (costo zero), solo un buon orecchio per le parole chiave. Se non capisce, te lo dice a modo suo. Entrare nella taverna di una fazione rivale non è come entrare in quella di casa propria."));
-
   // Il resoconto dell'Osservatore (richiesto in chat, staff oltre al
   // Maestro) - sblocca da solo con la Renown, nessun controllo da
   // fare qui: se non è ancora sbloccato o non ci sono segnalazioni,
@@ -1621,7 +1514,6 @@ function renderTavernTab() {
     }
     wrap.append(scoutCard);
   }
-
   const listCard = el("div", { class: "card" });
   for (const realm of state.tavernRealms) {
     const row = el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;" });
@@ -1632,7 +1524,6 @@ function renderTavernTab() {
   wrap.append(listCard);
   return wrap;
 }
-
 async function loadScoutedAllies() {
   // Richiesto in chat, staff "Osservatore" - restituisce
   // {unlocked: false} finché la Renown non è sufficiente, il
@@ -1644,7 +1535,6 @@ async function loadScoutedAllies() {
   }
   render();
 }
-
 async function loadInstitutionalNpcs() {
   try {
     state.institutionalNpcs = await api("/institutional-npcs");
@@ -1654,7 +1544,6 @@ async function loadInstitutionalNpcs() {
   }
   render();
 }
-
 async function loadDivinityNpcs() {
   try {
     state.divinityNpcs = await api("/divinity-npcs");
@@ -1664,7 +1553,6 @@ async function loadDivinityNpcs() {
   }
   render();
 }
-
 async function updateBackground(newText) {
   try {
     const result = await api(`/characters/${state.characterId}/background`, {
@@ -1678,7 +1566,6 @@ async function updateBackground(newText) {
     showError(e.message);
   }
 }
-
 async function loadBiography() {
   try {
     state.biography = await api(`/characters/${state.characterId}/biography`);
@@ -1688,7 +1575,6 @@ async function loadBiography() {
   }
   render();
 }
-
 async function loadCustomTechniques() {
   try {
     state.customTechniques = await api(`/characters/${state.characterId}/custom-techniques`);
@@ -1698,7 +1584,6 @@ async function loadCustomTechniques() {
   }
   render();
 }
-
 async function loadTrainingPath() {
   try {
     state.trainingPath = await api(`/characters/${state.characterId}/training-path`);
@@ -1708,7 +1593,6 @@ async function loadTrainingPath() {
   }
   render();
 }
-
 async function advanceTraining() {
   try {
     await api(`/characters/${state.characterId}/training-path/advance`, { method: "POST" });
@@ -1720,7 +1604,6 @@ async function advanceTraining() {
     showError(e.message);
   }
 }
-
 async function attemptSkillCheck(approachIndex) {
   // La prova a dado di una tappa "choice_check" (richiesto in chat:
   // prima scegli l'approccio - determina la statistica del tiro - poi
@@ -1737,7 +1620,6 @@ async function attemptSkillCheck(approachIndex) {
     showError(e.message);
   }
 }
-
 async function chooseTrainingOption(optionIndex) {
   try {
     state.stageChoiceResult = await api(`/characters/${state.characterId}/training-path/choose`, {
@@ -1749,7 +1631,6 @@ async function chooseTrainingOption(optionIndex) {
     showError(e.message);
   }
 }
-
 async function startSpar() {
   // Lo scontro leggero della tappa "Fianco a fianco" (richiesto in
   // chat) - stessa interfaccia di combattimento della Prova Finale,
@@ -1763,7 +1644,6 @@ async function startSpar() {
     showError(e.message);
   }
 }
-
 async function startFinalTrial() {
   // La Prova Finale ora è un vero combattimento (richiesto in chat) -
   // stesso motore dell'Arena, avviato da un endpoint apposito che
@@ -1778,7 +1658,6 @@ async function startFinalTrial() {
     showError(e.message);
   }
 }
-
 async function retryTrial() {
   try {
     await api(`/characters/${state.characterId}/training-path/trial/retry`, { method: "POST" });
@@ -1789,7 +1668,6 @@ async function retryTrial() {
     showError(e.message);
   }
 }
-
 async function retrainForNewArmor() {
   try {
     await api(`/characters/${state.characterId}/training-path/trial/retrain`, { method: "POST" });
@@ -1802,7 +1680,6 @@ async function retrainForNewArmor() {
     showError(e.message);
   }
 }
-
 async function becomeSoldier() {
   try {
     await api(`/characters/${state.characterId}/training-path/trial/become-soldier`, { method: "POST" });
@@ -1815,7 +1692,6 @@ async function becomeSoldier() {
     showError(e.message);
   }
 }
-
 async function killCharacterAfterTrial() {
   try {
     state.deathResult = await api(`/characters/${state.characterId}/training-path/trial/die`, { method: "POST" });
@@ -1826,7 +1702,6 @@ async function killCharacterAfterTrial() {
     showError(e.message);
   }
 }
-
 function closeTrialResult() {
   const eraCavaliere = state.character.is_knight;
   state.trialResult = null;
@@ -1834,13 +1709,11 @@ function closeTrialResult() {
   if (eraCavaliere) state.gameTab = "sheet";
   render();
 }
-
 function closeSparResult() {
   state.sparResult = null;
   state.trainingPath = null;  // si ricarica da sola, già avanzata alla tappa successiva
   render();
 }
-
 async function loadMissionStatus() {
   try {
     state.missionStatus = await api(`/characters/${state.characterId}/mission`);
@@ -1850,7 +1723,6 @@ async function loadMissionStatus() {
   }
   render();
 }
-
 async function startMission(missionId) {
   try {
     await api(`/characters/${state.characterId}/mission/start`, {
@@ -1863,7 +1735,6 @@ async function startMission(missionId) {
     showError(e.message);
   }
 }
-
 async function attemptPersuade() {
   // La Scalata delle Dodici Case (richiesto in chat): un vero
   // tentativo di persuasione ad ogni Casa, prima di dover per forza
@@ -1878,7 +1749,6 @@ async function attemptPersuade() {
     showError(e.message);
   }
 }
-
 async function chooseMissionOption(optionIndex) {
   // Le Colonne dei Sette Mari (richiesto in chat): bivi che portano
   // DAVVERO a strade diverse.
@@ -1892,7 +1762,6 @@ async function chooseMissionOption(optionIndex) {
     showError(e.message);
   }
 }
-
 async function attemptMissionSkillCheck() {
   try {
     state.missionActionResult = await api(`/characters/${state.characterId}/mission/attempt`, { method: "POST" });
@@ -1901,7 +1770,6 @@ async function attemptMissionSkillCheck() {
     showError(e.message);
   }
 }
-
 async function answerInferiPuzzle(answerIndex) {
   // Le Prove degli Inferi (richiesto in chat): una vera risposta a un
   // enigma, non un tiro di dado - stesso endpoint di
@@ -1917,7 +1785,6 @@ async function answerInferiPuzzle(answerIndex) {
     showError(e.message);
   }
 }
-
 async function startMissionDuel() {
   // Sia per la Scalata (contro il Guardiano della Casa attuale) sia
   // per le Colonne (contro chi popola il nodo attuale) - stesso motore
@@ -1932,7 +1799,6 @@ async function startMissionDuel() {
     showError(e.message);
   }
 }
-
 function openDefenseTeamSelect() {
   // La Difesa a Ondate (richiesto in chat) ha un flusso tutto suo,
   // separato dalle altre missioni - prima la selezione del team, poi
@@ -1944,7 +1810,6 @@ function openDefenseTeamSelect() {
   render();
   loadDefenseTeamCandidates();
 }
-
 async function loadDefenseTeamCandidates() {
   try {
     const result = await api(`/characters/${state.characterId}/defense-team-options`);
@@ -1954,7 +1819,6 @@ async function loadDefenseTeamCandidates() {
   }
   render();
 }
-
 async function startDefenseMission() {
   const body = state.defenseTeamMode === "selected"
     ? { mode: "selected", ally_armor_names: state.defenseSelectedAllies }
@@ -1972,7 +1836,6 @@ async function startDefenseMission() {
   }
   render();
 }
-
 async function performDefenseAction(actorId, action, opts = {}) {
   const body = {
     battle_state: state.defenseBattle,
@@ -2001,7 +1864,6 @@ async function performDefenseAction(actorId, action, opts = {}) {
   }
   render();
 }
-
 function closeDefenseMission() {
   state.defenseScreen = null;
   state.defenseBattle = null;
@@ -2011,7 +1873,6 @@ function closeDefenseMission() {
   state.missionStatus = null;
   render();
 }
-
 async function abandonMission() {
   try {
     await api(`/characters/${state.characterId}/mission/abandon`, { method: "POST" });
@@ -2023,7 +1884,6 @@ async function abandonMission() {
     showError(e.message);
   }
 }
-
 async function createCustomTechnique(name, techType, isDefensive, launchDesc, effectDesc) {
   try {
     await api(`/characters/${state.characterId}/custom-techniques`, {
@@ -2036,7 +1896,6 @@ async function createCustomTechnique(name, techType, isDefensive, launchDesc, ef
     showError(e.message);
   }
 }
-
 // La Gerarchia (richiesta in chat): tutte le 224 armature, raggruppate
 // per divinità e fazione, ciascuna con chi la occupa - un PNG fisso
 // (etichettato chiaramente, per far capire che è ancora selezionabile
@@ -2046,18 +1905,15 @@ function renderChronicleTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Cronaca del Mondo"));
   wrap.append(el("p", { class: "hint" }, "Quello che succede ai Cavalieri non giocati, nel tempo condiviso da tutti - indipendentemente da quale personaggio stai seguendo in questo momento."));
-
   if (state.chronicle === null) {
     loadChronicle();
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Cronaca...")));
     return wrap;
   }
-
   if (state.chronicle.length === 0) {
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Non è ancora successo nulla di notevole. Il mondo è giovane, o silenzioso - per ora.")));
     return wrap;
   }
-
   const card = el("div", { class: "card" });
   for (const voce of state.chronicle) {
     const entryBlock = el("div", { style: "margin-top:12px;padding-top:12px;border-top:1px solid var(--border);" });
@@ -2068,10 +1924,8 @@ function renderChronicleTab() {
   wrap.append(card);
   return wrap;
 }
-
 function renderHierarchyTab() {
   const wrap = el("div");
-
   // Le Divinità e le Figure Istituzionali (richiesto in chat: gerarchia
   // vera per fazione, non più armature come semplice etichetta) -
   // caricate una volta, poi mostrate DENTRO la card di ciascuna
@@ -2083,24 +1937,20 @@ function renderHierarchyTab() {
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento della Gerarchia...")));
     return wrap;
   }
-
   const groups = {};
   for (const r of state.roster) {
     groups[r.divinity] = groups[r.divinity] || {};
     groups[r.divinity][r.faction] = groups[r.divinity][r.faction] || [];
     groups[r.divinity][r.faction].push(r);
   }
-
   // Le fazioni si ordinano dal livello medio delle proprie armature,
   // dai gradi PIÙ ALTI scendendo (richiesto in chat: "prima i gradi
   // alti, e poi si scende" - corretto, prima l'ordine era invertito).
   // Il criterio si ricava dai dati stessi, niente elenco scritto a
   // mano per ciascuna delle 13 divinità.
   const averageFactionLevel = (entries) => entries.reduce((sum, e) => sum + e.level, 0) / entries.length;
-
   for (const divinity of Object.keys(groups).sort()) {
     const divCard = el("div", { class: "card" });
-
     // Livello 1: la Divinità - il vertice vero della fazione
     // (richiesto in chat: "differenzia le divinità dalle armature").
     const divinityNpc = state.divinityNpcs.find((d) => d.divinity === divinity);
@@ -2112,7 +1962,6 @@ function renderHierarchyTab() {
     } else {
       divCard.append(el("h2", {}, divinity));
     }
-
     // Livello 2: la Figura Istituzionale di QUESTA Divinità, se ne
     // esiste una (richiesto in chat) - non tutte le 13 fazioni ne
     // hanno una scritta, per ora.
@@ -2125,7 +1974,6 @@ function renderHierarchyTab() {
       instBlock.append(el("p", { style: "font-style:italic;" }, `"${institutionalNpc.quote}"`));
       divCard.append(instBlock);
     }
-
     // Livello 3: i Cavalieri di questa fazione, per grado - dai più
     // alti scendendo.
     const factionsByPower = Object.keys(groups[divinity]).sort(
@@ -2177,10 +2025,8 @@ function renderHierarchyTab() {
     }
     wrap.append(divCard);
   }
-
   return wrap;
 }
-
 // ============================================================
 // ANIMAZIONE SPRITE STILE LPC (richiesto in chat: "usiamo lo stile
 // LPC Medieval Fantasy Character Sprites" per i combattenti, dopo i
@@ -2189,9 +2035,7 @@ function renderHierarchyTab() {
 // fissa (64x64 per fotogramma, lo standard "Universal LPC
 // Spritesheet"), ritagliata un fotogramma alla volta con drawImage.
 // ============================================================
-
 const LPC_FRAME_SIZE = 64;
-
 // La disposizione standard di un "Universal LPC Spritesheet" - ogni
 // blocco di animazione occupa 4 righe consecutive (una per
 // direzione: su, sinistra, giù, destra). Se lo spritesheet scaricato
@@ -2207,7 +2051,6 @@ const LPC_LAYOUT = {
   hurt: { rowStart: 20, frames: 6, fps: 10 },
 };
 const LPC_DIRECTION_ROW_OFFSET = { up: 0, left: 1, down: 2, right: 3 };
-
 /**
  * Anima UNO spritesheet LPC dentro un elemento <canvas> - ritaglia il
  * fotogramma giusto ad ogni frame di animazione e lo disegna
@@ -2230,12 +2073,10 @@ class LPCSpriteAnimator {
     this.elapsedMs = 0;
     this.playing = true;
     this.onAnimationComplete = null; // richiamata una volta sola quando un'animazione NON in loop (es. slash, hurt) finisce
-
     canvas.width = this.frameSize * this.scale;
     canvas.height = this.frameSize * this.scale;
     this.ctx.imageSmoothingEnabled = false;
   }
-
   setAnimation(animName, direction) {
     if (!LPC_LAYOUT[animName]) return;
     this.currentAnim = animName;
@@ -2243,14 +2084,12 @@ class LPCSpriteAnimator {
     this.frameIndex = 0;
     this.elapsedMs = 0;
   }
-
   _currentFrameRect() {
     const anim = LPC_LAYOUT[this.currentAnim];
     const dirOffset = LPC_DIRECTION_ROW_OFFSET[this.currentDirection] || 0;
     const row = anim.rowStart + dirOffset;
     return { sx: this.frameIndex * this.frameSize, sy: row * this.frameSize, sw: this.frameSize, sh: this.frameSize };
   }
-
   update(deltaMs) {
     if (!this.playing) return;
     const anim = LPC_LAYOUT[this.currentAnim];
@@ -2269,14 +2108,12 @@ class LPCSpriteAnimator {
     }
     this.draw();
   }
-
   draw() {
     const { sx, sy, sw, sh } = this._currentFrameRect();
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.ctx.drawImage(this.image, sx, sy, sw, sh, 0, 0, this.canvas.width, this.canvas.height);
   }
 }
-
 // La mappa Divinità -> spritesheet (richiesto in chat: personaggi
 // caratterizzati per fazione). Vuota di proposito per ora - nessuno
 // spritesheet vero è stato ancora prodotto col generatore LPC.
@@ -2301,7 +2138,6 @@ const SPRITE_PALETTE = {
   marrone: { hex: "#6B4A2E", spriteUrl: null },
   bianco: { hex: "#E8E4D6", spriteUrl: null },
 };
-
 // Il colore-tema di ciascuna Divinità (richiesto in chat,
 // caratterizzazione per fazione) - usato SOLO per scegliere quale dei
 // 7 colori della tavolozza gli si avvicina di più, non per
@@ -2313,7 +2149,6 @@ const DIVINITY_THEME_COLORS = {
   "Nettuno": "#0E6E7C", "Apollo": "#E8A93B", "Ares": "#8C1E1E", "Saturno": "#9C7A3C",
   "Crono": "#5C3A87", "Eris": "#6B8C3C", "Lucifero": "#7A1020", "Artemide": "#8FA9C9", "Zeus": "#E0C440",
 };
-
 function _hexToRgb(hex) {
   const clean = hex.replace("#", "");
   return {
@@ -2322,7 +2157,6 @@ function _hexToRgb(hex) {
     b: parseInt(clean.substring(4, 6), 16),
   };
 }
-
 // La sola distanza RGB confonde luminosità e tonalità (un colore
 // molto scuro come Ade finiva abbinato al marrone solo perché
 // entrambi sono "scuri", non perché la tinta si somigli davvero) -
@@ -2344,7 +2178,6 @@ function _hexToHsl(hex) {
   else h = ((rN - gN) / d + 4) / 6;
   return { h: h * 360, s, l };
 }
-
 function _colorDistance(hexA, hexB) {
   const a = _hexToHsl(hexA), b = _hexToHsl(hexB);
   let hueDiff = Math.abs(a.h - b.h);
@@ -2360,7 +2193,6 @@ function _colorDistance(hexA, hexB) {
     (a.l - b.l) ** 2 * lightWeight,
   );
 }
-
 /**
  * Trova il colore della tavolozza più vicino a quello di questa
  * Divinità (richiesto in chat: scelta automatica per distanza
@@ -2378,11 +2210,9 @@ function pickClosestPaletteColor(divinity) {
   }
   return best;
 }
-
 // Le animazioni già caricate (richiesto in chat: non ricaricare lo
 // stesso file immagine più volte se compare più volte a schermo).
 const _lpcImageCache = {};
-
 function _loadLpcImage(url) {
   if (_lpcImageCache[url]) return _lpcImageCache[url];
   const img = new Image();
@@ -2390,7 +2220,6 @@ function _loadLpcImage(url) {
   _lpcImageCache[url] = img;
   return img;
 }
-
 /**
  * Costruisce (se possibile) il canvas animato di un combattente per
  * una Divinità - restituisce null se non c'è ancora nessuno
@@ -2403,7 +2232,6 @@ function tryRenderFighterSprite(divinity, options = {}) {
   const colorName = pickClosestPaletteColor(divinity);
   const config = SPRITE_PALETTE[colorName];
   if (!config || !config.spriteUrl) return null;
-
   const canvas = document.createElement("canvas");
   const image = _loadLpcImage(config.spriteUrl);
   const animator = new LPCSpriteAnimator(canvas, image, {
@@ -2411,7 +2239,6 @@ function tryRenderFighterSprite(divinity, options = {}) {
     initialAnim: "walk",
     initialDirection: options.direction || "down",
   });
-
   let lastTime = performance.now();
   let rafId = null;
   function loop(now) {
@@ -2421,13 +2248,11 @@ function tryRenderFighterSprite(divinity, options = {}) {
     if (image.complete && image.naturalWidth > 0) animator.update(delta);
   }
   rafId = requestAnimationFrame(loop);
-
   canvas.dataset.animatorAttached = "true";
   canvas._lpcAnimator = animator; // esposto per chi vuole cambiare animazione (es. "slash" quando attacca)
   canvas._lpcStop = () => cancelAnimationFrame(rafId); // il chiamante deve fermarlo quando la schermata cambia, per non lasciare cicli fantasma
   return canvas;
 }
-
 function renderMiniBar(label, value, max, kind) {
   const wrap = el("div", { class: "mini-bar" });
   const barWrap = el("div", { class: "bar-wrap" });
@@ -2437,7 +2262,6 @@ function renderMiniBar(label, value, max, kind) {
   wrap.append(barWrap);
   return wrap;
 }
-
 // Caricamento dell'immagine del personaggio (richiesto in chat: tolte
 // le sagome geometriche, "fanno cagare" - restava solo questa strada
 // per avere un vero ritratto, senza uno strumento di disegno vero).
@@ -2458,7 +2282,6 @@ async function uploadAvatar(file) {
     showError(e.message);
   }
 }
-
 async function uploadArenaBackground(file, theme) {
   if (!state.characterId) return;
   const formData = new FormData();
@@ -2476,7 +2299,6 @@ async function uploadArenaBackground(file, theme) {
     showError(e.message);
   }
 }
-
 // Riga di descrizione di una tecnica, con l'etichetta Offensiva/
 // Difensiva/Entrambe ben visibile (richiesto in chat: prima si capiva
 // solo leggendo "Difensivo" dentro il tech_type, poco a colpo
@@ -2492,14 +2314,11 @@ function techniqueLine(icon, t) {
   const cleanType = (t.tech_type || "").replace(/\/?difensiv[oa]/i, "").replace(/\/?entrambe/i, "").replace(/^\/|\/$/g, "");
   return `${icon} ${t.name} — ${cleanType || "—"} · ${roleLabel} (potenza ${t.power})`;
 }
-
 function renderSheetTab() {
   const k = state.character;
   const wrap = el("div");
   wrap.append(el("h1", {}, k.formal_name));
-
   const grid = el("div", { class: "sheet-grid" });
-
   // --- Immagine PG: l'avatar caricato se c'è, altrimenti un
   // segnaposto semplice (tolte le sagome geometriche - richiesto in
   // chat, non reggevano il confronto) ---
@@ -2519,7 +2338,6 @@ function renderSheetTab() {
     onClick: () => avatarFileInput.click(),
   }, k.avatar_path ? "📷 Cambia immagine" : "📷 Carica una tua immagine"));
   grid.append(imageCard);
-
   // --- Dati anagrafici ---
   const idCard = el("div", { class: "card sheet-identity" });
   idCard.append(el("h2", {}, "Dati Anagrafici"));
@@ -2541,7 +2359,6 @@ function renderSheetTab() {
   idCard.append(el("p", { class: "hint" }, `💰 ${k.denaro} Dracme`));
   idCard.append(el("p", { class: "hint" }, `🎖️ ${k.renown_title} (Renown: ${k.renown})`));
   grid.append(idCard);
-
   // --- BG Personaggio: solo l'abbozzo scritto alla creazione, non le
   // voci auto-generate (quelle sono nel Diario, più in basso -
   // separati come richiesto in chat) ---
@@ -2574,7 +2391,6 @@ function renderSheetTab() {
     }, "✏️ Modifica"));
   }
   grid.append(bgCard);
-
   // --- Statistiche + Progressione, unite in una card sola ---
   const statsCard = el("div", { class: "card sheet-stats" });
   statsCard.append(el("h2", {}, "Statistiche"));
@@ -2591,14 +2407,12 @@ function renderSheetTab() {
   statsCard.append(el("p", { class: "hint" },
     `Sensi — Sesto ${mark(senses.sesto)} · Settimo ${mark(senses.settimo)} · Ottavo ${mark(senses.ottavo)} · Nono ${mark(senses.nono)}`));
   grid.append(statsCard);
-
   // --- Tecniche (catalogo + personalizzate) ---
   const techCard = el("div", { class: "card sheet-techniques" });
   techCard.append(el("h2", {}, "Tecniche"));
   for (const t of k.techniques) {
     techCard.append(el("p", {}, techniqueLine("⚡", t)));
   }
-
   // Tecniche personalizzate (richiesto in chat) - caricate pigre, come
   // il Diario e la Gerarchia.
   if (state.customTechniques === null) {
@@ -2613,7 +2427,6 @@ function renderSheetTab() {
       }
     }
     techCard.append(el("p", { class: "hint", style: "margin-top:8px;" }, `Slot tecnica personalizzata: ${ct.slots_used}/${ct.slots_total}`));
-
     if (ct.slots_used < ct.slots_total) {
       if (ct.allowed_elements.length === 0) {
         techCard.append(el("p", { class: "hint" }, "Nessun elemento ammesso al momento (serve un'armatura con tecniche riconosciute, o una Provenienza con affinità)."));
@@ -2639,7 +2452,6 @@ function renderSheetTab() {
     }
   }
   grid.append(techCard);
-
   // --- Diario: solo le voci auto-generate (level up, Sensi,
   // vittorie/sconfitte) - il Background sta ora a parte, sopra ---
   const diaryCard = el("div", { class: "card sheet-diary" });
@@ -2656,15 +2468,92 @@ function renderSheetTab() {
     diaryCard.append(entriesBox);
   }
   grid.append(diaryCard);
-
   wrap.append(grid);
   return wrap;
 }
-
+// --- La vista "Oggi" (richiesto in chat, dalla roadmap: "downtime più
+// strutturato... un'unica vista 'Cosa faccio oggi' con costo in tempo
+// dichiarato, sul modello D&D - più che altro un miglioramento di
+// presentazione, il motore già lo fa") - non è un motore nuovo, è
+// un cruscotto che raggruppa le attività esistenti (Allenamento,
+// Taverna, Arena, Missioni) con quanto tempo costa ciascuna, e un
+// collegamento rapido alla scheda vera per farla davvero. I costi in
+// tempo qui SPECCHIANO quelli reali di core/fm_manager.py
+// (TRAINING_MINUTES_BY_FOCUS, ARENA_ROUND_MINUTES) - stesso principio
+// già seguito altrove nel progetto (es. TECHNIQUE_COSMO_COST_DIVISOR),
+// vanno tenuti allineati a mano se quei valori cambiano lato server.
+const TRAINING_TIME_HOURS_BY_FOCUS = {
+  "Riposo": 8,
+  "Cascata del Sacrificio": 6,
+  "Sparring con i Compagni": 6,
+  // Cosmo/Forza/Destrezza/Costituzione/Tecnica/Volontà: tutte 4 ore
+  // (DEFAULT_TRAINING_MINUTES lato server) - non elencate una per una,
+  // il ripiego sotto le copre tutte allo stesso modo.
+};
+const DEFAULT_TRAINING_TIME_HOURS = 4;
+function goToTab(tabKey) {
+  state.gameTab = tabKey;
+  render();
+}
+function renderTodayTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Oggi"));
+  const k = state.character;
+  wrap.append(el("p", { class: "hint" }, `📅 ${k.calendar.label}`));
+  wrap.append(el("p", { class: "hint" }, "Un riepilogo di cosa puoi fare adesso e quanto tempo costa - non sostituisce le schede vere, ti ci porta più in fretta."));
+  // --- Allenamento: costo in tempo dichiarato per focus, come in D&D ---
+  const trainCard = el("div", { class: "card" });
+  trainCard.append(el("h2", {}, "🏋️ Allenamento"));
+  if (k.mission_id) {
+    trainCard.append(el("p", { class: "hint" }, "🔒 Non disponibile - sei in missione."));
+  } else {
+    trainCard.append(el("p", {}, "Il costo in tempo dipende dal focus scelto per ciascun giorno del programma:"));
+    const focusList = el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;" });
+    const allFoci = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà", "Cascata del Sacrificio", "Sparring con i Compagni", "Riposo"];
+    for (const focus of allFoci) {
+      const hours = TRAINING_TIME_HOURS_BY_FOCUS[focus] ?? DEFAULT_TRAINING_TIME_HOURS;
+      focusList.append(el("span", {
+        class: "hint", style: "background:var(--bg-panel-alt);border:1px solid var(--border);border-radius:6px;padding:3px 8px;",
+      }, `${focus}: ${hours}h`));
+    }
+    trainCard.append(focusList);
+    trainCard.append(el("button", { onClick: () => goToTab("training") }, "Vai al Centro Allenamento"));
+  }
+  wrap.append(trainCard);
+  // --- Arena: costo per round, non per l'intero scontro (dipende da
+  // quanti round dura) ---
+  const arenaCard = el("div", { class: "card" });
+  arenaCard.append(el("h2", {}, "⚔ Arena del Santuario"));
+  if (k.mission_id) {
+    arenaCard.append(el("p", { class: "hint" }, "🔒 Non disponibile - sei in missione."));
+  } else {
+    arenaCard.append(el("p", {}, `Ogni scambio di colpi dura circa 15 minuti - un duello intero, quindi, quanto i round che servono per deciderlo.`));
+    arenaCard.append(el("button", { onClick: () => goToTab("arena") }, "Vai in Arena"));
+  }
+  wrap.append(arenaCard);
+  // --- Taverna: nessun costo in tempo dichiarato (conversare è
+  // gratuito, come già detto nel testo della scheda stessa) ---
+  const tavernCard = el("div", { class: "card" });
+  tavernCard.append(el("h2", {}, "🍺 Taverna"));
+  tavernCard.append(el("p", {}, "Parlare con qualcuno non fa passare il tempo del mondo - puoi tornarci quante volte vuoi."));
+  tavernCard.append(el("button", { onClick: () => goToTab("tavern") }, "Vai in Taverna"));
+  wrap.append(tavernCard);
+  // --- Missioni: mostra quella in corso, se c'è, altrimenti invita a
+  // sceglierne una ---
+  const missionCard = el("div", { class: "card" });
+  missionCard.append(el("h2", {}, "📜 Missioni"));
+  if (k.mission_id) {
+    missionCard.append(el("p", {}, "Hai una missione in corso - il tempo che costa dipende da cosa farai dentro di essa (un duello, una prova, un dialogo)."));
+  } else {
+    missionCard.append(el("p", { class: "hint" }, "Nessuna missione attiva al momento."));
+  }
+  missionCard.append(el("button", { onClick: () => goToTab("missions") }, "Vai alle Missioni"));
+  wrap.append(missionCard);
+  return wrap;
+}
 function renderTrainingPathTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Percorso di Apprendistato"));
-
   // Un combattimento è in corso - la Prova Finale, o lo scontro
   // leggero della tappa "Fianco a fianco" (richiesto in chat: veri
   // combattimenti interattivi, non testo o dadi narrati) - stessa
@@ -2681,7 +2570,6 @@ function renderTrainingPathTab() {
     wrap.append(logCard);
     return wrap;
   }
-
   // Il risultato della Prova Finale, appena conclusa - mostrato a
   // parte prima di procedere (richiesto in chat: dev'essere possibile
   // fallire, e il fallimento va raccontato, non solo un numero che
@@ -2702,7 +2590,6 @@ function renderTrainingPathTab() {
     wrap.append(card);
     return wrap;
   }
-
   if (state.trialResult) {
     const resultCard = el("div", { class: "card" });
     if (state.trialResult.passed) {
@@ -2725,7 +2612,6 @@ function renderTrainingPathTab() {
       const logBox = el("div", { class: "log-box" });
       for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
       resultCard.append(logBox);
-
       // Le alternative al fallimento (richiesto in chat): compaiono
       // ad OGNI fallimento, non solo dopo un certo numero di tentativi
       // - le tre più drastiche chiedono conferma prima di procedere.
@@ -2735,7 +2621,6 @@ function renderTrainingPathTab() {
         death: "Questa scelta è definitiva: il personaggio smetterà di esistere. Confermi?",
       };
       const FATE_CONFIRM_ACTION = { retrain: retrainForNewArmor, soldier: becomeSoldier, death: killCharacterAfterTrial };
-
       if (state.confirmingFateChoice) {
         resultCard.append(el("p", { style: "margin-top:10px;" }, FATE_CONFIRM_TEXT[state.confirmingFateChoice]));
         const row = el("div", { class: "row" });
@@ -2753,7 +2638,6 @@ function renderTrainingPathTab() {
     wrap.append(resultCard);
     return wrap;
   }
-
   // Il risultato dello scontro leggero, appena concluso - si avanza
   // comunque (richiesto in chat), ma merita un riscontro chiaro prima
   // di passare alla tappa successiva.
@@ -2768,15 +2652,12 @@ function renderTrainingPathTab() {
     wrap.append(resultCard);
     return wrap;
   }
-
   if (state.trainingPath === null) {
     loadTrainingPath();
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento del percorso...")));
     return wrap;
   }
-
   const tp = state.trainingPath;
-
   // Intestazione sempre visibile (richiesto in chat: prima l'armatura
   // del Maestro e per chi ti stai addestrando non si vedevano mai
   // esplicitamente, solo dentro il testo della prima tappa).
@@ -2791,7 +2672,6 @@ function renderTrainingPathTab() {
     infoCard.append(el("p", { class: "hint" }, `📍 ${infoLine.location}`));
   }
   wrap.append(infoCard);
-
   if (tp.ready_for_trial) {
     const trialCard = el("div", { class: "card" });
     trialCard.append(el("h2", {}, "La Prova Finale"));
@@ -2801,16 +2681,13 @@ function renderTrainingPathTab() {
     wrap.append(trialCard);
     return wrap;
   }
-
   const stage = tp.stage;
   const stageCard = el("div", { class: "card" });
   stageCard.append(el("p", { class: "hint" }, `Tappa ${stage.stage_number} di ${stage.total_stages}`));
   stageCard.append(el("h2", {}, stage.title));
   stageCard.append(el("p", {}, stage.text));
-
   if (stage.type === "narrative") {
     stageCard.append(el("button", { onClick: advanceTraining }, "Continua"));
-
   } else if (stage.type === "choice_check") {
     // Scelta + tiro combinati (richiesto in chat: prima era solo un
     // pulsante "Prova" nudo, troppo ripetitivo) - prima si sceglie
@@ -2835,7 +2712,6 @@ function renderTrainingPathTab() {
         stageCard.append(el("button", { onClick: () => attemptSkillCheck(approach.index) }, approach.label));
       }
     }
-
   } else if (stage.type === "choice") {
     if (state.stageChoiceResult) {
       stageCard.append(el("p", { style: "font-style:italic;margin-top:8px;" }, state.stageChoiceResult.text));
@@ -2845,19 +2721,15 @@ function renderTrainingPathTab() {
         stageCard.append(el("button", { onClick: () => chooseTrainingOption(opt.index) }, opt.label));
       }
     }
-
   } else if (stage.type === "spar") {
     stageCard.append(el("button", { onClick: startSpar }, "🤝 Inizia lo scontro"));
   }
-
   wrap.append(stageCard);
   return wrap;
 }
-
 function renderTrainingTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Centro Allenamento"));
-
   // Bloccato per gli Apprendisti (richiesto in chat: ora la scheda
   // resta visibile, ma con un messaggio chiaro sul perché non è
   // ancora accessibile, invece di sparire del tutto dalla barra).
@@ -2882,7 +2754,6 @@ function renderTrainingTab() {
     ));
     return wrap;
   }
-
   const focusOptions = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
                          "Cascata del Sacrificio", "Sparring con i Compagni", "Riposo"];
   const dayNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
@@ -2897,14 +2768,12 @@ function renderTrainingTab() {
     "Sparring con i Compagni": "aumenta Forza, Destrezza o Costituzione a caso (rischio infortunio più alto)",
     "Riposo": "recupera Stamina, nessuna crescita",
   };
-
   const legendCard = el("div", { class: "card" });
   legendCard.append(el("h2", {}, "Cosa allena ogni voce"));
   for (const [focus, desc] of Object.entries(focusLegend)) {
     legendCard.append(el("p", { class: "hint" }, `${focus}: ${desc}`));
   }
   wrap.append(legendCard);
-
   const scheduleCard = el("div", { class: "card" });
   scheduleCard.append(el("h2", {}, "Programma settimanale"));
   const row = el("div", { class: "row" });
@@ -2920,13 +2789,11 @@ function renderTrainingTab() {
     row.append(col);
   });
   scheduleCard.append(row);
-
   const btnRow = el("div", { class: "row" });
   btnRow.append(el("button", { onClick: () => doTrain("settimana") }, "▶ Avanza Settimana"));
   btnRow.append(el("button", { class: "secondary", onClick: () => doTrain("mese") }, "▶▶ Avanza Mese"));
   scheduleCard.append(btnRow);
   wrap.append(scheduleCard);
-
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Ultimo avanzamento"));
   const logBox = el("div", { class: "log-box" });
@@ -2934,10 +2801,8 @@ function renderTrainingTab() {
   for (const line of state.trainingLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
   logCard.append(logBox);
   wrap.append(logCard);
-
   return wrap;
 }
-
 // Una card-galleria di sfondi (richiesto in chat: una per i 5 temi
 // elementali, una per le 13 "sedi" di divinità) - stessa logica,
 // riusata due volte invece di duplicarla.
@@ -2966,11 +2831,9 @@ function buildBackgroundGalleryCard(title, hint, labelsMap, backgrounds) {
   }
   return card;
 }
-
 function renderArenaTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Arena del Santuario"));
-
   // Bloccato per gli Apprendisti (richiesto in chat: stesso principio
   // del Centro Allenamento - visibile, ma con un messaggio chiaro).
   if (state.character.apprentice_status === "soldier") {
@@ -2995,7 +2858,6 @@ function renderArenaTab() {
     ));
     return wrap;
   }
-
   if (!state.battle && !state.opponentCandidates) {
     const searchCard = el("div", { class: "card" });
     searchCard.append(el("h2", {}, "Cerca un avversario"));
@@ -3004,7 +2866,6 @@ function renderArenaTab() {
     searchCard.append(el("button", { onClick: () => searchOpponent("medio") }, "🗡 Medio"));
     searchCard.append(el("button", { class: "secondary", onClick: () => searchOpponent("difficile") }, "🗡 Difficile"));
     wrap.append(searchCard);
-
     // Un'unica galleria "per Regno" (richiesto in chat: prima erano
     // due gallerie separate, per elemento e per divinità - ridondanti
     // e confuse) - un'immagine per ciascuno dei 13 Regni, usata quando
@@ -3034,7 +2895,6 @@ function renderArenaTab() {
   } else {
     appendBattleColumns(wrap);
   }
-
   const logCard = el("div", { class: "card" });
   logCard.append(el("h2", {}, "Cronaca dello scontro"));
   const logBox = el("div", { class: "log-box" });
@@ -3042,10 +2902,8 @@ function renderArenaTab() {
   for (const line of state.arenaLog) logBox.append(el("div", { class: "log-line" }, "• " + line));
   logCard.append(logBox);
   wrap.append(logCard);
-
   return wrap;
 }
-
 // Il pannello di combattimento vero e proprio (mappa, tecniche,
 // reazioni) - estratto in una funzione a sé (richiesto in chat: la
 // Prova Finale ora è un vero combattimento, non un tiro di dado
@@ -3061,7 +2919,6 @@ async function loadSoldierStatus() {
   }
   render();
 }
-
 async function doSoldierActivity(activityKey) {
   try {
     state.soldierActivityResult = await api(`/characters/${state.characterId}/soldier/activity`, {
@@ -3074,12 +2931,10 @@ async function doSoldierActivity(activityKey) {
     showError(e.message);
   }
 }
-
 function renderSoldierTab() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Servizio da Soldato Semplice"));
   wrap.append(el("p", { class: "hint" }, `Dracme: ${state.character.denaro}`));
-
   if (state.soldierActivityResult) {
     const card = el("div", { class: "card" });
     const r = state.soldierActivityResult;
@@ -3090,13 +2945,11 @@ function renderSoldierTab() {
     wrap.append(card);
     return wrap;
   }
-
   if (state.soldierStatus === null) {
     loadSoldierStatus();
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento...")));
     return wrap;
   }
-
   const card = el("div", { class: "card" });
   card.append(el("h2", {}, "Le tue attività"));
   card.append(el("p", {}, "La vita del Santuario non si ferma per chi non porta un'armatura - c'è sempre qualcosa da fare, e ogni tanto qualcosa da guadagnare."));
@@ -3106,10 +2959,8 @@ function renderSoldierTab() {
   wrap.append(card);
   return wrap;
 }
-
 function renderMissionsTab() {
   const wrap = el("div");
-
   // La Difesa a Ondate ha un flusso tutto suo, separato dal resto
   // delle missioni (richiesto in chat) - selezione team, poi
   // battaglia multi-unità, prima di tornare all'elenco normale.
@@ -3119,9 +2970,7 @@ function renderMissionsTab() {
   if (state.defenseScreen === "battle") {
     return renderDefenseBattle();
   }
-
   wrap.append(el("h1", {}, "Missioni"));
-
   // Un combattimento di missione è in corso (richiesto in chat) -
   // stessa interfaccia di battaglia già usata per la Prova Finale e
   // l'Arena.
@@ -3136,7 +2985,6 @@ function renderMissionsTab() {
     wrap.append(logCard);
     return wrap;
   }
-
   // Il risultato di una missione appena completata via duello
   // (richiesto in chat: prima non arrivava nessun segnale al
   // frontend).
@@ -3152,34 +3000,28 @@ function renderMissionsTab() {
     wrap.append(card);
     return wrap;
   }
-
   if (state.missionStatus === null) {
     loadMissionStatus();
     wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento del percorso...")));
     return wrap;
   }
-
   const ms = state.missionStatus;
-
   if (!ms.active) {
     const card1 = el("div", { class: "card" });
     card1.append(el("h2", {}, "La Scalata delle Dodici Case"));
     card1.append(el("p", {}, "Affronta in ordine i dodici Guardiani del Santuario - convincili a lasciarti passare senza combattere, o sfidali a duello. Fedele al canone: l'ordine è sempre lo stesso."));
     card1.append(el("button", { onClick: () => startMission("dodici_case") }, "⛩️ Inizia la Scalata"));
     wrap.append(card1);
-
     const card2 = el("div", { class: "card" });
     card2.append(el("h2", {}, "Le Colonne dei Sette Mari"));
     card2.append(el("p", {}, "Infiltrati nel Regno di Poseidone. Le tue scelte portano DAVVERO a strade diverse - e a finali diversi."));
     card2.append(el("button", { onClick: () => startMission("colonne_sette_mari") }, "🌊 Inizia Le Colonne"));
     wrap.append(card2);
-
     const card3 = el("div", { class: "card" });
     card3.append(el("h2", {}, "Il Gelo di Valhalla"));
     card3.append(el("p", {}, "Infiltrati nel Regno di Asgard, tra i Guerrieri Divini. Un frammento del Bracciale del Nibelungen ti metterà alla prova - il potere ha sempre un prezzo."));
     card3.append(el("button", { onClick: () => startMission("gelo_di_valhalla") }, "❄️ Inizia Il Gelo di Valhalla"));
     wrap.append(card3);
-
     // I tornei (richiesto in chat: struttura diversa, un vero
     // tabellone a eliminazione diretta - perdere un round significa
     // essere fuori, non poter ritentare come nelle altre missioni).
@@ -3193,19 +3035,16 @@ function renderMissionsTab() {
       card4.append(el("p", { class: "hint" }, "Riservato ai Bronze Saint - la tua armatura non è idonea."));
     }
     wrap.append(card4);
-
     const card5 = el("div", { class: "card" });
     card5.append(el("h2", {}, "Il Torneo delle Stelle Libere"));
     card5.append(el("p", {}, "Un torneo aperto a chiunque, indipendentemente dal rango - quattro round, sempre a eliminazione diretta, contro avversari sempre più forti."));
     card5.append(el("button", { onClick: () => startMission("torneo_stelle_libere") }, "⭐ Iscriviti al Torneo delle Stelle Libere"));
     wrap.append(card5);
-
     const card6 = el("div", { class: "card" });
     card6.append(el("h2", {}, "Le Prove degli Inferi"));
     card6.append(el("p", {}, "Infiltrati negli Inferi di Ade fino alla Sala dei Tre Giudici. Cinque prove, non duelli: ogni fallimento fa salire il livello di allerta - se sale troppo, uno Spettro ti intercetta. Farsi scoprire due volte, o perdere contro un Giudice, chiude la missione."));
     card6.append(el("button", { onClick: () => startMission("prove_degli_inferi") }, "💀 Infiltrati negli Inferi"));
     wrap.append(card6);
-
     const card7 = el("div", { class: "card" });
     card7.append(el("h2", {}, "Difesa a Ondate"));
     card7.append(el("p", {}, "Un'ambientazione e una fazione nemica sempre diverse (mai la tua), 3 contro 3, iniziativa vera - respingi 4 ondate al fianco di due alleati. La squadra è fissa: chi cade resta caduto."));
@@ -3213,7 +3052,6 @@ function renderMissionsTab() {
     wrap.append(card7);
     return wrap;
   }
-
   if (ms.mission_id === "dodici_case") {
     wrap.append(renderScalataHouse(ms.house));
   } else if (ms.tournament) {
@@ -3223,7 +3061,6 @@ function renderMissionsTab() {
   } else {
     wrap.append(renderGraphMissionNode(ms.node));
   }
-
   const abandonCard = el("div", { class: "card" });
   if (state.confirmingAbandon) {
     abandonCard.append(el("p", {}, "Sicuro di voler abbandonare? Tornerai libero, ma senza nessuna ricompensa - diverso dal semplice uscire dal gioco, che invece congela la missione dov'è."));
@@ -3237,13 +3074,11 @@ function renderMissionsTab() {
   wrap.append(abandonCard);
   return wrap;
 }
-
 function renderScalataHouse(house) {
   const card = el("div", { class: "card" });
   card.append(el("p", { class: "hint" }, `Casa ${house.house_number} di ${house.total_houses}: ${house.house_name}`));
   card.append(el("h2", {}, house.house_name));
   card.append(el("p", {}, house.arrival));
-
   if (state.missionActionResult) {
     const r = state.missionActionResult;
     card.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
@@ -3264,10 +3099,8 @@ function renderScalataHouse(house) {
   }
   return card;
 }
-
 function renderGraphMissionNode(node) {
   const card = el("div", { class: "card" });
-
   if (node.type === "choice") {
     card.append(el("p", {}, node.text));
     if (state.missionChoiceResult) {
@@ -3296,12 +3129,10 @@ function renderGraphMissionNode(node) {
   }
   return card;
 }
-
 function renderDefenseTeamSelect() {
   const wrap = el("div");
   wrap.append(el("h1", {}, "Difesa a Ondate — Selezione Team"));
   wrap.append(el("button", { class: "secondary", onClick: closeDefenseMission }, "◄ Annulla"));
-
   const modeRow = el("div", { class: "row", style: "margin:12px 0;" });
   modeRow.append(el("button", {
     class: state.defenseTeamMode === "random" ? "" : "secondary",
@@ -3312,7 +3143,6 @@ function renderDefenseTeamSelect() {
     onClick: () => { state.defenseTeamMode = "selected"; render(); },
   }, "✋ Seleziona Team"));
   wrap.append(modeRow);
-
   if (state.defenseTeamMode === "random") {
     wrap.append(el("p", { class: "hint" }, "Due alleati pescati a caso dalla tua fazione."));
   } else if (state.defenseTeamCandidates === null) {
@@ -3344,14 +3174,12 @@ function renderDefenseTeamSelect() {
     }
     wrap.append(listCard);
   }
-
   const canStart = state.defenseTeamMode === "random" || state.defenseSelectedAllies.length === 2;
   const startBtn = el("button", { onClick: startDefenseMission }, "⚔ Inizia la Difesa");
   if (!canStart) startBtn.setAttribute("disabled", "disabled");
   wrap.append(startBtn);
   return wrap;
 }
-
 function renderDefenseUnitCard(u, isCurrent) {
   const card = el("div", { class: "card", style: isCurrent ? "border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);" : "" });
   card.append(el("p", { style: "font-weight:700;margin-bottom:4px;" }, `${u.name}${u.is_alive ? "" : " 💀"}`));
@@ -3363,15 +3191,12 @@ function renderDefenseUnitCard(u, isCurrent) {
   if (tags.length) card.append(el("p", { class: "hint" }, tags.join(" · ")));
   return card;
 }
-
 function renderDefenseActionPanel(currentUnit, battle) {
   const card = el("div", { class: "card" });
   const isPlayer = currentUnit.id === "player";
   card.append(el("h3", {}, isPlayer ? "Il tuo turno" : `Ordina a ${currentUnit.name}`));
-
   const opposingSide = currentUnit.side === "allies" ? "enemies" : "allies";
   const targets = Object.values(battle.units).filter((u) => u.side === opposingSide && u.is_alive);
-
   const modeRow = el("div", { class: "row", style: "margin-bottom:8px;flex-wrap:wrap;" });
   modeRow.append(el("button", {
     class: state.defenseTargetMode === "singolo" ? "" : "secondary",
@@ -3382,7 +3207,6 @@ function renderDefenseActionPanel(currentUnit, battle) {
     onClick: () => { state.defenseTargetMode = "area"; render(); },
   }, "💥 Tutto campo"));
   card.append(modeRow);
-
   if (state.defenseTargetMode === "singolo") {
     card.append(el("p", { class: "hint" }, "Bersaglio:"));
     const targetRow = el("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:8px;" });
@@ -3395,7 +3219,6 @@ function renderDefenseActionPanel(currentUnit, battle) {
     }
     card.append(targetRow);
   }
-
   card.append(el("p", { class: "hint" }, "Tecnica:"));
   const techBox = el("div", { style: "display:flex;flex-direction:column;gap:6px;margin-bottom:10px;" });
   const allTechniques = [{ name: "Attacco Base", power: 20 }, ...(currentUnit.techniques || [])];
@@ -3414,21 +3237,17 @@ function renderDefenseActionPanel(currentUnit, battle) {
     techBox.append(btn);
   }
   card.append(techBox);
-
   const otherRow = el("div", { class: "row" });
   otherRow.append(el("button", { class: "secondary", onClick: () => performDefenseAction(currentUnit.id, "difendi") }, "🛡 Difenditi"));
   otherRow.append(el("button", { class: "secondary", onClick: () => performDefenseAction(currentUnit.id, "carica") }, "🔥 Carica il Cosmo"));
   card.append(otherRow);
-
   return card;
 }
-
 function renderDefenseBattle() {
   const battle = state.defenseBattle;
   const wrap = el("div");
   wrap.append(el("h1", {}, `Difesa: ${battle.setting}`));
   wrap.append(el("p", { class: "hint" }, `Contro ${battle.enemy_faction} · Ondata ${battle.wave_number}/${battle.total_waves} · Round ${battle.round_number}`));
-
   if (state.defenseResult) {
     const isVictory = battle.outcome === "victory";
     const resCard = el("div", { class: "card" });
@@ -3438,9 +3257,7 @@ function renderDefenseBattle() {
     wrap.append(resCard);
     return wrap;
   }
-
   const currentId = battle.initiative_order[battle.turn_index % battle.initiative_order.length];
-
   const teamsRow = el("div", { style: "display:flex;gap:16px;flex-wrap:wrap;" });
   const alliesCol = el("div", { style: "flex:1;min-width:220px;" });
   alliesCol.append(el("h3", {}, "La tua squadra"));
@@ -3454,20 +3271,17 @@ function renderDefenseBattle() {
   }
   teamsRow.append(alliesCol, enemiesCol);
   wrap.append(teamsRow);
-
   const logCard = el("div", { class: "card log-box" });
   for (const line of battle.log.slice(-10)) {
     logCard.append(el("p", { class: "hint", style: "margin:2px 0;" }, line));
   }
   wrap.append(logCard);
-
   const currentUnit = battle.units[currentId];
   if (currentUnit && currentUnit.side === "allies" && currentUnit.is_alive) {
     wrap.append(renderDefenseActionPanel(currentUnit, battle));
   }
   return wrap;
 }
-
 function renderInferiStatus(inferi) {
   // Le Prove degli Inferi (richiesto in chat, struttura diversa dai
   // tornei e dalle missioni a grafo): prove a dado in sequenza, con un
@@ -3479,7 +3293,6 @@ function renderInferiStatus(inferi) {
   if (!inferi.is_final_boss) {
     card.append(el("p", { class: "hint" }, `Prova ${inferi.stage_index} di ${inferi.total_stages} - allerta: ${inferi.alert}/${inferi.ambush_threshold}`));
   }
-
   if (state.missionActionResult) {
     const r = state.missionActionResult;
     card.append(el("p", { style: "font-style:italic;margin-top:8px;" }, r.text));
@@ -3491,7 +3304,6 @@ function renderInferiStatus(inferi) {
     card.append(el("button", { onClick: () => { state.missionActionResult = null; state.missionStatus = null; render(); } }, "Continua"));
     return card;
   }
-
   card.append(el("p", {}, inferi.stage_text));
   if (inferi.is_final_boss) {
     card.append(el("button", { onClick: startMissionDuel }, "⚔ Affronta il Giudice"));
@@ -3511,14 +3323,12 @@ function renderInferiStatus(inferi) {
   }
   return card;
 }
-
 function tournamentRoundTitle(bracket, roundIndexZeroBased) {
   const roundNum = roundIndexZeroBased + 1;
   if (roundNum === bracket.total_rounds) return "Finale";
   if (roundNum === bracket.total_rounds - 1) return "Semifinale";
   return `Round ${roundNum}`;
 }
-
 function renderTournamentStatus(tournament) {
   // Richiesto in chat: struttura diversa dalle missioni a grafo, un
   // vero tabellone - qui non ci sono nodi/scelte, solo il progresso
@@ -3527,10 +3337,8 @@ function renderTournamentStatus(tournament) {
   card.append(el("h2", {}, tournament.name));
   card.append(el("p", { class: "hint" }, `${tournament.round_label.charAt(0).toUpperCase() + tournament.round_label.slice(1)} - round ${tournament.round_number} di ${tournament.total_rounds}. Un torneo a eliminazione diretta: perdi e sei fuori, senza un altro tentativo.`));
   card.append(el("button", { onClick: startMissionDuel }, "⚔ Scendi in campo"));
-
   const wrap = el("div", {});
   wrap.append(card);
-
   // Il tabellone vero (richiesto in chat: "non si conosce i
   // partecipanti, il tabellone") - ma solo il PRIMO turno mostra nomi
   // reali fin da subito, come in un vero tabellone: i turni successivi
@@ -3550,7 +3358,6 @@ function renderTournamentStatus(tournament) {
       const isFutureRound = roundNum > tournament.round_number;
       if (isFutureRound) roundTitle += " (se arrivi fin qui)";
       roundBox.append(el("p", { style: "font-weight:700;margin-bottom:6px;" }, roundTitle));
-
       for (let m = 0; m < roundData.matches.length; m++) {
         const [a, b] = roundData.matches[m];
         const involvesPlayer = a === bracket.player_slot || b === bracket.player_slot;
@@ -3582,7 +3389,6 @@ function renderTournamentStatus(tournament) {
   }
   return wrap;
 }
-
 function appendBattleColumns(wrap) {
   const k = state.character;
   const o = state.battle.opponent;
@@ -3592,7 +3398,6 @@ function appendBattleColumns(wrap) {
   // molto diverso tra i due combattenti.
   const sharedMaxCosmo = Math.max(k.cosmo_max, o.cosmo_max);
   const sharedMaxVita = Math.max(k.vita_max, o.vita_max);
-
   // Tecniche personalizzate (richiesto in chat): caricate pigre una
   // sola volta qui, non separatamente in ogni ramo sottostante - si
   // può arrivare in Arena senza mai aver aperto la Scheda Cavaliere.
@@ -3616,9 +3421,7 @@ function appendBattleColumns(wrap) {
   const purelyDefensive = allMyTechniques.filter((t) => isDefensive(t) && !isDual(t));
   const defensiveButtons = () => purelyDefensive.map((t) =>
     el("button", { disabled: "disabled", title: "Selezionabile quando ti difendi" }, `🛡 ${t.name} (${t.power})`));
-
   const columns = el("div", { class: "arena-columns" });
-
   // --- Pannello sinistro: TU (le tue tecniche restano cliccabili) ---
   const leftPanel = el("div", { class: "fighter-panel" });
   // Lo sprite animato (richiesto in chat, stile LPC) - compare SOLO
@@ -3635,11 +3438,9 @@ function appendBattleColumns(wrap) {
   leftPanel.append(el("p", { class: "hint" }, `${k.armor.divinity} / ${k.armor.faction} · Livello ${k.player_level}`));
   leftPanel.append(renderFullBar(k.vita_cur, k.vita_max, sharedMaxVita, "Vita", "vita"));
   leftPanel.append(renderFullBar(k.cosmo_cur, k.cosmo_max, sharedMaxCosmo));
-
   if (state.battle.pending_opponent_technique) {
     const t = state.battle.pending_opponent_technique;
     leftPanel.append(el("p", { style: "margin-top:10px;" }, `⚔ ${o.name} sta per colpirti con ${t.name} (potenza ${t.power})! Come rispondi?`));
-
     if (state.showDefensePicker) {
       // La difesa è ora una vera scelta del giocatore (richiesto in
       // chat: "Difesa Base + tecniche di difesa", stessa struttura
@@ -3703,7 +3504,6 @@ function appendBattleColumns(wrap) {
     }
   }
   columns.append(leftPanel);
-
   // --- Colonna centrale: la mappa ---
   const mapColumn = el("div", { class: "arena-map-column" });
   const mapCard = el("div", { class: "card" });
@@ -3715,7 +3515,6 @@ function appendBattleColumns(wrap) {
   mapCard.append(el("p", { class: "hint", style: "text-align:center;margin-top:8px;" }, movementHint));
   mapColumn.append(mapCard);
   columns.append(mapColumn);
-
   // --- Pannello destro: L'AVVERSARIO ---
   // Le sue tecniche sono mostrate ma NON cliccabili - oggi lo
   // controlla l'IA, ma la disposizione è pronta per un domani in cui
@@ -3738,10 +3537,8 @@ function appendBattleColumns(wrap) {
     rightPanel.append(el("button", { disabled: "disabled" }, `⚔ ${t.name} (${t.power})`));
   }
   columns.append(rightPanel);
-
   wrap.append(columns);
 }
-
 function renderFullBar(value, max, scaleMax, label = "Cosmo", kind = "cosmo") {
   // scaleMax (opzionale): il massimo più alto tra i due combattenti -
   // la CORNICE esterna si restringe in proporzione, così chi ha meno
@@ -3749,7 +3546,6 @@ function renderFullBar(value, max, scaleMax, label = "Cosmo", kind = "cosmo") {
   // percentuale diversa dentro una barra identica.
   const containerPct = scaleMax ? Math.max(15, Math.min(100, (max / scaleMax) * 100)) : 100;
   const fillPct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100));
-
   const outer = el("div", { style: `width:${containerPct}%;` });
   const barWrap = el("div", { class: "bar-wrap" });
   barWrap.append(el("div", { class: "bar-fill" + (kind === "vita" ? " vita" : ""), style: `width:${fillPct}%` }));
@@ -3757,7 +3553,6 @@ function renderFullBar(value, max, scaleMax, label = "Cosmo", kind = "cosmo") {
   outer.append(barWrap);
   return outer;
 }
-
 // Mappa 2D dell'Arena, Fase 1: griglia 10x10 come "righello", movimento
 // libero/continuo (non a caselle - deciso in chat, stile Football
 // Manager). Cliccare/toccare sposta il giocatore verso quel punto,
@@ -3771,7 +3566,6 @@ function renderFullBar(value, max, scaleMax, label = "Cosmo", kind = "cosmo") {
 // colorato per elemento della tecnica, un segno di scudo se parato,
 // un segno d'impatto se il colpo è passato, o uno scarto laterale del
 // colpito se ha schivato - tutto richiesto in chat.
-
 function elementColor(techType) {
   const t = (techType || "").toLowerCase();
   if (t.includes("ghiaccio")) return "#AEE6FF";
@@ -3783,7 +3577,6 @@ function elementColor(techType) {
   if (t.includes("fisico")) return "#D4AF37";
   return "#EAE6DA"; // elemento non riconosciuto: colore neutro
 }
-
 function drawKnightFigure(ctx, x, y, color, label) {
   // Tornato al semplice cerchio (la figura testa+mantello "faceva
   // cacare" - parole tue): l'estetica vera aspetta il 3D, molto più
@@ -3792,13 +3585,11 @@ function drawKnightFigure(ctx, x, y, color, label) {
   ctx.beginPath();
   ctx.arc(x, y, 11, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.fillStyle = "#EAE6DA";
   ctx.font = "11px Arial";
   ctx.textAlign = "center";
   ctx.fillText(label, x, y - 16);
 }
-
 // Una sola galleria "per Regno" (richiesto in chat: prima erano due
 // gallerie separate, per elemento e per divinità - ridondanti e
 // confuse). Ogni Regno (una delle 13 divinità del catalogo) ha un
@@ -3823,7 +3614,6 @@ const REALM_ARENAS = {
   black_saint: { label: "Black Saint (Isola della Regina Nera)", bg: "linear-gradient(#3a3a3a, #0d0d0d)" },
 };
 const DEFAULT_REALM = "athena";
-
 // Da nome vero della divinità (come arriva da battle.opponent.divinity)
 // alla chiave "sicura" usata nel dizionario/URL - serve solo per
 // "Black Saint", che ha uno spazio; per tutte le altre coincide con la
@@ -3831,7 +3621,6 @@ const DEFAULT_REALM = "athena";
 function divinityToKey(divinityName) {
   return (divinityName || "").toLowerCase().replace(/\s+/g, "_");
 }
-
 function renderArenaMap() {
   const SIZE = 340;
   const battle = state.battle;
@@ -3841,7 +3630,6 @@ function renderArenaMap() {
   // corso, si ricade su Athena come Regno predefinito.
   const realmKey = battle && battle.opponent ? divinityToKey(battle.opponent.divinity) : DEFAULT_REALM;
   const realm = REALM_ARENAS[realmKey] || REALM_ARENAS[DEFAULT_REALM];
-
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
   canvas.height = SIZE;
@@ -3862,10 +3650,8 @@ function renderArenaMap() {
   }
   canvas.style.border = "1px solid var(--border)";
   canvas.style.borderRadius = "8px";
-
   const ctx = canvas.getContext("2d");
   const scale = SIZE / 10; // la griglia va da 0 a 10 in entrambi gli assi
-
   // Sfondo a griglia leggera, solo come riferimento visivo.
   ctx.strokeStyle = "rgba(120,130,150,0.25)";
   ctx.lineWidth = 1;
@@ -3879,9 +3665,7 @@ function renderArenaMap() {
     ctx.lineTo(SIZE, i * scale);
     ctx.stroke();
   }
-
   const canMove = battle && !battle.pending_opponent_technique;
-
   // Effetti sul terreno (Fase 3): il ghiaccio come chiazza azzurra
   // semi-trasparente, i crateri come cerchio scuro, le fiamme come
   // cerchio arancione, il fango come cerchio marrone opaco -
@@ -3912,14 +3696,11 @@ function renderArenaMap() {
       ctx.stroke();
     }
   }
-
   if (battle) {
     const effect = battle.last_effect;
-
     // Posizioni a schermo (pixel), partendo da quelle vere sulla griglia.
     let playerPx = { x: battle.player_position.x * scale, y: battle.player_position.y * scale };
     let opponentPx = { x: battle.opponent_position.x * scale, y: battle.opponent_position.y * scale };
-
     // Su una schivata, il colpito si scosta lateralmente SOLO per
     // questo disegno - non tocca la sua posizione vera sulla griglia
     // (quella resta quella tattica, gestita a parte).
@@ -3927,7 +3708,6 @@ function renderArenaMap() {
       const dodgerPx = effect.attacker === "player" ? opponentPx : playerPx;
       dodgerPx.x = Math.min(SIZE - 15, dodgerPx.x + 28);
     }
-
     // Il fascio della tecnica: solo se il colpo è arrivato (parato o
     // no) - su una schivata non ha senso disegnarlo, non ha mai toccato.
     if (effect && (effect.outcome === "hit" || effect.outcome === "blocked")) {
@@ -3940,10 +3720,8 @@ function renderArenaMap() {
       ctx.lineTo(toPx.x, toPx.y);
       ctx.stroke();
     }
-
     drawKnightFigure(ctx, opponentPx.x, opponentPx.y, "#C0392B", battle.opponent.name.split(" ").slice(-1)[0]);
     drawKnightFigure(ctx, playerPx.x, playerPx.y, "#3FA9F5", "Tu");
-
     // Segno di parata/colpo sopra chi ha subito l'attacco.
     if (effect && (effect.outcome === "hit" || effect.outcome === "blocked")) {
       const targetPx = effect.attacker === "player" ? opponentPx : playerPx;
@@ -3952,7 +3730,6 @@ function renderArenaMap() {
       ctx.fillText(effect.outcome === "blocked" ? "🛡" : "💥", targetPx.x + 18, targetPx.y - 18);
     }
   }
-
   canvas.style.cursor = canMove ? "crosshair" : "default";
   if (canMove) {
     canvas.addEventListener("click", (e) => {
@@ -3962,10 +3739,8 @@ function renderArenaMap() {
       movePlayerTo(gridX, gridY);
     });
   }
-
   return canvas;
 }
-
 // --- Avvio ---
 async function loadAppVersion() {
   try {
@@ -3978,7 +3753,6 @@ async function loadAppVersion() {
     // versione è un'informazione utile, non essenziale per giocare.
   }
 }
-
 loadAppVersion();
 loadStartPage();
 </script>
