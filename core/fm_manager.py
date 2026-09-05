@@ -32,6 +32,7 @@ bilanciamento vero e proprio. La struttura è quella buona.
 import random
 from database.db_manager import advance_world_minutes, get_last_npc_tick_minutes, set_last_npc_tick_minutes
 from core.world_sim import tick_world_events, WORLD_TICK_MINUTES_PER_DAY
+from core.renown import regen_multiplier
 from datetime import datetime, timedelta
 
 from core.arena_manager import get_unlocked_senses
@@ -240,12 +241,17 @@ class RosterManager:
 
         minutes = TRAINING_MINUTES_BY_FOCUS.get(focus, DEFAULT_TRAINING_MINUTES)
 
+        # Il Medico dello staff (richiesto in chat, dalla roadmap:
+        # "staff oltre al Maestro") - se la Renown di fazione l'ha
+        # sbloccato, il recupero passivo è più veloce del solito.
+        staff_multiplier = regen_multiplier(knight["renown"])
+
         # Recupero passivo del Cosmo: proporzionale alle ore di questa
         # attività, sempre (non solo con Riposo) - il tempo cura, non
         # importa cosa stai facendo, basta non essere in Arena.
         cosmo_recovered = min(
             knight["cosmo_max"] - knight["cosmo_cur"],
-            round(minutes / 60 * COSMO_REGEN_PER_HOUR),
+            round(minutes / 60 * COSMO_REGEN_PER_HOUR * staff_multiplier),
         )
         if cosmo_recovered > 0:
             knight["cosmo_cur"] += cosmo_recovered
@@ -256,7 +262,7 @@ class RosterManager:
         # ferita vera impiega di più a guarire.
         vita_recovered = min(
             knight["vita_max"] - knight["vita_cur"],
-            round(minutes / 60 * VITA_REGEN_PER_HOUR),
+            round(minutes / 60 * VITA_REGEN_PER_HOUR * staff_multiplier),
         )
         if vita_recovered > 0:
             knight["vita_cur"] += vita_recovered
