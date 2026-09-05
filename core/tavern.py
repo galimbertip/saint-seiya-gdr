@@ -13,6 +13,7 @@ import random
 
 from core.alignment import ALIGNMENTS, random_alignment
 from core.arena_manager import generate_full_name
+from core.intent_classifier import classify_intent
 from database.db_manager import (
     get_tavern_bartender, insert_tavern_bartender, get_tavern_seating, set_tavern_seating,
     remove_tavern_seating, get_tavern_last_reshuffle, set_tavern_last_reshuffle,
@@ -111,21 +112,6 @@ def get_faction_relation(player_divinity: str, npc_divinity: str) -> str:
 def alignment_to_mood(alignment: str) -> str:
     return ALIGNMENT_TO_MOOD.get(alignment, "neutrale")
 
-
-# (parole chiave, nome intento) - controllate in quest'ordine, la
-# prima che trova una corrispondenza vince. I saluti sono controllati
-# per primi apposta: messaggi brevi come "ciao" non devono finire
-# scambiati per una domanda generica.
-INTENT_KEYWORDS = [
-    ("saluto_finale", ["addio", "arrivederci", "devo andare", "ci vediamo", "alla prossima", "vado via"]),
-    ("saluto", ["ciao", "salve", "salut", "buongiorno", "buonasera", "buondì", "ehi"]),
-    ("ordina_da_bere", ["da bere", "un drink", "una birra", "del vino", "qualcosa da bere", "sete", "ordinare", "offro io", "il tuo migliore", "portami"]),
-    ("complimento", ["bravo", "brava", "forte", "fortissimo", "fortissima", "ammirevole", "rispetto", "complimenti", "impressionante", "grande", "eccezionale"]),
-    ("insulto", ["stupido", "stupida", "idiota", "vigliacco", "vigliacca", "patetico", "patetica", "odio", "disprezzo", "inutile"]),
-    ("sfida", ["sfida", "sfidare", "combatt", "duello", "battersi", "battiamoci", "debole", "paura", "coraggio"]),
-    ("domanda_su_mondo", ["novità", "notizie", "cosa succede", "missione", "missioni", "santuario", "cosa sai", "cosa ne pensi"]),
-    ("domanda_su_di_te", ["chi sei", "parlami di te", "la tua storia", "cosa fai", "di dove vieni", "il tuo nome", "raccontami", "come stai"]),
-]
 
 AFFINITY_DELTA = {
     "saluto": 1, "saluto_finale": 0, "domanda_su_di_te": 1, "domanda_su_mondo": 0,
@@ -260,14 +246,16 @@ MISUNDERSTOOD_RESPONSES = [
 
 
 def detect_intent(text: str) -> str | None:
-    """Il primo intento le cui parole chiave compaiono nel testo
-    (richiesto in chat) - None se nessuna corrisponde, nel qual caso
-    la Taverna chiede di ripetere."""
-    lowered = text.lower()
-    for intent, keywords in INTENT_KEYWORDS:
-        if any(keyword in lowered for keyword in keywords):
-            return intent
-    return None
+    """L'intento più simile al testo scritto liberamente dal giocatore
+    (richiesto in chat: "vorrei lasciare scrivere al pg la frase...
+    capire il 90% delle frasi") - None se nessun intento supera la
+    soglia minima di somiglianza, nel qual caso la Taverna chiede di
+    ripetere. Sostituisce il precedente riconoscimento a sole parole
+    chiave fisse (core.intent_classifier, TF-IDF + coseno via
+    scikit-learn - scelta discussa esplicitamente in chat, più leggera
+    di alternative come Rasa NLU o modelli Hugging Face)."""
+    intent, _score = classify_intent(text)
+    return intent
 
 
 def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale",
@@ -308,6 +296,13 @@ def resolve_tavern_response(text: str, alignment: str, relation: str = "neutrale
 # cosa vuole dire. Il testo di esempio compare nella cronologia al
 # posto di quello scritto a mano, dato che con un pulsante non c'è
 # nulla da scrivere.
+#
+# NOTA (richiesto in chat, più tardi nella stessa sessione): il
+# frontend non usa più questa lista - il giocatore scrive sempre di
+# suo, capito dal classificatore di intenti (core.intent_classifier)
+# invece che da una frase precaricata. Lasciata qui, non più
+# esposta via API, per non perdere il lavoro se un domani servisse
+# di nuovo una scorciatoia a scelta rapida.
 TAVERN_QUICK_INTENTS = [
     ("saluto", "👋 Saluta", "Ciao."),
     ("complimento", "🎩 Fai un complimento", "Sei davvero notevole, complimenti."),
