@@ -392,6 +392,7 @@ const state = {
   showCounterPicker: false,  // sta scegliendo la tecnica per il Contrattacco?
   showDefensePicker: false,  // sta scegliendo la tecnica per la Difesa? (richiesto in chat: prima era automatica)
   institutionalNpcs: null,   // le figure istituzionali del mondo (statiche, non legate a un personaggio), null finché non caricate
+  scoutedAllies: null,       // richiesto in chat, staff "Osservatore": PNG con affinità già promettente in Taverna, null finché non caricati
   divinityNpcs: null,        // le Divinità del mondo (richiesto in chat: gerarchia vera, il vertice di ogni fazione), null finché non caricate
   editingBackground: false,  // sta modificando il background nella Scheda Cavaliere?
   trainingPath: null,        // lo stato del percorso di Apprendistato del personaggio corrente, null finché non caricato
@@ -495,6 +496,7 @@ async function selectCharacter(id) {
   state.tavernInput = "";
   state.tavernSelectedTone = "neutro";
   state.tavernMissionOffer = null;
+  state.scoutedAllies = null;
   state.defenseScreen = null;
   state.defenseTeamCandidates = null;
   state.defenseSelectedAllies = [];
@@ -1605,6 +1607,21 @@ function renderTavernTab() {
 
   wrap.append(el("p", { class: "hint" }, "Scrivi liberamente - non c'è una vera intelligenza artificiale dietro (costo zero), solo un buon orecchio per le parole chiave. Se non capisce, te lo dice a modo suo. Entrare nella taverna di una fazione rivale non è come entrare in quella di casa propria."));
 
+  // Il resoconto dell'Osservatore (richiesto in chat, staff oltre al
+  // Maestro) - sblocca da solo con la Renown, nessun controllo da
+  // fare qui: se non è ancora sbloccato o non ci sono segnalazioni,
+  // semplicemente non si mostra nulla.
+  if (state.scoutedAllies === null) loadScoutedAllies();
+  if (state.scoutedAllies && state.scoutedAllies.unlocked && state.scoutedAllies.allies.length > 0) {
+    const scoutCard = el("div", { class: "card" });
+    scoutCard.append(el("h3", {}, "🔭 Segnalazioni dell'Osservatore"));
+    scoutCard.append(el("p", { class: "hint" }, "PNG con cui hai già un rapporto promettente, prima ancora di tornare a parlarci."));
+    for (const ally of state.scoutedAllies.allies) {
+      scoutCard.append(el("p", {}, `${ally.npc_name} - ${ally.armor_name} (${ally.divinity}) · affinità ${ally.affinity}`));
+    }
+    wrap.append(scoutCard);
+  }
+
   const listCard = el("div", { class: "card" });
   for (const realm of state.tavernRealms) {
     const row = el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;" });
@@ -1614,6 +1631,18 @@ function renderTavernTab() {
   }
   wrap.append(listCard);
   return wrap;
+}
+
+async function loadScoutedAllies() {
+  // Richiesto in chat, staff "Osservatore" - restituisce
+  // {unlocked: false} finché la Renown non è sufficiente, il
+  // frontend non deve controllare la soglia da sé.
+  try {
+    state.scoutedAllies = await api(`/characters/${state.characterId}/scouted-allies`);
+  } catch (e) {
+    state.scoutedAllies = { unlocked: false, allies: [] };
+  }
+  render();
 }
 
 async function loadInstitutionalNpcs() {
