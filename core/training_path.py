@@ -505,10 +505,14 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
     invece di duplicare la stessa logica in più punti. Le tre barre
     (richiesto in chat) ora sono quelle VERE e persistite del PNG, non
     più sempre generate al massimo - un PNG che ha perso un duello di
-    recente arriva debole, proprio come farebbe il giocatore."""
+    recente arriva debole, proprio come farebbe il giocatore. Le
+    statistiche str/dex/con/tec/vol (richiesto in chat: "sono tutte
+    identiche per ogni PNG a parità di livello armatura - nessuna
+    varianza") ora sono quelle VERE e persistite, generate con un
+    profilo ineguale invece che uniformi."""
     armor = get_armor(armor_name, conn)
     techniques = [dict(t) for t in get_techniques_for_armor(armor_name, conn)]
-    con_value = 10 + armor["level"] // 10
+    uniform_stat = 10 + armor["level"] // 10  # ripiego, usato solo se il PNG non ha ancora statistiche vere generate
 
     world_minutes = get_world_minutes(conn)
     roster_entry = apply_npc_regen(conn, armor_name, world_minutes)
@@ -523,8 +527,16 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
         # ensure_roster_populated, ma resta un ripiego sicuro) - stessa
         # formula di prima, generata al volo senza persisterla.
         cosmo_cur = cosmo_max = 100 + armor["level"]
-        vita_cur = vita_max = 100 + con_value * 2
+        vita_cur = vita_max = 100 + uniform_stat * 2
         alignment = (roster_entry["npc_alignment"] if roster_entry else "") or random_alignment()
+
+    if roster_entry and roster_entry["npc_str"] > 0:
+        stat_str, stat_dex, stat_con = roster_entry["npc_str"], roster_entry["npc_dex"], roster_entry["npc_con"]
+        stat_tec, stat_vol = roster_entry["npc_tec"], roster_entry["npc_vol"]
+    else:
+        # Stesso ripiego di sicurezza di sopra - un PNG non ancora
+        # migrato alle statistiche vere usa il vecchio valore uniforme.
+        stat_str = stat_dex = stat_con = stat_tec = stat_vol = uniform_stat
 
     return {
         "name": f"{display_name} di {armor_name}",
@@ -536,11 +548,11 @@ def build_opponent_from_armor(conn: sqlite3.Connection, armor_name: str, display
         "cosmo_max": cosmo_max,
         "vita_cur": vita_cur,
         "vita_max": vita_max,
-        "str": 10 + armor["level"] // 10,
-        "dex": 10 + armor["level"] // 10,
-        "con": con_value,
-        "tec": 10 + armor["level"] // 10,
-        "vol": 10 + armor["level"] // 10,
+        "str": stat_str,
+        "dex": stat_dex,
+        "con": stat_con,
+        "tec": stat_tec,
+        "vol": stat_vol,
         "origin": "",
         "techniques": techniques,
         "alignment": alignment,
