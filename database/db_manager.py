@@ -161,6 +161,11 @@ CREATE TABLE IF NOT EXISTS roster (
     npc_ideal TEXT NOT NULL DEFAULT '',
     npc_bond TEXT NOT NULL DEFAULT '',
     npc_flaw TEXT NOT NULL DEFAULT '',
+    npc_str INTEGER NOT NULL DEFAULT 0,
+    npc_dex INTEGER NOT NULL DEFAULT 0,
+    npc_con INTEGER NOT NULL DEFAULT 0,
+    npc_tec INTEGER NOT NULL DEFAULT 0,
+    npc_vol INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (armor_name) REFERENCES armors(name),
     FOREIGN KEY (claimed_by_knight_id) REFERENCES knights(id) ON DELETE SET NULL
 );
@@ -484,6 +489,22 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE roster ADD COLUMN npc_flaw TEXT NOT NULL DEFAULT ''")
         conn.commit()
         log.info("Migrazione: aggiunte colonne Tratto/Ideale/Legame/Difetto a roster.")
+    if "npc_str" not in roster_columns:
+        # Statistiche vere e persistite per i PNG (richiesto in chat:
+        # "sono tutte identiche per ogni PNG a parità di livello
+        # armatura - nessuna varianza" - problema di fondo da
+        # correggere sia per i PNG futuri che per quelli già
+        # esistenti). Sentinella 0 qui di proposito, come le altre
+        # colonne PNG - i valori VERI vengono generati subito dopo da
+        # ensure_npc_stats_generated, che copre sia i PNG nuovi sia
+        # quelli già presenti nel roster prima di questa migrazione.
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_str INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_dex INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_con INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_tec INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE roster ADD COLUMN npc_vol INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne delle statistiche vere (str/dex/con/tec/vol) a roster.")
 
     world_clock_columns = {row["name"] for row in conn.execute("PRAGMA table_info(world_clock)")}
     if "last_npc_tick_minutes" not in world_clock_columns:
@@ -706,7 +727,7 @@ def get_roster_entry(conn: sqlite3.Connection, armor_name: str) -> sqlite3.Row |
 def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str, alignment: str = "",
                          vita_max: int = 0, cosmo_max: int = 0, stamina_max: int = 0,
                          last_regen_minutes: int = 0, trait: str = "", ideal: str = "",
-                         bond: str = "", flaw: str = "") -> None:
+                         bond: str = "", flaw: str = "", stats: dict | None = None) -> None:
     """Crea lo slot per un'armatura con il suo PNG fisso - ignorata (non
     sovrascrive) se esiste già, perché il nome del PNG non deve mai
     cambiare una volta assegnato (richiesto in chat). `alignment`
@@ -716,19 +737,26 @@ def insert_roster_entry(conn: sqlite3.Connection, armor_name: str, npc_name: str
     massime del PNG, con le correnti che partono già al massimo (un
     PNG appena creato è sano). `trait`/`ideal`/`bond`/`flaw` (richiesto
     in chat, dalla roadmap: caratterizzazione più profonda) - le
-    quattro frasi di personalità, generate dal chiamante
-    (core.personality) in base all'umore derivato dall'allineamento -
-    non qui, per non far dipendere questo modulo di basso livello da
-    logica applicativa."""
+    quattro frasi di personalità. `stats` (richiesto in chat: "sono
+    tutte identiche per ogni PNG a parità di livello armatura - nessuna
+    varianza") - un dict {str, dex, con, tec, vol} con le statistiche
+    VERE del PNG, generate dal chiamante (core.character_factory) con
+    un profilo ineguale invece che uniformi; None -> restano a 0
+    (sentinella "non ancora generate", stesso principio delle altre
+    colonne PNG). Tutto generato dal chiamante, non qui, per non far
+    dipendere questo modulo di basso livello da logica applicativa."""
+    stats = stats or {}
     conn.execute(
         """INSERT OR IGNORE INTO roster
            (armor_name, npc_name, claimed_by_knight_id, npc_alignment,
             npc_vita_cur, npc_vita_max, npc_cosmo_cur, npc_cosmo_max,
             npc_stamina_cur, npc_stamina_max, npc_last_regen_minutes,
-            npc_trait, npc_ideal, npc_bond, npc_flaw)
-           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            npc_trait, npc_ideal, npc_bond, npc_flaw,
+            npc_str, npc_dex, npc_con, npc_tec, npc_vol)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (armor_name, npc_name, alignment, vita_max, vita_max, cosmo_max, cosmo_max,
-         stamina_max, stamina_max, last_regen_minutes, trait, ideal, bond, flaw),
+         stamina_max, stamina_max, last_regen_minutes, trait, ideal, bond, flaw,
+         stats.get("str", 0), stats.get("dex", 0), stats.get("con", 0), stats.get("tec", 0), stats.get("vol", 0)),
     )
 
 
