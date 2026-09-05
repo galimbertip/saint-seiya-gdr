@@ -47,7 +47,7 @@ from core.world_sim import apply_npc_damage, ensure_institutional_alignments, en
 from core.renown import (
     RENOWN_SCALATA_COMPLETE, RENOWN_GRAPH_MISSION_COMPLETE, RENOWN_TOURNAMENT_PER_ROUND,
     RENOWN_TOURNAMENT_CHAMPION_BONUS, RENOWN_INFERI_COMPLETE, RENOWN_DEFENSE_PER_WAVE,
-    RENOWN_DEFENSE_VICTORY_BONUS, renown_title,
+    RENOWN_DEFENSE_VICTORY_BONUS, renown_title, has_staff_osservatore, STAFF_OSSERVATORE_AFFINITY_THRESHOLD,
 )
 from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
@@ -1926,6 +1926,30 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
         "log": log, "fight_over": False,
         "character": _knight_payload(conn, knight), "battle_state": req.battle_state,
     }
+
+
+@app.get("/characters/{knight_id}/scouted-allies")
+def api_get_scouted_allies(knight_id: int, conn=Depends(get_db)):
+    """L'Osservatore dello staff (richiesto in chat, dalla roadmap:
+    "un Osservatore che segnala PNG con affinità già alta prima
+    ancora di parlarci") - sblocca solo con Renown sufficiente
+    (has_staff_osservatore); PNG con un'affinità già promettente in
+    Taverna, così il giocatore sa dove tornare a parlare senza doverlo
+    scoprire per caso."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if not has_staff_osservatore(knight["renown"]):
+        return {"unlocked": False, "allies": []}
+    rows = conn.execute(
+        """SELECT tr.armor_name, tr.affinity, r.npc_name, a.divinity, a.faction
+           FROM tavern_relationships tr
+           JOIN roster r ON r.armor_name = tr.armor_name
+           JOIN armors a ON a.name = tr.armor_name
+           WHERE tr.knight_id = ? AND tr.affinity >= ?
+           AND tr.armor_name NOT LIKE '\\_\\_bartender\\_\\_%' ESCAPE '\\'
+           ORDER BY tr.affinity DESC""",
+        (knight_id, STAFF_OSSERVATORE_AFFINITY_THRESHOLD),
+    ).fetchall()
+    return {"unlocked": True, "allies": [dict(r) for r in rows]}
 
 
 @app.get("/characters/{knight_id}/defense-team-options")
