@@ -183,26 +183,64 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     return get_knight(conn, cur.lastrowid)
 
 
+# Le statistiche minime garantite per ciascuna delle 5 (richiesto in
+# chat: "sono tutte identiche per ogni PNG a parità di livello
+# armatura - nessuna varianza" - un PNG non deve mai avere una
+# statistica ridicolmente bassa solo per sbilanciamento casuale).
+# PLACEHOLDER, come le altre formule di generazione del progetto.
+NPC_STAT_MIN_FLOOR = 5
+
+
+def generate_npc_stats(level: int) -> dict:
+    """Le statistiche VERE di un PNG (richiesto in chat: prima erano
+    tutte identiche a parità di livello armatura, ora ciascun PNG ha
+    un proprio profilo). Distribuisce lo STESSO totale di prima (5
+    statistiche × (10 + livello//10), lo stesso "budget" già usato per
+    bilanciare la difficoltà per livello) in modo INEGUALE tra le 5 -
+    un PNG può essere forte e poco resistente, un altro tecnico e
+    debole fisicamente, invece di essere tutti perfettamente
+    equivalenti. Un pavimento minimo garantito (NPC_STAT_MIN_FLOOR)
+    evita che una statistica scenda a valori ridicoli solo per
+    sfortuna nella distribuzione casuale."""
+    base = 10 + level // 10
+    total_budget = base * 5
+    stat_names = ["str", "dex", "con", "tec", "vol"]
+    floor = min(NPC_STAT_MIN_FLOOR, base)  # a bassi livelli il pavimento non deve superare il totale disponibile
+    remaining = max(0, total_budget - floor * len(stat_names))
+
+    weights = [random.random() + 0.15 for _ in stat_names]  # +0.15: nessun peso mai a zero, ogni statistica riceve comunque qualcosa dal resto
+    weight_sum = sum(weights)
+    stats = {}
+    allocated = 0
+    for i, name in enumerate(stat_names):
+        if i == len(stat_names) - 1:
+            extra = remaining - allocated  # l'ultima statistica prende il resto, evita di perdere punti per arrotondamento
+        else:
+            extra = round(remaining * weights[i] / weight_sum)
+            allocated += extra
+        stats[name] = floor + extra
+    return stats
+
+
 def ensure_roster_populated(conn: sqlite3.Connection) -> int:
     """Genera un PNG fisso per ogni armatura del catalogo che non ne ha
     ancora uno - va richiamata all'avvio, come refresh_armors_catalog
     (richiesto in chat). Sicura da richiamare più volte: ignora le
     armature che hanno già uno slot (il nome del PNG non deve mai
     cambiare una volta assegnato). Restituisce quanti PNG nuovi sono
-    stati generati in questa chiamata. Ogni PNG nuovo nasce già con le
-    tre barre vere al massimo (richiesto in chat) - stessa formula già
-    usata per gli avversari veri in core.training_path - e con un
-    Tratto/Ideale/Legame/Difetto (richiesto in chat, dalla roadmap:
-    caratterizzazione più profonda) coerente col proprio allineamento."""
+    stati generati in questa chiamata. Ogni PNG nuovo nasce già con
+    statistiche vere e ineguali (richiesto in chat), tre barre vere
+    (la Vita usa la SUA Costituzione individuale, non una uniforme) e
+    un Tratto/Ideale/Legame/Difetto coerente col proprio allineamento."""
     all_armors = conn.execute("SELECT name, level FROM armors").fetchall()
     world_minutes = get_world_minutes(conn)
     creati = 0
     for row in all_armors:
         if get_roster_entry(conn, row["name"]) is None:
             npc_name = generate_full_name()
+            stats = generate_npc_stats(row["level"])
             cosmo_max = 100 + row["level"]
-            con_value = 10 + row["level"] // 10
-            vita_max = 100 + con_value * 2  # stessa formula di build_opponent_from_armor
+            vita_max = 100 + stats["con"] * 2  # stessa formula di prima, ora con la Costituzione VERA del PNG
             alignment = random_alignment()
             personality = generate_personality(alignment_to_mood(alignment))
             insert_roster_entry(
@@ -211,10 +249,46 @@ def ensure_roster_populated(conn: sqlite3.Connection) -> int:
                 last_regen_minutes=world_minutes,
                 trait=personality["trait"], ideal=personality["ideal"],
                 bond=personality["bond"], flaw=personality["flaw"],
+                stats=stats,
             )
             creati += 1
     conn.commit()
     return creati
+
+
+def ensure_npc_stats_generated(conn: sqlite3.Connection) -> int:
+    """Genera le statistiche VERE per ogni PNG del roster che ne è
+    ancora privo (richiesto in chat: "rivediamo i PNG attuali" - non
+    solo i futuri) - riguarda i PNG creati PRIMA di questa modifica,
+    che sono rimasti con npc_str a 0 (sentinella "mai generate", vedi
+    la migrazione in database.db_manager). Sicura da richiamare più
+    volte: ignora chi ha già delle statistiche vere. Va richiamata
+    all'avvio, subito dopo ensure_roster_populated - separata da essa
+    perché quella crea SOLO gli slot mancanti, questa invece corregge
+    anche gli slot che esistevano già ma con statistiche vecchie.
+    Preserva la PROPORZIONE di Vita attuale (se un PNG era già ferito
+    prima di questa correzione, resta ferito nella stessa proporzione
+    col nuovo massimo, invece di essere guarito del tutto per
+    sbaglio)."""
+    rows = conn.execute(
+        "SELECT r.armor_name, r.npc_vita_cur, r.npc_vita_max, a.level "
+        "FROM roster r JOIN armors a ON a.name = r.armor_name WHERE r.npc_str = 0"
+    ).fetchall()
+    corretti = 0
+    for row in rows:
+        stats = generate_npc_stats(row["level"])
+        new_vita_max = 100 + stats["con"] * 2  # stessa formula usata per i PNG nuovi, ora con la Costituzione vera
+        old_ratio = (row["npc_vita_cur"] / row["npc_vita_max"]) if row["npc_vita_max"] > 0 else 1.0
+        new_vita_cur = round(new_vita_max * old_ratio)
+        conn.execute(
+            """UPDATE roster SET npc_str = ?, npc_dex = ?, npc_con = ?, npc_tec = ?, npc_vol = ?,
+               npc_vita_cur = ?, npc_vita_max = ? WHERE armor_name = ?""",
+            (stats["str"], stats["dex"], stats["con"], stats["tec"], stats["vol"],
+             new_vita_cur, new_vita_max, row["armor_name"]),
+        )
+        corretti += 1
+    conn.commit()
+    return corretti
 
 
 def get_knight(conn: sqlite3.Connection, knight_id: int) -> dict | None:
