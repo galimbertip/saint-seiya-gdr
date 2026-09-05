@@ -22,7 +22,7 @@ from core.arena_manager import (
 )
 from core.dnd_engine import DnDEngine
 from core.training_path import build_opponent_from_armor
-from database.db_manager import get_armor, get_roster_entry
+from database.db_manager import get_armor, get_roster_entry, get_techniques_for_armor
 
 DEFENSE_MISSION_ID = "difesa_a_ondate"
 UNITS_PER_SIDE = 3
@@ -76,6 +76,39 @@ def resolve_defense_reward(waves_completed: int, is_victory: bool) -> dict:
     return {"denaro": denaro, "cosmo_max": cosmo_max}
 
 
+def classify_armor_combat_role(techniques: list[dict]) -> str:
+    """Il ruolo di combattimento di un'armatura (richiesto in chat,
+    dalla roadmap: "sinergie di squadra... un ruolo dichiarato invece
+    che solo più o meno forte") - ricavato dalle SUE tecniche, non
+    dalle statistiche del PNG che la indossa: a parità di livello
+    armatura le statistiche generate sono identiche per chiunque
+    (build_opponent_from_armor le scala tutte allo stesso modo), non
+    c'è varianza da cui ricavare un ruolo lì. Le tecniche invece
+    variano davvero da armatura ad armatura - stesso principio di
+    "Cigno è sempre ghiaccio/cosmico, chiunque la indossi". Ruoli:
+    Controllo (intrappolamento/veleno/paralisi), Difensore (tecniche
+    difensive prevalenti, potenza media contenuta), Attacco Pesante
+    (potenza media alta), Equilibrato (nessuna specialità netta).
+    PLACEHOLDER, come le altre classificazioni euristiche del
+    progetto - soglie da tarare col tempo."""
+    if not techniques:
+        return "Equilibrato"
+    tipi_uniti = " ".join((t.get("tech_type") or "") for t in techniques).lower()
+    powers = [t.get("power", 0) for t in techniques]
+    avg_power = sum(powers) / len(powers) if powers else 0
+
+    ha_controllo = "intrappolamento" in tipi_uniti or "paralisi" in tipi_uniti or "veleno" in tipi_uniti
+    ha_difesa = "difensivo" in tipi_uniti
+
+    if ha_controllo:
+        return "Controllo"
+    if ha_difesa and avg_power < 85:
+        return "Difensore"
+    if avg_power >= 90:
+        return "Attacco Pesante"
+    return "Equilibrato"
+
+
 def get_defense_team_candidates(conn, knight: dict, armor: dict, limit_faction: int = 12) -> list[dict]:
     """I possibili alleati per "Seleziona Team" (richiesto in chat) -
     un campione di Cavalieri della TUA fazione, più chiunque abbia
@@ -95,6 +128,7 @@ def get_defense_team_candidates(conn, knight: dict, armor: dict, limit_faction: 
     faction_candidates = faction_candidates[:limit_faction]
     for c in faction_candidates:
         c["source"] = "fazione"
+        c["combat_role"] = classify_armor_combat_role([dict(t) for t in get_techniques_for_armor(c["armor_name"], conn)])
 
     bond_rows = conn.execute(
         "SELECT armor_name, affinity FROM tavern_relationships WHERE knight_id = ? AND affinity >= ? "
@@ -112,6 +146,7 @@ def get_defense_team_candidates(conn, knight: dict, armor: dict, limit_faction: 
         bond_candidates.append({
             "armor_name": row["armor_name"], "npc_name": roster_entry["npc_name"],
             "source": "legame", "affinity": row["affinity"],
+            "combat_role": classify_armor_combat_role([dict(t) for t in get_techniques_for_armor(row["armor_name"], conn)]),
         })
 
     return faction_candidates + bond_candidates
