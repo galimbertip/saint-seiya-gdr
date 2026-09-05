@@ -41,7 +41,7 @@ from core.tavern import (
     resolve_tavern_response, TAVERN_REALMS, get_faction_relation, RELATION_STARTING_AFFINITY,
     check_mission_offer, MISSION_OFFER_TEXTS,
     ensure_tavern_bartender, ensure_tavern_seating, maybe_reshuffle_tavern, TABLE_LAYOUT,
-    TAVERN_QUICK_INTENTS, TAVERN_TONES,
+    TAVERN_TONES,
 )
 from core.world_sim import apply_npc_damage, ensure_institutional_alignments, ensure_divinity_alignments
 from core.renown import (
@@ -1600,7 +1600,11 @@ def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(ge
         "npc_name": npc_name,
         "affinity": affinity,
         "messages": [{"speaker": m["speaker"], "text": m["text"]} for m in messages],
-        "quick_intents": [{"intent": i, "label": label, "text": sample} for i, label, sample in TAVERN_QUICK_INTENTS],
+        # I vecchi pulsanti "argomento" che inserivano una frase fissa
+        # sono stati rimossi (richiesto in chat: "vorrei lasciare
+        # scrivere al pg la frase") - il testo libero ora passa dal
+        # classificatore di intenti (core.intent_classifier), niente
+        # più bisogno di garantire la comprensione con una scorciatoia.
         "tones": [{"tone": t, "label": label} for t, label, _mult in TAVERN_TONES],
     }
 
