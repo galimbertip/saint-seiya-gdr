@@ -57,6 +57,7 @@ from core.squad_battle import (
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
     ArmorNotFoundError, ArmorLevelTooHighError, ArmorAlreadyClaimedError, ensure_roster_populated,
+    ensure_npc_stats_generated,
 )
 from core.fm_manager import (
     RosterManager, get_calendar_display, parse_weekly_schedule,
@@ -129,6 +130,7 @@ def _init_schema_once() -> None:
     init_db(conn)
     refresh_armors_catalog(conn)
     ensure_roster_populated(conn)
+    ensure_npc_stats_generated(conn)
     ensure_institutional_alignments(conn)
     ensure_divinity_alignments(conn)
     conn.close()
