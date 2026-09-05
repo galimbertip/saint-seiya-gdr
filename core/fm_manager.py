@@ -23,21 +23,34 @@ Rispetto alle versioni precedenti:
   Sparring con i Compagni) accanto a quelli originali, mai rinominati
   (compatibilità con i programmi settimanali già salvati).
 
+CORREZIONE (richiesto in chat): "Avanza Settimana"/"Avanza Mese"
+promettono un vero salto di 7/30 giorni di calendario, ma sommando le
+sole ore delle sessioni scelte (ciascuna 4-8 ore, mai un giorno
+intero) il totale restava sempre ben sotto quella soglia - un
+personaggio poteva "avanzare di una settimana" e ritrovarsi solo 1-2
+giorni più avanti, un nome di pulsante fuorviante rispetto a quello
+che faceva davvero. Ora advance_week/advance_month, dopo aver
+applicato le sessioni vere (con i loro effetti e costi individuali
+invariati), fanno passare in silenzio il tempo mancante per arrivare
+a un vero multiplo di giorni pieni - tempo "di contorno" della
+settimana/mese, senza nessun allenamento aggiuntivo associato.
+
 NOTA come per dnd_engine.py: le SOGLIE numeriche (costo stamina, xp per
 salire di livello, quanti punti guadagni, probabilità di infortunio,
 durata in minuti di ogni azione) sono PLACEHOLDER funzionanti, non
 valori definitivi - li tariamo insieme quando affrontiamo il
 bilanciamento vero e proprio. La struttura è quella buona.
 """
+
 import random
 from database.db_manager import advance_world_minutes, get_last_npc_tick_minutes, set_last_npc_tick_minutes
 from core.world_sim import tick_world_events, WORLD_TICK_MINUTES_PER_DAY
 from core.renown import regen_multiplier
 from datetime import datetime, timedelta
-
 from core.arena_manager import get_unlocked_senses
 
 # --- Tipi di allenamento --------------------------------------------------
+
 TRAINING_FOCUS_OPTIONS = [
     "Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà",
     "Cascata del Sacrificio", "Sparring con i Compagni",
@@ -52,7 +65,6 @@ _STAT_COLUMN_BY_FOCUS = {
     "Volontà": "vol",
     "Cascata del Sacrificio": "con",
 }
-
 _STAT_LABELS = {"str": "Forza", "dex": "Destrezza", "con": "Costituzione", "tec": "Tecnica", "vol": "Volontà"}
 
 _STAMINA_COST_RANGES = {
@@ -71,17 +83,19 @@ _INJURY_STAT_LOSS = 1
 XP_PER_TRAINING_SESSION = 10  # placeholder
 
 WEEKDAY_NAMES = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
-
 DEFAULT_WEEKLY_SCHEDULE = ["Cosmo", "Forza", "Destrezza", "Costituzione", "Tecnica", "Volontà", "Riposo"]
 DEFAULT_WEEKLY_SCHEDULE_STR = ",".join(DEFAULT_WEEKLY_SCHEDULE)
 
 # --- Calendario (a minuti) -------------------------------------------------
+
 MINUTES_PER_HOUR = 60
 MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR
+
 # DAYS_PER_MONTH ora serve SOLO per "Avanza Mese" nell'allenamento
 # (quante sessioni di fila = un mese di training) - non più per il
 # calendario, che è reale (vedi get_calendar_display più sotto).
 DAYS_PER_MONTH = 30
+DAYS_PER_WEEK = 7
 
 MONTH_NAMES = [
     "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
@@ -99,7 +113,6 @@ TRAINING_MINUTES_BY_FOCUS = {
     "Sparring con i Compagni": 6 * MINUTES_PER_HOUR,
 }
 DEFAULT_TRAINING_MINUTES = 4 * MINUTES_PER_HOUR
-
 ARENA_ROUND_MINUTES = 15  # un mezzo-turno di combattimento (dichiari + reagisce l'altro)
 
 # --- Recupero del Cosmo fuori dal combattimento -----------------------
@@ -113,6 +126,7 @@ ARENA_ROUND_MINUTES = 15  # un mezzo-turno di combattimento (dichiari + reagisce
 # tempo. In Arena invece il Cosmo NON si rigenera mai da solo - lì sei
 # in combattimento, per definizione.
 COSMO_REGEN_PER_HOUR = 2  # PLACEHOLDER: da tarare insieme
+
 # La Vita guarisce più lentamente del Cosmo (richiesto in chat: le tre
 # barre si recuperano piano nel tempo, non di colpo - e una ferita vera
 # impiega più a guarire di quanto impieghi il Cosmo a ricaricarsi).
@@ -155,7 +169,6 @@ def get_calendar_display(world_minutes: int) -> dict:
     mano in MONTH_NAMES (in italiano) invece di strftime('%B'), che
     dipenderebbe dalla lingua del sistema."""
     current = datetime.fromisoformat(WORLD_EPOCH) + timedelta(minutes=world_minutes)
-
     return {
         "year": current.year,
         "month_index": current.month - 1,
@@ -208,7 +221,6 @@ class RosterManager:
         statistica (o riposa), assegna un po' di XP, e fa passare il
         tempo corrispondente a QUEL focus (non più un giorno fisso per
         tutti - vedi TRAINING_MINUTES_BY_FOCUS). Muta `knight` in place.
-
         Se il personaggio è troppo esausto, la sessione NON viene
         bloccata in automatico: si forza comunque, ma rischia un
         INFORTUNIO (perde un punto invece di guadagnarlo). Il tempo
@@ -280,13 +292,11 @@ class RosterManager:
             gain = random.randint(1, 3)
             knight["cosmo_max"] += gain
             return f"Allenamento intenso! Il Cosmo massimo di {knight['raw_name']} è aumentato di +{gain}."
-
         if focus == "Sparring con i Compagni":
             column = random.choice(["str", "dex", "con"])
             knight[column] += 1
             return (f"Sparring acceso! {_STAT_LABELS[column]} di {knight['raw_name']} "
                     f"è aumentata a {knight[column]}.")
-
         column = _STAT_COLUMN_BY_FOCUS[focus]
         knight[column] += 1
         return f"Esercizi completati! {focus} di {knight['raw_name']} è aumentata a {knight[column]}."
@@ -298,7 +308,6 @@ class RosterManager:
             knight["cosmo_max"] -= loss
             return (f"⚠️ {knight['raw_name']} si è allenato troppo stanco e si è infortunato! "
                     f"Cosmo massimo -{loss}.")
-
         column = random.choice(["str", "dex", "con"]) if focus == "Sparring con i Compagni" \
             else _STAT_COLUMN_BY_FOCUS[focus]
         loss = max(0, min(knight[column] - 1, _INJURY_STAT_LOSS))
@@ -309,25 +318,40 @@ class RosterManager:
     @staticmethod
     def advance_week(conn, knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
         """Applica 7 sessioni di allenamento di fila (una per 'giorno'
-        della griglia settimanale). ATTENZIONE (cambiato in questo giro):
-        con l'orologio a minuti, 7 sessioni NON corrispondono più
-        necessariamente a 7 giorni di calendario - dipende dalla durata
-        di ciascun focus scelto (7 Riposo = 56 ore reali = poco più di 2
-        giorni; 7 Cascata del Sacrificio = 42 ore = meno di 2 giorni).
-        La griglia resta comoda per pianificare 7 sessioni in sequenza,
-        ma il nome 'Settimana' è ormai più una convenzione che una
-        promessa esatta di 7 giorni di calendario."""
+        della griglia settimanale), poi garantisce che sia passata
+        DAVVERO una settimana di calendario (richiesto in chat:
+        prima "Avanza Settimana" poteva far avanzare anche solo 1-2
+        giorni veri, perché le 7 sessioni sommano al massimo 7×8=56
+        ore - ben sotto le 168 ore di una settimana vera - un nome di
+        pulsante fuorviante rispetto a quello che faceva davvero).
+        Le 7 sessioni restano quelle vere, con i loro effetti e costi
+        individuali - il tempo mancante per arrivare a 7 giorni pieni
+        passa DOPO, in silenzio, senza nessun ottavo allenamento
+        aggiuntivo: è il resto della settimana che scorre attorno alle
+        sessioni scelte, non un'altra sessione mascherata."""
+        start_minutes = knight["game_minutes"]
         results = []
         for day_name, focus in zip(WEEKDAY_NAMES, schedule):
             msg = RosterManager.apply_daily_training(conn, knight, focus)
             results.append((day_name, focus, msg))
+
+        elapsed = knight["game_minutes"] - start_minutes
+        target_minutes = DAYS_PER_WEEK * MINUTES_PER_DAY
+        if elapsed < target_minutes:
+            aging_msg = RosterManager.spend_time(conn, knight, target_minutes - elapsed)
+            if aging_msg:
+                results.append(("", "", aging_msg))
         return results
 
     @staticmethod
     def advance_month(conn, knight: dict, schedule: list[str]) -> list[tuple[str, str, str]]:
         """Applica 30 sessioni di allenamento di fila (stesso programma
-        settimanale ripetuto), stessa nota di advance_week sul tempo
-        reale che ne consegue."""
+        settimanale ripetuto), poi garantisce che sia passato DAVVERO
+        un mese di calendario - stessa correzione e stesso principio
+        di advance_week (richiesto in chat): 30 sessioni sommano al
+        massimo 30×8=240 ore, ben sotto le 720 ore (30 giorni) che il
+        nome del pulsante promette."""
+        start_minutes = knight["game_minutes"]
         results = []
         sessions_done = 0
         week_num = 1
@@ -338,6 +362,13 @@ class RosterManager:
                 results.append((f"Sett.{week_num} {day_name}", focus, msg))
             sessions_done += sessions_this_round
             week_num += 1
+
+        elapsed = knight["game_minutes"] - start_minutes
+        target_minutes = DAYS_PER_MONTH * MINUTES_PER_DAY
+        if elapsed < target_minutes:
+            aging_msg = RosterManager.spend_time(conn, knight, target_minutes - elapsed)
+            if aging_msg:
+                results.append(("", "", aging_msg))
         return results
 
     @staticmethod
@@ -354,7 +385,6 @@ class RosterManager:
         (richiesto in chat: prima il giocatore lo scopriva solo per
         caso, provando i pulsanti in Arena)."""
         knight["xp"] += amount
-
         threshold = RosterManager.xp_to_next_level(knight["player_level"])
         if knight["xp"] < threshold:
             return ""
@@ -367,7 +397,6 @@ class RosterManager:
 
         msg = (f"🎉 {knight['raw_name']} è salito al livello {knight['player_level']}! "
                f"(Cosmo massimo +5)")
-
         sense_labels = {
             "sesto": "Sesto Senso (sblocca Carica il Cosmo)",
             "settimo": "Settimo Senso (si risveglia da solo in punto di rottura)",
@@ -377,5 +406,4 @@ class RosterManager:
         for key, label in sense_labels.items():
             if new_senses[key] and not previous_senses[key]:
                 msg += f" 🌟 Hai sbloccato il {label}!"
-
         return msg
