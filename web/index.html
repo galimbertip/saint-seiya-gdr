@@ -1306,10 +1306,12 @@ function closeTavernConversation() {
 }
 
 async function sendTavernMessage(overrideText, intent) {
-  // overrideText/intent (richiesto in chat, pulsanti in stile
-  // Football Manager): quando il messaggio arriva da un pulsante
-  // invece che dal campo libero, l'intento è già certo - comprensione
-  // garantita, niente rischio di "non ho capito".
+  // overrideText/intent: capacità rimasta per compatibilità, ma non
+  // più usata da nessun pulsante (richiesto in chat: "vorrei lasciare
+  // scrivere al pg la frase" - i vecchi pulsanti che inserivano una
+  // frase fissa sono stati rimossi, il testo libero passa ora dal
+  // classificatore di intenti in core.intent_classifier, che capisce
+  // la stragrande maggioranza delle frasi senza bisogno di scorciatoie).
   const testo = (overrideText !== undefined ? overrideText : state.tavernInput).trim();
   if (!testo || !state.tavernConversation) return;
   if (overrideText === undefined) state.tavernInput = "";
@@ -1533,18 +1535,9 @@ function renderTavernTab() {
     }
     card.append(toneRow);
 
-    const quickIntentsRow = el("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-bottom:8px;" });
-    for (const qi of (conv.quick_intents || [])) {
-      quickIntentsRow.append(el("button", {
-        class: "secondary",
-        onClick: () => sendTavernMessage(qi.text, qi.intent),
-      }, qi.label));
-    }
-    card.append(quickIntentsRow);
-
     const inputRow = el("div", { class: "row" });
     const textInput = el("input", {
-      type: "text", value: state.tavernInput, placeholder: "...oppure scrivi liberamente",
+      type: "text", value: state.tavernInput, placeholder: "Scrivi cosa vuoi dire...",
       onInput: (e) => { state.tavernInput = e.target.value; },
       onKeyDown: (e) => { if (e.key === "Enter") sendTavernMessage(); },
     });
