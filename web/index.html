@@ -398,6 +398,11 @@ const state = {
   tutorialStep: 0,           // a che passo del tutorial siamo
   trainingLog: [],
   arenaLog: [],
+  meditationStatus: null,   // richiesto in chat, mini-gioco ricorrente: {available, minutes_until_next, sequence_length}, null finché non caricato
+  meditationSequence: null, // la sequenza vera da ricordare (richiesta al server all'inizio del tentativo)
+  meditationPhase: "idle",  // "idle" | "showing" | "input" | "result" - a che punto siamo del tentativo in corso
+  meditationInput: [],      // quello che il giocatore ha cliccato finora in questo tentativo
+  meditationResult: null,   // { success, reward } dell'ultimo tentativo appena concluso
 };
 // --- Chiamate API: stesso indirizzo della pagina, nessun URL da configurare ---
 async function api(path, options = {}) {
@@ -476,6 +481,11 @@ async function selectCharacter(id) {
   state.tavernSelectedTone = "neutro";
   state.tavernMissionOffer = null;
   state.scoutedAllies = null;
+  state.meditationStatus = null;
+  state.meditationSequence = null;
+  state.meditationPhase = "idle";
+  state.meditationInput = [];
+  state.meditationResult = null;
   state.defenseScreen = null;
   state.defenseTeamCandidates = null;
   state.defenseSelectedAllies = [];
@@ -1099,7 +1109,7 @@ function renderGameScreen() {
   // se sono comunque bloccati lato server.
   const isSoldier = !k.is_knight && k.apprentice_status === "soldier";
   const tabDefs = k.is_knight
-    ? [["sheet", "Scheda Cavaliere"], ["today", "Oggi"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
+    ? [["sheet", "Scheda Cavaliere"], ["today", "Oggi"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["missions", "Missioni"], ["meditation", "Meditazione"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
     : isSoldier
     ? [["sheet", "Scheda Cavaliere"], ["soldier", "Servizio"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]]
     : [["sheet", "Scheda Cavaliere"], ["percorso", "Percorso"], ["training", "Centro Allenamento"], ["arena", "Arena del Santuario"], ["hierarchy", "Gerarchia"], ["chronicle", "Cronaca del Mondo"], ["tavern", "Taverna"]];
@@ -1135,6 +1145,7 @@ function renderGameScreen() {
   wrap.append(tabs);
   if (state.gameTab === "sheet") wrap.append(renderSheetTab());
   else if (state.gameTab === "today") wrap.append(renderTodayTab());
+  else if (state.gameTab === "meditation") wrap.append(renderMeditationTab());
   else if (state.gameTab === "percorso") wrap.append(renderTrainingPathTab());
   else if (state.gameTab === "training") wrap.append(renderTrainingTab());
   else if (state.gameTab === "arena") wrap.append(renderArenaTab());
@@ -1534,6 +1545,135 @@ async function loadScoutedAllies() {
     state.scoutedAllies = { unlocked: false, allies: [] };
   }
   render();
+}
+
+// --- Meditazione del Cosmo (richiesto in chat, dalla roadmap:
+// mini-gioco ricorrente di taglio diverso dagli enigmi di logica
+// degli Inferi - qui è un esercizio di memoria, stile Simon Says) ---
+const MEDITATION_SYMBOL_LABELS = ["🔵", "🟡", "🔴", "🟣"];
+async function loadMeditationStatus() {
+  try {
+    state.meditationStatus = await api(`/characters/${state.characterId}/meditation`);
+  } catch (e) {
+    showError(e.message);
+    state.meditationStatus = { available: false, minutes_until_next: 0, sequence_length: 4 };
+  }
+  render();
+}
+async function startMeditation() {
+  try {
+    const result = await api(`/characters/${state.characterId}/meditation/start`, { method: "POST" });
+    state.meditationSequence = result.sequence;
+    state.meditationInput = [];
+    state.meditationResult = null;
+    state.meditationPhase = "showing";
+    render();
+    // Mostra la sequenza un simbolo alla volta, poi passa
+    // all'inserimento - un semplice ciclo di attese, niente
+    // dipendenze esterne per l'animazione.
+    for (let i = 0; i < state.meditationSequence.length; i++) {
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    state.meditationPhase = "input";
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+async function clickMeditationSymbol(symbolIndex) {
+  if (state.meditationPhase !== "input") return;
+  const position = state.meditationInput.length;
+  state.meditationInput.push(symbolIndex);
+  const expected = state.meditationSequence[position];
+  if (symbolIndex !== expected) {
+    // Sbagliato subito - il tentativo finisce qui, come nel Simon Says classico.
+    await finishMeditationAttempt(false);
+    return;
+  }
+  if (state.meditationInput.length === state.meditationSequence.length) {
+    // Sequenza completata correttamente.
+    await finishMeditationAttempt(true);
+    return;
+  }
+  render();
+}
+async function finishMeditationAttempt(success) {
+  state.meditationPhase = "result";
+  render();
+  try {
+    const result = await api(`/characters/${state.characterId}/meditation/complete`, {
+      method: "POST",
+      body: JSON.stringify({ success, sequence_length: state.meditationSequence.length }),
+    });
+    state.meditationResult = { success, reward: result.reward };
+    state.character = result.character;
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
+function closeMeditationResult() {
+  state.meditationPhase = "idle";
+  state.meditationSequence = null;
+  state.meditationInput = [];
+  state.meditationResult = null;
+  state.meditationStatus = null;  // si ricarica da sola, col cooldown aggiornato
+  render();
+}
+function renderMeditationTab() {
+  const wrap = el("div");
+  wrap.append(el("h1", {}, "Meditazione del Cosmo"));
+  wrap.append(el("p", { class: "hint" }, "Un esercizio di concentrazione, non di logica - ricorda e riproduci la sequenza di impulsi cosmici. Una sequenza più lunga vale più Volontà."));
+  if (state.meditationPhase === "result" && state.meditationResult) {
+    const card = el("div", { class: "card" });
+    const r = state.meditationResult;
+    card.append(el("h2", {}, r.success ? "✨ Sequenza completata" : "La concentrazione si è spezzata"));
+    if (r.success && r.reward) {
+      card.append(el("p", {}, `+${r.reward.volonta} Volontà.`));
+    } else {
+      card.append(el("p", { class: "hint" }, "Ritenta più tardi - la concentrazione richiede riposo."));
+    }
+    card.append(el("button", { onClick: closeMeditationResult }, "Continua"));
+    wrap.append(card);
+    return wrap;
+  }
+  if (state.meditationPhase === "showing" || state.meditationPhase === "input") {
+    const card = el("div", { class: "card" });
+    card.append(el("p", { class: "hint" }, state.meditationPhase === "showing" ? "Osserva la sequenza..." : "Ora riproducila, nello stesso ordine."));
+    const symbolRow = el("div", { class: "row", style: "justify-content:center;margin-top:16px;" });
+    MEDITATION_SYMBOL_LABELS.forEach((label, idx) => {
+      symbolRow.append(el("button", {
+        style: "font-size:32px;padding:20px 26px;",
+        ...(state.meditationPhase === "input" ? { onClick: () => clickMeditationSymbol(idx) } : { disabled: "disabled" }),
+      }, label));
+    });
+    card.append(symbolRow);
+    if (state.meditationPhase === "showing") {
+      const sequenceDisplay = el("p", { style: "text-align:center;font-size:40px;margin-top:16px;" },
+        state.meditationSequence.map((s) => MEDITATION_SYMBOL_LABELS[s]).join(" "));
+      card.append(sequenceDisplay);
+    } else {
+      card.append(el("p", { class: "hint", style: "text-align:center;margin-top:10px;" }, `${state.meditationInput.length} / ${state.meditationSequence.length}`));
+    }
+    wrap.append(card);
+    return wrap;
+  }
+  if (state.meditationStatus === null) {
+    loadMeditationStatus();
+    wrap.append(el("div", { class: "card" }, el("p", { class: "hint" }, "Caricamento...")));
+    return wrap;
+  }
+  const ms = state.meditationStatus;
+  const card = el("div", { class: "card" });
+  if (ms.available) {
+    card.append(el("p", {}, `Prossima sequenza: ${ms.sequence_length} impulsi.`));
+    card.append(el("button", { onClick: startMeditation }, "🧘 Inizia la Meditazione"));
+  } else {
+    const ore = Math.ceil(ms.minutes_until_next / 60);
+    card.append(el("p", { class: "hint" }, `Ti sei già concentrato di recente - torna tra circa ${ore} ${ore === 1 ? "ora" : "ore"} di gioco.`));
+  }
+  wrap.append(card);
+  return wrap;
 }
 async function loadInstitutionalNpcs() {
   try {
