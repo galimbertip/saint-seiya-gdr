@@ -59,6 +59,7 @@ from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
     get_defense_team_candidates, start_defense_mission, resolve_squad_action,
     resolve_defense_reward, _current_actor, _skip_dead_and_autoresolve_enemies,
+    abandon_defense_mission,
 )
 from core.character_factory import (
     create_knight, get_knight, list_knights, delete_knight, save_knight,
@@ -251,6 +252,10 @@ class DefenseActionRequest(BaseModel):
     defense_technique_type: Optional[str] = None
     defense_technique_launch_desc: Optional[str] = None
     defense_technique_effect_desc: Optional[str] = None
+
+
+class DefenseAbandonRequest(BaseModel):
+    battle_state: dict
 
 
 # --------------------------- Serializzazione ---------------------------
@@ -2010,6 +2015,22 @@ def api_defense_action(knight_id: int, req: DefenseActionRequest, conn=Depends(g
         result["reward"] = reward
         result["character"] = _knight_payload(conn, knight)
     return result
+
+
+@app.post("/characters/{knight_id}/defense/abandon")
+def api_defense_abandon(knight_id: int, req: DefenseAbandonRequest, conn=Depends(get_db)):
+    """Il pulsante di resa nella Difesa a Ondate (richiesto in chat:
+    "manca il pulsante per arrendersi" - dopo aver corretto il
+    combattimento perché il giocatore controlli solo il proprio
+    personaggio, gli alleati agiscono da soli e la battaglia può
+    protrarsi anche quando si vorrebbe smettere). Stesso principio
+    già seguito per le altre missioni (POST /mission/abandon): chi
+    abbandona di sua volontà non porta a casa nessuna ricompensa,
+    nemmeno parziale per le ondate già respinte."""
+    _get_knight_or_404(conn, knight_id)
+    state = req.battle_state
+    abandon_defense_mission(state)
+    return {"battle_state": state}
 
 
 @app.post("/characters/{knight_id}/arena/retreat")
