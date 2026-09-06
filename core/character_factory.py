@@ -30,6 +30,7 @@ from core.fm_manager import get_calendar_display
 
 STARTING_COSMO_BASE = 100
 STARTING_STAT_BASE = 10
+
 # Le tre barre (richiesto in chat): la Vita ora è un indicatore a sé,
 # non più il Cosmo che fa "doppio lavoro" - scala con la Costituzione
 # invece che col livello dell'armatura (il Cosmo scala con quello),
@@ -37,6 +38,7 @@ STARTING_STAT_BASE = 10
 # altre formule di bilanciamento di questo progetto.
 VITA_BASE = 100
 VITA_PER_CON = 2
+
 NPC_STAMINA_MAX = 100  # richiesto in chat, tre barre vere anche per i PNG - scala fissa, come quella del giocatore
 
 # Corporatura: richiesta in chat, sposta la Costituzione di partenza -
@@ -88,32 +90,33 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     ArmorAlreadyClaimedError se l'armatura è già portata da un altro
     personaggio giocatore (richiesto in chat: la gerarchia è 1 a 1, un
     solo occupante per slot - il PNG fisso finché nessuno la reclama).
+
     surname/gender/origin: dettagli narrativi opzionali del personaggio
     (richiesti in chat per la creazione 'come vuoi tu') - nessun
     collegamento con dati reali del giocatore, sono del personaggio.
+
     build ('Minuta'/'Media'/'Robusta'): sposta la Costituzione di
     partenza (vedi BUILD_CON_BONUS) - anche questo richiesto in chat,
     per dare un effetto MECCANICO reale alla corporatura scelta, non
     solo narrativo.
+
     biography: l'abbozzo iniziale del diario (richiesto in chat) - da
     qui in poi il gioco stesso aggiunge voci (level up, Sensi,
     vittorie/sconfitte) in biography_entries, vedi
     database.db_manager.add_biography_entry.
+
     skin_tone/hair_color: personalizzano la sagoma stilizzata
     (richiesto in chat) - l'avatar caricato (vedi avatar_path,
     impostato a parte via l'endpoint di upload) ha sempre la
     precedenza quando presente."""
-
     armor = get_armor(armor_name, conn)
     if armor is None:
         raise ArmorNotFoundError(f"Armatura {armor_name!r} non trovata nel catalogo.")
-
     if armor["min_player_level"] > player_level:
         raise ArmorLevelTooHighError(
             f"{armor_name!r} richiede livello giocatore {armor['min_player_level']}, "
             f"ma il personaggio è livello {player_level}."
         )
-
     roster_entry = get_roster_entry(conn, armor_name)
     if roster_entry is not None and roster_entry["claimed_by_knight_id"] is not None:
         raise ArmorAlreadyClaimedError(
@@ -124,8 +127,10 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
     stats["con"] = max(1, stats["con"] + BUILD_CON_BONUS.get(build, 0))
     cosmo = STARTING_COSMO_BASE + armor["level"]
     vita = VITA_BASE + stats["con"] * VITA_PER_CON
+
     full_display_name = f"{raw_name} {surname}".strip()
     formal_name = f"{full_display_name} di {armor_name}"
+
     # Calendario UNICO condiviso da tutti (richiesto in chat, stile
     # Football Manager) - il personaggio "nasce" alla data ATTUALE del
     # mondo condiviso, non al giorno zero di un proprio conteggio
@@ -165,7 +170,6 @@ def create_knight(conn: sqlite3.Connection, raw_name: str, armor_name: str,
          world_minutes_at_birth),
     )
     conn.commit()
-
     claim_roster_slot(conn, armor_name, cur.lastrowid)
 
     if not is_knight:
@@ -321,7 +325,8 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
                             is_knight=?, training_stage=?, master_name=?, master_armor_name=?,
                             companion1_name=?, companion2_name=?, arena_background_path=?, arena_backgrounds=?,
                             denaro=?, mission_id=?, mission_stage=?, mission_node=?, mission_flags=?,
-                            tournament_bracket=?, mission_counter=?, apprentice_status=?, armor_name=?, renown=?
+                            tournament_bracket=?, mission_counter=?, apprentice_status=?, armor_name=?, renown=?,
+                            last_meditation_minutes=?, meditation_successes=?
         WHERE id=?
         """,
         (knight["cosmo_cur"], knight["cosmo_max"], knight["vita_cur"], knight["vita_max"],
@@ -335,6 +340,7 @@ def save_knight(conn: sqlite3.Connection, knight: dict) -> None:
          knight["arena_background_path"], knight["arena_backgrounds"],
          knight["denaro"], knight["mission_id"], knight["mission_stage"],
          knight["mission_node"], knight["mission_flags"], knight["tournament_bracket"], knight["mission_counter"], knight["apprentice_status"],
-         knight["armor_name"], knight["renown"], knight["id"]),
+         knight["armor_name"], knight["renown"],
+         knight["last_meditation_minutes"], knight["meditation_successes"], knight["id"]),
     )
     conn.commit()
