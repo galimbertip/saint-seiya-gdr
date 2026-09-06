@@ -8,17 +8,28 @@ loro cambiano nel tempo, non restano fisse per sempre) e un pool di
 eventi di mondo puramente narrativi (guerre sfiorate, presagi legati
 alle divinità, fatti che non riguardano direttamente nessun Cavaliere)
 - questi ultimi non muovono nessuno stato di gioco, sono solo Cronaca.
-
 Una simulazione leggera e probabilistica, non un motore narrativo
 completo: bassa probabilità per singolo PNG, per sentirsi vivo nel
 tempo senza essere caotico o richiedere una vera IA per ciascuno.
 Chiamata da core.fm_manager.RosterManager.spend_time ogni volta che il
 tempo avanza abbastanza (un giorno pieno) da giustificare il
 ricalcolo - richiamarla ad ogni minuscolo avanzamento (es. un mezzo
-round di combattimento) sarebbe inutilmente costoso."""
+round di combattimento) sarebbe inutilmente costoso.
+
+CORREZIONE (richiesto in chat: "in Cronaca del Mondo c'è solo un
+continuo cavaliere X nominato, Cavaliere Y muore, Cavaliere Z comincia
+l'addestramento... noiosissimo e inutile") - il problema di fondo non
+era la varietà del TESTO (ogni categoria di destino aveva già diverse
+varianti), ma la STRUTTURA: ogni singola partenza produceva DUE righe
+separate in Cronaca (partenza + inizio addestramento del successore),
+una dietro l'altra, sempre nello stesso ordine - con 228 armature,
+anche una probabilità bassa per singolo PNG finiva per riempire la
+Cronaca di coppie di frasi quasi identiche nella forma. Ora
+_start_departure produce UNA SOLA voce narrativa che racconta
+entrambe le cose insieme, come farebbe un vero cronista - non due
+annunci separati per lo stesso evento."""
 
 import random
-
 from core.arena_manager import generate_full_name
 from core.alignment import random_alignment, ALIGNMENT_FATE_CATEGORY_WEIGHTS
 from core.tavern import alignment_to_mood
@@ -59,11 +70,9 @@ def apply_npc_regen(conn, armor_name: str, current_world_minutes: int) -> dict |
     if elapsed_minutes <= 0:
         return entry
     hours = elapsed_minutes / 60
-
     new_vita = min(entry["npc_vita_max"], entry["npc_vita_cur"] + round(hours * NPC_VITA_REGEN_PER_HOUR))
     new_cosmo = min(entry["npc_cosmo_max"], entry["npc_cosmo_cur"] + round(hours * NPC_COSMO_REGEN_PER_HOUR))
     new_stamina = min(entry["npc_stamina_max"], entry["npc_stamina_cur"] + round(hours * NPC_STAMINA_REGEN_PER_HOUR))
-
     conn.execute(
         """UPDATE roster SET npc_vita_cur = ?, npc_cosmo_cur = ?, npc_stamina_cur = ?, npc_last_regen_minutes = ?
            WHERE armor_name = ?""",
@@ -87,20 +96,21 @@ def apply_npc_damage(conn, armor_name: str, vita_cur: int, cosmo_cur: int, curre
     )
     conn.commit()
 
+
 # Probabilità che un singolo PNG non reclamato abbia un evento notevole
 # in UN giorno di tempo condiviso - bassa apposta (con oltre 200
 # armature nel catalogo, anche una probabilità piccola genera comunque
 # eventi visibili nell'arco di settimane di gioco). PLACEHOLDER da
 # tarare insieme, come le altre formule di bilanciamento del progetto.
-# Ricalibrata in chat: con il ritmo REALE del tempo di gioco (una
-# sessione di allenamento consuma 4-8 ore, non un giorno intero - 2
-# "mesi" cliccati in interfaccia avanzano il mondo di appena una
-# dozzina di giorni, non 60), il valore precedente (0.0005) dava una
-# media di poco più di un evento atteso per un'intera sessione di
-# gioco prolungata - capitava facilmente zero per puro caso. Alzata a
-# un ritmo più affidabile da notare. PLACEHOLDER, da tarare ancora
-# insieme se serve.
-NPC_EVENT_CHANCE_PER_DAY = 0.0015
+#
+# ABBASSATA di nuovo (richiesto in chat: "noiosissimo e inutile" - la
+# consolidazione delle due righe in una sola dimezza il volume, ma il
+# NUMERO di eventi comuni restava comunque il più alto tra tutte le
+# categorie di Cronaca) - da 0.0015 a 0.0009: con 228 armature, un
+# evento comune ogni 4-5 giorni di gioco condiviso circa, invece di
+# ogni 3 - lascia più respiro tra un evento e l'altro senza farli
+# sparire del tutto. PLACEHOLDER, da tarare ancora insieme se serve.
+NPC_EVENT_CHANCE_PER_DAY = 0.0009
 
 # Le Figure Istituzionali (richiesto in chat) - probabilità PER
 # CIASCUNA delle 4, più alta di quella di un singolo PNG comune (sono
@@ -162,6 +172,7 @@ NPC_FATE_CATEGORIES = {
         "svanisce durante un lungo viaggio verso confini che nessuno ha mai osato attraversare.",
     ],
 }
+
 # Il peso di base di ciascuna categoria (somma delle vecchie liste
 # piatte: 5×0.05, 6×~0.085, 4×0.0625) - moltiplicato poi per
 # ALIGNMENT_FATE_CATEGORY_WEIGHTS (richiesto in chat, effetti più
@@ -195,34 +206,34 @@ NPC_INJURY_CAUSES = [
     ("torna da una missione con ferite che tarderanno a guarire.", "quella missione"),
     ("viene colto di sorpresa da un'imboscata ai confini del proprio territorio.", "quell'imboscata"),
 ]
-
 NPC_INJURY_DEATH_TEXTS = [
     "non si riprende mai del tutto dalle ferite di {cause_label}, e alla fine cede.",
     "si spegne per le conseguenze di {cause_label}, lontano dai riflettori che raramente si accendono per i Cavalieri comuni.",
     "perde la propria battaglia più silenziosa - quella contro le ferite di {cause_label} - senza che quasi nessuno se ne accorga.",
 ]
-
 NPC_INJURY_RECOVERY_TEXTS = [
     "si rimette in piedi, più lentamente di quanto avrebbe voluto, ma si rimette.",
     "torna al proprio posto, con qualche cicatrice in più e la stessa determinazione di sempre.",
     "guarisce dalle proprie ferite - il tempo, per una volta, gioca a favore.",
 ]
 
-
-# Chi inizia l'addestramento per un'armatura lasciata libera (richiesto
-# in chat) - una riga di Cronaca a parte da quella della partenza, non
-# più un'unica frase con "X se ne va, Y raccoglie l'eredità" che dava
-# l'idea di un passaggio di consegne istantaneo.
-NPC_TRAINING_START_TEXTS = [
-    "{name} si presenta al Santuario chiedendo di essere addestrato per raccogliere l'armatura {armor}, rimasta senza custode.",
-    "Si dice che {name} abbia già cominciato ad allenarsi per meritare l'armatura {armor} - il nome, per ora, è solo una voce tra le tante.",
-    "{name} inizia il proprio addestramento, sognando di diventare il nuovo portatore dell'armatura {armor}.",
+# CONSOLIDATE (richiesto in chat, correzione alla noia della Cronaca):
+# una singola frase che racconta INSIEME la partenza di chi lascia il
+# proprio posto e l'arrivo di chi comincia ad ambire a raccoglierlo -
+# non più due righe separate in sequenza. `{name}` e `{armor}` per il
+# nuovo aspirante, il resto della frase si aggancia al testo del
+# destino già generato (che finisce sempre con un punto).
+NPC_DEPARTURE_WITH_SUCCESSOR_TEMPLATES = [
+    "Non passa molto prima che {name} si faccia avanti, sperando un giorno di raccogliere l'armatura {armor} rimasta senza custode.",
+    "Nel giro di poche settimane, {name} inizia già ad allenarsi con l'ambizione di meritare l'armatura {armor}.",
+    "Si dice che {name} abbia notato l'armatura {armor} rimasta vacante, e abbia deciso di tentare la propria strada.",
     "Un nuovo aspirante, {name}, muove i primi passi verso l'armatura {armor} - la strada da percorrere è ancora lunga.",
 ]
 
 # Chi completa l'addestramento e diventa davvero il nuovo Cavaliere
 # (richiesto in chat) - solo ORA, non subito dopo la partenza del
-# predecessore.
+# predecessore: è comunque un evento a distanza di mesi da quello di
+# partenza, non ripetitivo con esso.
 NPC_GRADUATION_TEXTS = [
     "{name} supera la propria prova e diventa il nuovo Cavaliere dell'armatura {armor}.",
     "Dopo mesi di addestramento, {name} è finalmente pronto a indossare l'armatura {armor}.",
@@ -393,14 +404,11 @@ def get_faction_disposition(conn, divinity: str) -> str:
         return "neutrale"
     divinity_row = get_institutional_alignment(conn, divinity_npc["id"])
     divinity_mood = alignment_to_mood(divinity_row["alignment"]) if divinity_row else "neutrale"
-
     institutional_npc = next((n for n in INSTITUTIONAL_NPCS if n["divinity"] == divinity), None)
     if institutional_npc is None:
         return divinity_mood
-
     institutional_row = get_institutional_alignment(conn, institutional_npc["id"])
     institutional_mood = alignment_to_mood(institutional_row["alignment"]) if institutional_row else "neutrale"
-
     votes = {"buono": 0, "neutrale": 0, "malvagio": 0}
     votes[divinity_mood] += 2
     votes[institutional_mood] += 1
@@ -434,15 +442,12 @@ def _tick_divine_reincarnations(conn, elapsed_minutes: int, current_world_minute
         current = get_institutional_alignment(conn, npc["id"])
         new_generation = (current["generation"] + 1) if current else 1
         set_institutional_alignment(conn, npc["id"], random_alignment(), new_generation)
-
         text = DIVINE_REINCARNATION_TEXTS.get(npc["id"])
         if not text:
             continue
         add_world_event(conn, current_world_minutes, npc["name"], text)
         events.append({"armor_name": npc["name"], "entry": text})
     return events
-
-
 
 
 # La disposizione di fazione pesa anche lei sui destini (richiesto in
@@ -506,7 +511,6 @@ def _tick_institutional_events(conn, elapsed_minutes: int, current_world_minutes
         new_alignment = random_alignment()
         new_generation = (current["generation"] + 1) if current else 1
         set_institutional_alignment(conn, npc["id"], new_alignment, new_generation)
-
         mood = alignment_to_mood(new_alignment)
         texts_by_mood = INSTITUTIONAL_SUCCESSION_TEXTS.get(npc["id"], {})
         text = texts_by_mood.get(mood) or texts_by_mood.get("neutrale")
@@ -539,19 +543,21 @@ def _tick_world_flavor_events(conn, elapsed_minutes: int, current_world_minutes:
 
 
 def _start_departure(conn, row, fate_text: str, current_world_minutes: int) -> list[dict]:
-    """La sequenza condivisa 'qualcuno lascia il proprio posto, un
-    aspirante inizia l'addestramento' - usata sia da una partenza
-    diretta sia da una morte per ferite (richiesto in chat), per non
-    duplicare la stessa logica due volte."""
-    events = []
-    departure_entry = f"{row['npc_name']} di {row['armor_name']} {fate_text}"
-    add_world_event(conn, current_world_minutes, row["armor_name"], departure_entry)
-
+    """La sequenza 'qualcuno lascia il proprio posto, un aspirante
+    inizia l'addestramento' - usata sia da una partenza diretta sia da
+    una morte per ferite. CORRETTA (richiesto in chat: "in Cronaca del
+    Mondo c'è solo un continuo... noiosissimo") - prima produceva DUE
+    righe separate in Cronaca, una dietro l'altra, per lo stesso
+    evento: ora è UNA sola voce narrativa che racconta insieme la
+    partenza e l'arrivo del nuovo aspirante, come farebbe un vero
+    cronista che riassume la notizia invece di scriverla due volte."""
     candidate = generate_full_name()
     training_ready = current_world_minutes + NPC_TRAINING_DURATION_MINUTES
-    start_text = random.choice(NPC_TRAINING_START_TEXTS).format(name=candidate, armor=row["armor_name"])
-    add_world_event(conn, current_world_minutes, row["armor_name"], start_text)
-
+    successor_line = random.choice(NPC_DEPARTURE_WITH_SUCCESSOR_TEMPLATES).format(
+        name=candidate, armor=row["armor_name"]
+    )
+    combined_entry = f"{row['npc_name']} di {row['armor_name']} {fate_text} {successor_line}"
+    add_world_event(conn, current_world_minutes, row["armor_name"], combined_entry)
     conn.execute(
         """UPDATE roster SET npc_status = 'training', npc_training_candidate = ?,
            npc_training_ready_minutes = ?, npc_fate = ?, npc_injured = 0, npc_injury_cause = '',
@@ -559,9 +565,7 @@ def _start_departure(conn, row, fate_text: str, current_world_minutes: int) -> l
            WHERE armor_name = ?""",
         (candidate, training_ready, f"{row['npc_name']} {fate_text}", current_world_minutes, row["armor_name"]),
     )
-    events.append({"armor_name": row["armor_name"], "entry": departure_entry})
-    events.append({"armor_name": row["armor_name"], "entry": start_text})
-    return events
+    return [{"armor_name": row["armor_name"], "entry": combined_entry}]
 
 
 def _tick_injured_npcs(conn, elapsed_minutes: int, current_world_minutes: int) -> list[dict]:
@@ -634,7 +638,11 @@ def _tick_common_npc_graduations(conn, current_world_minutes: int) -> list[dict]
     """Fase 2 (richiesto in chat): un aspirante che ha completato il
     proprio addestramento diventa finalmente il nuovo occupante -
     niente più passaggio di consegne istantaneo tra chi parte e chi
-    arriva."""
+    arriva. Resta una voce SEPARATA da quella di partenza (a
+    differenza di quella, vedi _start_departure) perché accade a
+    distanza di mesi, non subito dopo - non è la stessa notizia
+    raccontata due volte, è un capitolo successivo della stessa
+    storia."""
     events = []
     rows = conn.execute(
         "SELECT * FROM roster WHERE claimed_by_knight_id IS NULL AND npc_status = 'training' "
@@ -672,16 +680,13 @@ def tick_world_events(conn, elapsed_minutes: int, current_world_minutes: int) ->
     controllo precedente."""
     if elapsed_minutes <= 0:
         return []
-
     events = []
     events.extend(_tick_injured_npcs(conn, elapsed_minutes, current_world_minutes))
     events.extend(_tick_common_npc_departures(conn, elapsed_minutes, current_world_minutes))
     events.extend(_tick_common_npc_graduations(conn, current_world_minutes))
     events.extend(_tick_institutional_events(conn, elapsed_minutes, current_world_minutes))
     events.extend(_tick_divine_reincarnations(conn, elapsed_minutes, current_world_minutes))
-
     divinities = [r["divinity"] for r in conn.execute("SELECT DISTINCT divinity FROM armors").fetchall()]
     events.extend(_tick_world_flavor_events(conn, elapsed_minutes, current_world_minutes, divinities))
-
     conn.commit()
     return events
