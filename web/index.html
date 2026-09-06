@@ -2004,6 +2004,25 @@ async function performDefenseAction(actorId, action, opts = {}) {
   }
   render();
 }
+async function abandonDefenseBattle() {
+  // Il pulsante di resa (richiesto in chat: "manca il pulsante per
+  // arrendersi") - dopo che gli alleati agiscono da soli, la
+  // battaglia può protrarsi anche quando il giocatore vorrebbe
+  // smettere. Nessuna ricompensa per una resa volontaria, nemmeno
+  // parziale per le ondate già respinte - stesso principio delle
+  // altre missioni.
+  if (!confirm("Abbandonare la difesa? Non riceverai nessuna ricompensa, nemmeno per le ondate già respinte.")) return;
+  try {
+    const result = await api(`/characters/${state.characterId}/defense/abandon`, {
+      method: "POST",
+      body: JSON.stringify({ battle_state: state.defenseBattle }),
+    });
+    state.defenseBattle = result.battle_state;
+  } catch (e) {
+    showError(e.message);
+  }
+  render();
+}
 function closeDefenseMission() {
   state.defenseScreen = null;
   state.defenseBattle = null;
@@ -3388,6 +3407,16 @@ function renderDefenseBattle() {
   const wrap = el("div");
   wrap.append(el("h1", {}, `Difesa: ${battle.setting}`));
   wrap.append(el("p", { class: "hint" }, `Contro ${battle.enemy_faction} · Ondata ${battle.wave_number}/${battle.total_waves} · Round ${battle.round_number}`));
+  if (battle.outcome === "abandoned") {
+    // La resa (richiesto in chat) - un esito a sé, nessuna ricompensa
+    // nemmeno per le ondate già respinte prima di abbandonare.
+    const abandonCard = el("div", { class: "card" });
+    abandonCard.append(el("h2", {}, "Ti sei ritirato dal campo"));
+    abandonCard.append(el("p", { class: "hint" }, "Nessuna ricompensa per una resa volontaria."));
+    abandonCard.append(el("button", { onClick: closeDefenseMission }, "Continua"));
+    wrap.append(abandonCard);
+    return wrap;
+  }
   if (state.defenseResult) {
     const isVictory = battle.outcome === "victory";
     const resCard = el("div", { class: "card" });
@@ -3417,9 +3446,18 @@ function renderDefenseBattle() {
   }
   wrap.append(logCard);
   const currentUnit = battle.units[currentId];
-  if (currentUnit && currentUnit.side === "allies" && currentUnit.is_alive) {
+  // Solo "player" mostra il pannello d'azione (richiesto in chat:
+  // "voglio comandare solo il mio pg" - il backend ora garantisce che
+  // un alleato compagno si risolve da solo prima di restituire lo
+  // stato, quindi se tocca decidere qualcosa è sempre il turno del
+  // giocatore in prima persona, mai di un alleato).
+  if (currentUnit && currentUnit.id === "player" && currentUnit.is_alive) {
     wrap.append(renderDefenseActionPanel(currentUnit, battle));
   }
+  // Il pulsante di resa (richiesto in chat: "manca il pulsante per
+  // arrendersi") - sempre visibile durante il combattimento, non solo
+  // quando tocca al giocatore agire.
+  wrap.append(el("button", { class: "secondary", onClick: abandonDefenseBattle }, "🏳️ Abbandona la difesa"));
   return wrap;
 }
 function renderInferiStatus(inferi) {
