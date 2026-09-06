@@ -8,6 +8,7 @@ chiamarla.
 
 Avvio locale (da Codespaces o dal tuo PC):
     uvicorn api.main:app --reload
+
 Poi apri http://localhost:8000/docs per una pagina di test automatica
 (Swagger UI, generata da sola da FastAPI - permette di provare ogni
 endpoint dal browser senza scrivere codice).
@@ -17,6 +18,7 @@ di sviluppo non ha accesso alla rete per installare FastAPI) - la
 sintassi è verificata, ma la prova viva va fatta da Codespaces, dove
 la rete c'è.
 """
+
 from typing import Literal, Optional
 from pathlib import Path
 import random
@@ -49,6 +51,10 @@ from core.renown import (
     RENOWN_TOURNAMENT_CHAMPION_BONUS, RENOWN_INFERI_COMPLETE, RENOWN_DEFENSE_PER_WAVE,
     RENOWN_DEFENSE_VICTORY_BONUS, renown_title, has_staff_osservatore, STAFF_OSSERVATORE_AFFINITY_THRESHOLD,
 )
+from core.meditation import (
+    can_meditate, minutes_until_next_meditation, next_sequence_length,
+    generate_sequence, resolve_meditation_reward, MEDITATION_TIME_MINUTES,
+)
 from core.squad_battle import (
     DEFENSE_MISSION_ID, UNITS_PER_SIDE,
     get_defense_team_candidates, start_defense_mission, resolve_squad_action,
@@ -71,7 +77,6 @@ from core.version import APP_VERSION
 from core.institutional_npcs import get_institutional_npcs
 from core.divinities import get_divinity_npcs
 from core.app_logger import get_logger
-
 log = get_logger(__name__)
 from core.training_path import (
     render_stage, generate_trial_opponent, FINAL_TRIAL_STAGE, LEVEL_UP_AFTER_STAGE,
@@ -402,6 +407,7 @@ def api_root():
 
 
 # --------------------------- Frontend web ---------------------------
+
 # Servita dallo STESSO server dell'API (stessa origine): il JavaScript
 # della pagina chiama /characters, /armors, ecc. come indirizzi
 # relativi, senza bisogno di conoscere l'indirizzo lungo e mutevole
@@ -493,17 +499,14 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
     statico), il percorso va nel database. Un'immagine per cavaliere:
     caricarne una nuova sovrascrive quella precedente."""
     knight = _get_knight_or_404(conn, knight_id)
-
     ext = Path(file.filename or "").suffix.lower()
     if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
         raise HTTPException(status_code=400, detail="Formato immagine non supportato (usa PNG, JPG, WEBP o GIF).")
-
     try:
         filename = f"knight_{knight_id}{ext}"
         dest = AVATARS_DIR / filename
         with dest.open("wb") as f:
             shutil.copyfileobj(file.file, f)
-
         knight["avatar_path"] = f"/avatars/{filename}"
         save_knight(conn, knight)
     except Exception:
@@ -513,7 +516,6 @@ async def api_upload_avatar(knight_id: int, file: UploadFile = File(...), conn=D
         # resta traccia nei log per capire la causa reale.
         log.exception(f"Caricamento avatar fallito per il cavaliere {knight_id}")
         raise HTTPException(status_code=500, detail="Caricamento immagine fallito - controlla i log del server per il dettaglio.")
-
     return {"avatar_path": knight["avatar_path"]}
 
 
@@ -542,16 +544,13 @@ async def api_upload_arena_background(knight_id: int, theme: str, file: UploadFi
     if theme not in VALID_ARENA_KEYS:
         raise HTTPException(status_code=400, detail=f"Tema/divinità non valido - deve essere uno tra: {', '.join(sorted(VALID_ARENA_KEYS))}.")
     knight = _get_knight_or_404(conn, knight_id)
-
     ext = Path(file.filename or "").suffix.lower()
     if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
         raise HTTPException(status_code=400, detail="Formato immagine non supportato (usa PNG, JPG, WEBP o GIF).")
-
     filename = f"knight_{knight_id}_{theme}{ext}"
     dest = ARENA_BACKGROUNDS_DIR / filename
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-
     backgrounds = json.loads(knight["arena_backgrounds"] or "{}")
     backgrounds[theme] = f"/arena_backgrounds/{filename}"
     knight["arena_backgrounds"] = json.dumps(backgrounds)
@@ -573,7 +572,6 @@ def api_get_training_path(knight_id: int, conn=Depends(get_db)):
         # Finale (richiesto in chat) - non è più "in addestramento" in
         # questo senso, ha un suo percorso a parte (vedi .../soldier/*).
         return {"is_knight": False, "is_soldier": True}
-
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
         own_armor = get_armor(knight["armor_name"], conn)
         own_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
@@ -584,7 +582,6 @@ def api_get_training_path(knight_id: int, conn=Depends(get_db)):
             "companion1_name": knight["companion1_name"], "companion2_name": knight["companion2_name"],
             "your_armor_name": knight["armor_name"], "location": location,
         }
-
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     own_armor = get_armor(knight["armor_name"], conn)
     stage = render_stage(
@@ -606,7 +603,6 @@ def api_advance_training(knight_id: int, conn=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
         raise HTTPException(status_code=400, detail="Sei pronto per la Prova Finale - non c'è altro da avanzare.")
-
     knight["training_stage"] += 1
     leveled_up_to = LEVEL_UP_AFTER_STAGE.get(knight["training_stage"])
     if leveled_up_to:
@@ -617,7 +613,6 @@ def api_advance_training(knight_id: int, conn=Depends(get_db)):
             f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} "
             f"raggiunge il livello {leveled_up_to} nel proprio addestramento.",
         )
-
     save_knight(conn, knight)
     return {"training_stage": knight["training_stage"], "leveled_up_to": leveled_up_to}
 
@@ -643,13 +638,11 @@ def api_training_attempt(knight_id: int, req: TrainingChoiceRequest, conn=Depend
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
         raise HTTPException(status_code=400, detail="Non c'è nessuna tappa da tentare in questo momento.")
-
     stage_def = TRAINING_STAGES[knight["training_stage"]]
     if stage_def["type"] != "choice_check":
         raise HTTPException(status_code=400, detail="Questa tappa non richiede una prova a dado.")
     if not (0 <= req.option_index < len(stage_def["approaches"])):
         raise HTTPException(status_code=400, detail="Approccio non valido.")
-
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     own_armor = get_armor(knight["armor_name"], conn)
     ctx = build_stage_context(
@@ -661,7 +654,6 @@ def api_training_attempt(knight_id: int, req: TrainingChoiceRequest, conn=Depend
     if success:
         knight[stat] += 1  # piccolo premio permanente, PLACEHOLDER come le altre formule
         save_knight(conn, knight)
-
     text = (stage_def["success_text"] if success else stage_def["failure_text"]).format(**ctx)
     return {"success": success, "text": text, "stat": stat}
 
@@ -680,18 +672,15 @@ def api_training_choose(knight_id: int, req: TrainingChoiceRequest, conn=Depends
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
         raise HTTPException(status_code=400, detail="Non c'è nessuna tappa da scegliere in questo momento.")
-
     stage_def = TRAINING_STAGES[knight["training_stage"]]
     if stage_def["type"] != "choice":
         raise HTTPException(status_code=400, detail="Questa tappa non prevede una scelta.")
     if not (0 <= req.option_index < len(stage_def["options"])):
         raise HTTPException(status_code=400, detail="Scelta non valida.")
-
     option = stage_def["options"][req.option_index]
     if option.get("bonus_stat"):
         knight[option["bonus_stat"]] += 1
         save_knight(conn, knight)
-
     techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     own_armor = get_armor(knight["armor_name"], conn)
     ctx = build_stage_context(
@@ -714,11 +703,9 @@ def api_start_spar(knight_id: int, conn=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
     if knight["training_stage"] >= FINAL_TRIAL_STAGE - 1:
         raise HTTPException(status_code=400, detail="Non c'è nessuno scontro di prova in questo momento.")
-
     stage_def = TRAINING_STAGES[knight["training_stage"]]
     if stage_def["type"] != "spar":
         raise HTTPException(status_code=400, detail="Questa tappa non prevede uno scontro.")
-
     armor = get_armor(knight["armor_name"], conn)
     spar_opponent = generate_trial_opponent(conn, False, knight["companion2_name"], "", armor)
     battle_state = start_battle(conn, knight, armor, opponent=spar_opponent)
@@ -761,19 +748,16 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
     _require_mission_ready(knight)
     if not knight["mission_id"]:
         return {"active": False}
-
     if knight["mission_id"] == MISSION_ID:
         house_name = HOUSE_ORDER[knight["mission_stage"] - 1]
         guardian_name = get_house_guardian(conn, house_name)
         house = get_house_content(knight["mission_stage"], guardian_name)
         return {"active": True, "mission_id": knight["mission_id"], "house": house}
-
     if knight["mission_id"] in GRAPH_MISSIONS:
         mission_id = knight["mission_id"]
         node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
         node = get_graph_node_content(mission_id, node_id)
         return {"active": True, "mission_id": mission_id, "node": node}
-
     if knight["mission_id"] in TOURNAMENT_MISSIONS:
         tournament_id = knight["mission_id"]
         settings = TOURNAMENT_MISSIONS[tournament_id]
@@ -786,7 +770,6 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
                 "bracket": load_tournament_bracket(knight),
             },
         }
-
     if knight["mission_id"] == INFERI_MISSION_ID:
         stage = get_inferi_stage(knight["mission_stage"])
         alert = knight["mission_counter"]
@@ -818,7 +801,6 @@ def api_get_mission(knight_id: int, conn=Depends(get_db)):
                 "puzzle": puzzle_data,
             },
         }
-
     return {"active": False}
 
 
@@ -839,7 +821,6 @@ def api_start_mission(knight_id: int, req: StartMissionRequest, conn=Depends(get
         raise HTTPException(status_code=400, detail="Missione sconosciuta.")
     if req.mission_id in TOURNAMENT_MISSIONS and not is_eligible_for_tournament(conn, knight, req.mission_id):
         raise HTTPException(status_code=400, detail="Non sei idoneo a iscriverti a questo torneo.")
-
     knight["mission_id"] = req.mission_id
     if req.mission_id == MISSION_ID:
         knight["mission_stage"] = 1
@@ -893,7 +874,6 @@ def _conclude_inferi_duel(conn, knight: dict, winner: str) -> dict:
     is_final_boss = get_inferi_stage(stage_index) is None
     cal = get_calendar_display(knight["game_minutes"])
     extra: dict = {"tournament_champion": False}
-
     if winner == "player":
         if is_final_boss:
             reward = resolve_inferi_reward(len(INFERI_STAGES), is_champion=True)
@@ -932,7 +912,6 @@ def _conclude_inferi_duel(conn, knight: dict, winner: str) -> dict:
         extra["mission_completed"] = True
         extra["mission_ending_text"] = f"Sei stato sopraffatto. Prove superate prima di essere scoperto: {stages_completed}."
         extra["tournament_champion"] = False
-
     return extra
 
 
@@ -948,12 +927,10 @@ def _conclude_tournament_round(conn, knight: dict, winner: str) -> dict:
     round_number = knight["mission_stage"]
     cal = get_calendar_display(knight["game_minutes"])
     extra: dict = {"tournament_champion": False}
-
     if winner == "player" and round_number < settings["rounds"]:
         # Non era l'ultimo round - si avanza, la missione resta attiva.
         knight["mission_stage"] += 1
         return extra
-
     rounds_completed = round_number if winner == "player" else round_number - 1
     is_champion = winner == "player"
     reward = resolve_tournament_reward(tournament_id, rounds_completed, is_champion)
@@ -964,7 +941,6 @@ def _conclude_tournament_round(conn, knight: dict, winner: str) -> dict:
         knight["cosmo_cur"] = knight["cosmo_max"]
     knight["mission_id"] = ""
     knight["mission_stage"] = 0
-
     if is_champion:
         add_biography_entry(
             conn, knight["id"], knight["game_minutes"],
@@ -980,7 +956,6 @@ def _conclude_tournament_round(conn, knight: dict, winner: str) -> dict:
             f"eliminato {label_with_prep} di un torneo, con {rounds_completed} vittorie racimolate lungo il cammino.",
         )
         ending_text = f"Eliminato {label_with_prep}. Vittorie in totale: {rounds_completed}."
-
     extra["mission_completed"] = True
     extra["mission_ending_text"] = ending_text
     extra["tournament_champion"] = is_champion
@@ -1026,28 +1001,23 @@ def api_mission_persuade(knight_id: int, conn=Depends(get_db)):
     _require_mission_ready(knight)
     if knight["mission_id"] != MISSION_ID:
         raise HTTPException(status_code=400, detail="Nessuna Scalata delle Dodici Case in corso.")
-
     house_name = HOUSE_ORDER[knight["mission_stage"] - 1]
     guardian_name = get_house_guardian(conn, house_name)
     content = get_house_content(knight["mission_stage"], guardian_name)
-
     # L'allineamento vero del Guardiano (richiesto in chat, stile D&D)
     # sposta la soglia di persuasione - MAI mostrato al giocatore, solo
     # una frase di tono aggiunta al testo già scritto per la Casa.
     guardian_entry = get_roster_entry(conn, house_name)
     guardian_alignment = guardian_entry["npc_alignment"] if guardian_entry else ""
-
     success = resolve_persuasion(knight, guardian_alignment)
     mission_completed = False
     if success:
         knight["mission_stage"] += 1
         mission_completed = _complete_scalata_if_done(conn, knight)
         save_knight(conn, knight)
-
     base_text = content["persuade_success"] if success else content["persuade_failure"]
     flavor = persuasion_flavor_line(guardian_alignment, success) if guardian_alignment else ""
     full_text = f"{base_text} {flavor}".strip()
-
     return {
         "success": success,
         "text": full_text,
@@ -1071,7 +1041,6 @@ def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(g
     _require_mission_ready(knight)
     if knight["mission_id"] not in GRAPH_MISSIONS:
         raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
-
     mission_id = knight["mission_id"]
     node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
     node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
@@ -1079,7 +1048,6 @@ def api_mission_choose(knight_id: int, req: MissionChoiceRequest, conn=Depends(g
         raise HTTPException(status_code=400, detail="Questo nodo non prevede una scelta.")
     if not (0 <= req.option_index < len(node["options"])):
         raise HTTPException(status_code=400, detail="Scelta non valida.")
-
     option = node["options"][req.option_index]
     if option.get("flag"):
         flags = _mission_flags_set(knight)
@@ -1105,7 +1073,6 @@ def api_mission_attempt(knight_id: int, req: MissionAttemptRequest = MissionAtte
     (fino a scatenare un'imboscata)."""
     knight = _get_knight_or_404(conn, knight_id)
     _require_mission_ready(knight)
-
     if knight["mission_id"] == INFERI_MISSION_ID:
         if knight["mission_counter"] >= INFERI_AMBUSH_THRESHOLD:
             raise HTTPException(status_code=400, detail="Sei stato scoperto - devi affrontare chi ti ha intercettato.")
@@ -1117,7 +1084,6 @@ def api_mission_attempt(knight_id: int, req: MissionAttemptRequest = MissionAtte
         stored_stage, stored_puzzle_index = _parse_inferi_flags(knight["mission_flags"])
         if stored_stage != knight["mission_stage"] or stored_puzzle_index is None:
             raise HTTPException(status_code=400, detail="Nessun enigma assegnato - ricarica la missione e riprova.")
-
         _question, options, correct_index = INFERI_PUZZLES[knight["mission_stage"] - 1][stored_puzzle_index]
         success = check_inferi_answer(knight["mission_stage"], stored_puzzle_index, req.answer_index)
         knight["mission_flags"] = ""  # l'enigma è stato usato - il prossimo GET ne sceglie uno nuovo tra i 10
@@ -1134,16 +1100,13 @@ def api_mission_attempt(knight_id: int, req: MissionAttemptRequest = MissionAtte
             "alert": knight["mission_counter"],
             "ambush_triggered": knight["mission_counter"] >= INFERI_AMBUSH_THRESHOLD,
         }
-
     if knight["mission_id"] not in GRAPH_MISSIONS:
         raise HTTPException(status_code=400, detail="Nessuna missione a bivi in corso.")
-
     mission_id = knight["mission_id"]
     node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
     node = GRAPH_MISSIONS[mission_id]["nodes"][node_id]
     if node["type"] != "skill_check":
         raise HTTPException(status_code=400, detail="Questo nodo non prevede una prova a dado.")
-
     success = resolve_skill_check(knight, node["stat"])
     knight["mission_node"] = node["success_next"] if success else node["failure_next"]
     save_knight(conn, knight)
@@ -1165,9 +1128,7 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
     _require_mission_ready(knight)
     if not knight["mission_id"]:
         raise HTTPException(status_code=400, detail="Nessuna missione in corso.")
-
     armor = get_armor(knight["armor_name"], conn)
-
     if knight["mission_id"] == MISSION_ID:
         house_name = HOUSE_ORDER[knight["mission_stage"] - 1]
         guardian_name = get_house_guardian(conn, house_name)
@@ -1175,7 +1136,6 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         battle_state = start_battle(conn, knight, armor, opponent=opponent)
         battle_state["is_mission"] = True
         return {"battle_state": battle_state}
-
     if knight["mission_id"] in GRAPH_MISSIONS:
         mission_id = knight["mission_id"]
         node_id = knight["mission_node"] or GRAPH_MISSIONS[mission_id]["start_node"]
@@ -1188,7 +1148,6 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         battle_state = start_battle(conn, knight, armor, opponent=opponent)
         battle_state["is_mission"] = True
         return {"battle_state": battle_state, "intro": node["intro"].format(guardian=guardian_name)}
-
     if knight["mission_id"] in TOURNAMENT_MISSIONS:
         tournament_id = knight["mission_id"]
         round_number = knight["mission_stage"]
@@ -1203,7 +1162,6 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         intro = (f"{round_label.capitalize()} del {settings['name']} - "
                  f"{round_number}º di {settings['rounds']}: affronti {opponent['name']}.")
         return {"battle_state": battle_state, "intro": intro}
-
     if knight["mission_id"] == INFERI_MISSION_ID:
         stage = get_inferi_stage(knight["mission_stage"])
         if stage is None:
@@ -1226,7 +1184,6 @@ def api_mission_duel_start(knight_id: int, conn=Depends(get_db)):
         battle_state["is_mission"] = True
         intro = f"L'allerta è troppo alta - {opponent['name']} ti intercetta prima che tu possa proseguire."
         return {"battle_state": battle_state, "intro": intro}
-
     raise HTTPException(status_code=400, detail="Missione sconosciuta.")
 
 
@@ -1261,12 +1218,10 @@ def api_start_trial(knight_id: int, conn=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
     if knight["training_stage"] < FINAL_TRIAL_STAGE - 1:
         raise HTTPException(status_code=400, detail="Non sei ancora pronto per la Prova Finale.")
-
     armor = get_armor(knight["armor_name"], conn)
     opponent_is_master = random.random() < 0.2  # per lo più contro un compagno, a volte contro il Maestro
     opponent_name = knight["master_name"] if opponent_is_master else knight["companion1_name"]
     trial_opponent = generate_trial_opponent(conn, opponent_is_master, opponent_name, knight["master_armor_name"], armor)
-
     battle_state = start_battle(conn, knight, armor, opponent=trial_opponent)
     battle_state["is_trial"] = True
     return {"battle_state": battle_state}
@@ -1295,7 +1250,6 @@ def api_trial_retrain(knight_id: int, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
     if knight["is_knight"]:
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
-
     old_companion1, old_companion2 = knight["companion1_name"], knight["companion2_name"]
     old_armor_name = knight["armor_name"]
     fates = resolve_companions_fates(old_companion1, old_companion2)
@@ -1307,7 +1261,6 @@ def api_trial_retrain(knight_id: int, conn=Depends(get_db)):
     )
     for fate in fates:
         add_biography_entry(conn, knight["id"], knight["game_minutes"], fate)
-
     try:
         knight = retrain_for_new_armor(conn, knight)
     except RuntimeError as e:
@@ -1326,7 +1279,6 @@ def api_trial_become_soldier(knight_id: int, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
     if knight["is_knight"]:
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
-
     fates = resolve_companions_fates(knight["companion1_name"], knight["companion2_name"])
     cal = get_calendar_display(knight["game_minutes"])
     add_biography_entry(
@@ -1336,7 +1288,6 @@ def api_trial_become_soldier(knight_id: int, conn=Depends(get_db)):
     )
     for fate in fates:
         add_biography_entry(conn, knight["id"], knight["game_minutes"], fate)
-
     release_roster_slot(conn, knight["armor_name"])
     knight["apprentice_status"] = "soldier"
     save_knight(conn, knight)
@@ -1354,7 +1305,6 @@ def api_trial_die(knight_id: int, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
     if knight["is_knight"]:
         raise HTTPException(status_code=400, detail="Hai già completato l'addestramento.")
-
     fates = resolve_companions_fates(knight["companion1_name"], knight["companion2_name"])
     raw_name = knight["raw_name"]
     armor_name = knight["armor_name"]
@@ -1392,7 +1342,6 @@ def api_do_soldier_activity(knight_id: int, req: SoldierActivityRequest, conn=De
         raise HTTPException(status_code=403, detail="Non sei un Soldato Semplice.")
     if req.activity_key not in SOLDIER_ACTIVITIES:
         raise HTTPException(status_code=400, detail="Attività sconosciuta.")
-
     text, denaro = resolve_soldier_activity(req.activity_key)
     knight["denaro"] += denaro
     aging_msg = RosterManager.spend_time(conn, knight, SOLDIER_ACTIVITY_MINUTES)
@@ -1423,27 +1372,22 @@ def api_create_custom_technique(knight_id: int, req: CreateCustomTechniqueReques
     e l'elemento deve essere uno di quelli ammessi (correlato
     all'armatura o alla Provenienza)."""
     knight = _get_knight_or_404(conn, knight_id)
-
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="La tecnica deve avere un nome.")
-
     armor_techniques = [dict(t) for t in get_techniques_for_armor(knight["armor_name"], conn)]
     existing = get_custom_techniques(conn, knight_id)
-
     slots = custom_technique_slots(knight["player_level"])
     if len(existing) >= slots:
         raise HTTPException(
             status_code=400,
             detail=f"Nessuno slot disponibile per una nuova tecnica personalizzata ({len(existing)}/{slots} già usati).",
         )
-
     allowed = allowed_custom_technique_elements(armor_techniques, knight["origin"])
     if req.tech_type not in allowed:
         raise HTTPException(
             status_code=400,
             detail=f"L'elemento scelto deve essere correlato alla tua armatura o provenienza: {', '.join(allowed) or 'nessuno disponibile'}.",
         )
-
     power = calculate_custom_technique_power(knight["player_level"])
     # Offensiva o difensiva (richiesto in chat - mancava del tutto):
     # stessa convenzione delle tecniche del catalogo, un suffisso
@@ -1507,12 +1451,10 @@ def api_get_tavern_map(knight_id: int, divinity: str, conn=Depends(get_db)):
     knight = _get_knight_or_404(conn, knight_id)
     if divinity not in TAVERN_REALMS:
         raise HTTPException(status_code=404, detail="Regno sconosciuto.")
-
     world_minutes = get_world_minutes(conn)
     bartender = ensure_tavern_bartender(conn, divinity)
     ensure_tavern_seating(conn, divinity, world_minutes)
     maybe_reshuffle_tavern(conn, divinity, world_minutes)
-
     seating_rows = get_tavern_seating(conn, divinity)
     npc_names = {}
     if seating_rows:
@@ -1520,7 +1462,6 @@ def api_get_tavern_map(knight_id: int, divinity: str, conn=Depends(get_db)):
         armor_names = [row["armor_name"] for row in seating_rows]
         for r in conn.execute(f"SELECT armor_name, npc_name FROM roster WHERE armor_name IN ({placeholders})", armor_names):
             npc_names[r["armor_name"]] = r["npc_name"]
-
     tables = []
     for table_number, info in TABLE_LAYOUT.items():
         if table_number == 0:
@@ -1530,10 +1471,8 @@ def api_get_tavern_map(knight_id: int, divinity: str, conn=Depends(get_db)):
             for row in seating_rows if row["table_number"] == table_number
         ]
         tables.append({"table_number": table_number, "label": info["label"], "seats": info["seats"], "occupants": occupants})
-
     player_armor = get_armor(knight["armor_name"], conn)
     relation = get_faction_relation(player_armor["divinity"] if player_armor else "", divinity)
-
     return {
         "divinity": divinity,
         "name": TAVERN_REALMS[divinity],
@@ -1585,7 +1524,6 @@ def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(ge
     if npc_info is None:
         raise HTTPException(status_code=404, detail="PNG sconosciuto.")
     npc_name, _npc_alignment, npc_divinity = npc_info
-
     relationship = get_tavern_relationship(conn, knight_id, armor_name)
     if relationship is None:
         player_armor = get_armor(knight["armor_name"], conn)
@@ -1594,7 +1532,6 @@ def api_get_tavern_conversation(knight_id: int, armor_name: str, conn=Depends(ge
         affinity = adjust_tavern_affinity(conn, knight_id, armor_name, starting_affinity, get_world_minutes(conn))
     else:
         affinity = relationship["affinity"]
-
     messages = get_tavern_conversation(conn, knight_id, armor_name)
     return {
         "npc_name": npc_name,
@@ -1636,27 +1573,21 @@ def api_send_tavern_message(knight_id: int, req: TavernMessageRequest, conn=Depe
     _npc_name, npc_alignment, npc_divinity = npc_info
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Il messaggio non può essere vuoto.")
-
     player_armor = get_armor(knight["armor_name"], conn)
     relation = get_faction_relation(player_armor["divinity"] if player_armor else "", npc_divinity)
-
     relationship_before = get_tavern_relationship(conn, knight_id, armor_name)
     affinity_before = relationship_before["affinity"] if relationship_before else RELATION_STARTING_AFFINITY.get(relation, 0)
-
     response_text, affinity_delta = resolve_tavern_response(req.text, npc_alignment, relation, forced_intent=req.intent, tone=req.tone)
     world_minutes = get_world_minutes(conn)
-
     add_tavern_message(conn, knight_id, armor_name, world_minutes, "player", req.text.strip())
     add_tavern_message(conn, knight_id, armor_name, world_minutes, "npc", response_text)
     new_affinity = adjust_tavern_affinity(conn, knight_id, armor_name, affinity_delta, world_minutes)
-
     mission_offer = check_mission_offer(
         npc_divinity, affinity_before, new_affinity, bool(knight["mission_id"])
     )
     if mission_offer:
         offer_text = random.choice(MISSION_OFFER_TEXTS)
         add_tavern_message(conn, knight_id, armor_name, world_minutes, "npc", offer_text)
-
     return {
         "response": response_text, "affinity": new_affinity, "affinity_delta": affinity_delta,
         "mission_offer": mission_offer, "mission_offer_text": offer_text if mission_offer else None,
@@ -1739,25 +1670,19 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
         # dell'apprendistato, l'Allenamento resta bloccato.
         raise HTTPException(status_code=403, detail="Sei in missione - non puoi allenarti liberamente finché non la completi o l'abbandoni.")
     old_level = knight["player_level"]
-
     schedule = list(req.schedule[:7])
     while len(schedule) < 7:
         schedule.append("Riposo")
     for focus in schedule:
         if focus not in TRAINING_FOCUS_OPTIONS:
             raise HTTPException(status_code=400, detail=f"Focus di allenamento sconosciuto: {focus}")
-
     knight["weekly_schedule"] = serialize_weekly_schedule(schedule)
-
     if req.mode == "settimana":
         results = RosterManager.advance_week(conn, knight, schedule)
     else:
         results = RosterManager.advance_month(conn, knight, schedule)
-
     save_knight(conn, knight)
-
     log_entries = [{"day": d, "focus": f, "message": m} for d, f, m in results]
-
     # Annuncio armature sbloccate salendo di livello - richiesto in chat:
     # prima si scopriva solo per caso entrando in creazione di un nuovo
     # personaggio. Confronta il livello PRIMA e DOPO l'allenamento (può
@@ -1774,7 +1699,6 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
                 "day": "", "focus": "",
                 "message": f"🗡️ Livello raggiunto! In una nuova creazione potresti scegliere: {names}",
             })
-
         # Diario auto-scritto (richiesto in chat): il level up e ogni
         # nuovo Senso risvegliato diventano una voce del diario, non
         # solo un messaggio nel log dell'allenamento che sparisce alla
@@ -1793,7 +1717,6 @@ def api_train(knight_id: int, req: TrainRequest, conn=Depends(get_db)):
                     conn, knight["id"], knight["game_minutes"],
                     f"{cal['day_of_month']} {cal['month_name']}, Anno {cal['year']}: {knight['raw_name']} risveglia il {label}.",
                 )
-
     return {
         "log": log_entries,
         "character": _knight_payload(conn, knight),
@@ -1832,7 +1755,6 @@ def api_arena_new_opponent(knight_id: int, req: ArenaStartBattleRequest, conn=De
     if knight["mission_id"]:
         raise HTTPException(status_code=403, detail="Sei in missione - l'Arena resta chiusa finché non la completi o l'abbandoni.")
     armor = get_armor(knight["armor_name"], conn)
-
     battle_state = start_battle(conn, knight, armor, opponent=req.opponent)
     return {"battle_state": battle_state}
 
@@ -1844,10 +1766,8 @@ def api_arena_move(knight_id: int, req: ArenaMoveRequest, conn=Depends(get_db)):
     combattimento (vedi api/arena_session.py). Muove anche
     l'avversario di un piccolo passo a caso."""
     knight = _get_knight_or_404(conn, knight_id)
-
     log = move_player(knight, req.battle_state, req.x, req.y)
     save_knight(conn, knight)
-
     return {"log": log, "character": _knight_payload(conn, knight), "battle_state": req.battle_state}
 
 
@@ -1856,16 +1776,13 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
     """Metà 1 del round: dichiari Attacca o Carica."""
     knight = _get_knight_or_404(conn, knight_id)
     armor = get_armor(knight["armor_name"], conn)
-
     if req.action == "attacca" and (not req.technique_name or req.technique_power is None):
         raise HTTPException(status_code=400, detail="Serve una tecnica (nome e potenza) per attaccare")
-
     log, fight_over, winner = resolve_declare(
         conn, knight, armor, req.action, req.technique_name, req.technique_power, req.battle_state,
         technique_type=req.technique_type,
         technique_launch_desc=req.technique_launch_desc, technique_effect_desc=req.technique_effect_desc,
     )
-
     if fight_over:
         extra = _handle_fight_conclusion(conn, knight, req.battle_state, winner)
         return {
@@ -1873,7 +1790,6 @@ def api_arena_declare(knight_id: int, req: ArenaDeclareRequest, conn=Depends(get
             "character": _knight_payload(conn, knight), "battle_state": None,
             **extra,
         }
-
     save_knight(conn, knight)
     return {
         "log": log, "fight_over": False,
@@ -1887,10 +1803,8 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
     un attacco già dichiarato dall'avversario (visto in anticipo)."""
     knight = _get_knight_or_404(conn, knight_id)
     armor = get_armor(knight["armor_name"], conn)
-
     if req.battle_state.get("pending_opponent_technique") is None:
         raise HTTPException(status_code=400, detail="Nessun attacco in sospeso a cui reagire")
-
     # La difesa è ora una vera scelta del giocatore (richiesto in chat:
     # "Difesa Base + tecniche di difesa", stessa struttura
     # dell'attacco) - non più decisa in automatico dal sistema.
@@ -1905,14 +1819,12 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
         }
     else:
         my_defense = None
-
     log, fight_over, winner = resolve_react(
         conn, knight, armor, req.action, my_defense, req.battle_state,
         counter_technique_name=req.counter_technique_name, counter_technique_power=req.counter_technique_power,
         counter_technique_type=req.counter_technique_type, counter_technique_launch_desc=req.counter_technique_launch_desc,
         counter_technique_effect_desc=req.counter_technique_effect_desc,
     )
-
     if fight_over:
         extra = _handle_fight_conclusion(conn, knight, req.battle_state, winner)
         return {
@@ -1920,7 +1832,6 @@ def api_arena_react(knight_id: int, req: ArenaReactRequest, conn=Depends(get_db)
             "character": _knight_payload(conn, knight), "battle_state": None,
             **extra,
         }
-
     save_knight(conn, knight)
     return {
         "log": log, "fight_over": False,
@@ -1952,6 +1863,61 @@ def api_get_scouted_allies(knight_id: int, conn=Depends(get_db)):
     return {"unlocked": True, "allies": [dict(r) for r in rows]}
 
 
+class MeditationCompleteRequest(BaseModel):
+    success: bool
+    sequence_length: int
+
+
+@app.get("/characters/{knight_id}/meditation")
+def api_get_meditation_status(knight_id: int, conn=Depends(get_db)):
+    """Lo stato della Meditazione del Cosmo (richiesto in chat, dalla
+    roadmap: mini-gioco ricorrente di taglio diverso dagli enigmi di
+    logica degli Inferi - qui un esercizio di memoria) - se è
+    disponibile ora, quanto manca se non lo è, e quanto sarà lunga la
+    prossima sequenza."""
+    knight = _get_knight_or_404(conn, knight_id)
+    available = can_meditate(knight["last_meditation_minutes"], knight["game_minutes"])
+    return {
+        "available": available,
+        "minutes_until_next": 0 if available else minutes_until_next_meditation(
+            knight["last_meditation_minutes"], knight["game_minutes"]
+        ),
+        "sequence_length": next_sequence_length(knight["meditation_successes"]),
+    }
+
+
+@app.post("/characters/{knight_id}/meditation/start")
+def api_start_meditation(knight_id: int, conn=Depends(get_db)):
+    """Genera la sequenza vera (richiesto in chat: generata lato
+    server, il client la mostra e basta) - non applica ancora nessun
+    costo in tempo né tocca il cooldown, quello avviene solo alla
+    conclusione del tentativo (persino un tentativo abbandonato a
+    metà non deve consumare il rituale di oggi per errore)."""
+    knight = _get_knight_or_404(conn, knight_id)
+    if not can_meditate(knight["last_meditation_minutes"], knight["game_minutes"]):
+        raise HTTPException(status_code=400, detail="Non è ancora ora di meditare di nuovo.")
+    length = next_sequence_length(knight["meditation_successes"])
+    return {"sequence": generate_sequence(length)}
+
+
+@app.post("/characters/{knight_id}/meditation/complete")
+def api_complete_meditation(knight_id: int, req: MeditationCompleteRequest, conn=Depends(get_db)):
+    """Applica l'esito del tentativo (richiesto in chat) - il tempo
+    passa e il cooldown scatta SEMPRE, vinca o perda il tentativo (una
+    sessione di concentrazione costa comunque tempo, anche se fallita
+    a metà) - solo la ricompensa in Volontà e il contatore dei
+    successi dipendono dall'aver completato la sequenza per davvero."""
+    knight = _get_knight_or_404(conn, knight_id)
+    reward = resolve_meditation_reward(req.sequence_length) if req.success else {"volonta": 0}
+    if req.success:
+        knight["vol"] += reward["volonta"]
+        knight["meditation_successes"] += 1
+    RosterManager.spend_time(conn, knight, MEDITATION_TIME_MINUTES)
+    knight["last_meditation_minutes"] = knight["game_minutes"]
+    save_knight(conn, knight)
+    return {"character": _knight_payload(conn, knight), "reward": reward}
+
+
 @app.get("/characters/{knight_id}/defense-team-options")
 def api_defense_team_options(knight_id: int, conn=Depends(get_db)):
     """I possibili alleati per "Seleziona Team" nella Difesa a Ondate
@@ -1973,7 +1939,6 @@ def api_defense_start(knight_id: int, req: DefenseStartRequest, conn=Depends(get
     if knight["mission_id"]:
         raise HTTPException(status_code=400, detail="Hai già una missione in corso.")
     armor = get_armor(knight["armor_name"], conn)
-
     chosen = None
     if req.mode == "selected":
         if len(req.ally_armor_names) != UNITS_PER_SIDE - 1:
@@ -1983,7 +1948,6 @@ def api_defense_start(knight_id: int, req: DefenseStartRequest, conn=Depends(get
             if name not in candidates:
                 raise HTTPException(status_code=400, detail=f"{name} non è un alleato disponibile.")
         chosen = req.ally_armor_names
-
     state = start_defense_mission(conn, knight, armor, chosen_ally_armor_names=chosen)
     return {"battle_state": state}
 
@@ -2001,21 +1965,18 @@ def api_defense_action(knight_id: int, req: DefenseActionRequest, conn=Depends(g
     state = req.battle_state
     if state.get("outcome") is not None:
         raise HTTPException(status_code=400, detail="La battaglia è già conclusa.")
-
     actor = state["units"].get(req.actor_id)
     if actor is None or not actor["is_alive"] or actor["side"] != "allies":
         raise HTTPException(status_code=400, detail="Unità non valida, già caduta, o non è un tuo alleato.")
     current = _current_actor(state)
     if current is None or current["id"] != req.actor_id:
         raise HTTPException(status_code=400, detail="Non è il turno di questa unità.")
-
     resolve_squad_action(
         conn, state, req.actor_id, req.action, target_id=req.target_id,
         technique_name=req.technique_name, technique_power=req.technique_power,
         technique_type=req.technique_type, target_mode=req.target_mode,
     )
     _skip_dead_and_autoresolve_enemies(conn, state)
-
     result = {"battle_state": state}
     if state["outcome"] is not None:
         # Le tre barre vere anche per i PNG (richiesto in chat) -
@@ -2025,7 +1986,6 @@ def api_defense_action(knight_id: int, req: DefenseActionRequest, conn=Depends(g
         for unit in state["units"].values():
             if unit["id"] != "player" and unit.get("is_roster_linked"):
                 apply_npc_damage(conn, unit["armor_name"], unit["vita_cur"], unit["cosmo_cur"], knight["game_minutes"])
-
         waves_completed = state["total_waves"] if state["outcome"] == "victory" else state["wave_number"] - 1
         reward = resolve_defense_reward(waves_completed, state["outcome"] == "victory")
         knight["denaro"] += reward["denaro"]
