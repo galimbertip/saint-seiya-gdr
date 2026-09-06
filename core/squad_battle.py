@@ -12,10 +12,21 @@ il nucleo del loop multi-unità prima, gli arricchimenti già presenti
 nell'Arena 1v1 dopo, se servirà. Lo stato del combattimento (squad
 state) è un dizionario transitorio, va e viene col client ad ogni
 azione - stesso principio del battle_state dell'Arena, solo con più
-unità dentro."""
+unità dentro.
+
+CORREZIONE (richiesto in chat): prima il giocatore controllava
+manualmente TUTTE E TRE le unità della propria squadra ad ogni turno,
+alleati compresi - un vero 3 contro 3 dovrebbe far controllare al
+giocatore SOLO il proprio personaggio, con gli alleati che agiscono
+da soli (la stessa intelligenza artificiale già usata per i nemici,
+riusata anche per loro). Il ciclo che fa proseguire l'IA da sola ora
+si ferma solo quando tocca all'unità "player", non a qualsiasi unità
+del lato "allies" - e la stessa correzione ha reso necessario un vero
+pulsante di resa (vedi abandon_defense_mission), dato che un
+combattimento dove gli alleati agiscono da soli può protrarsi anche
+quando il giocatore vorrebbe smettere."""
 
 import random
-
 from core.arena_manager import (
     resolve_turn, resolve_defense, technique_cosmo_cost, BASE_ATTACK_POWER,
     CHARGE_TURNS_DURATION, CHARGE_COSMO_RESTORE, CHARGE_POWER_BONUS,
@@ -27,7 +38,6 @@ from database.db_manager import get_armor, get_roster_entry, get_techniques_for_
 DEFENSE_MISSION_ID = "difesa_a_ondate"
 UNITS_PER_SIDE = 3
 TOTAL_WAVES = 4
-
 DEFENSE_REWARD_DENARO_PER_WAVE = 150
 DEFENSE_REWARD_DENARO_CHAMPION = 1000
 DEFENSE_REWARD_COSMO_MAX_CHAMPION = 40
@@ -242,6 +252,7 @@ def start_defense_mission(conn, knight: dict, armor: dict, chosen_ally_armor_nam
         ally_armor_names = chosen_ally_armor_names[:UNITS_PER_SIDE - 1]
     else:
         ally_armor_names = _pick_distinct_armors(conn, armor["divinity"], UNITS_PER_SIDE - 1, {knight["armor_name"]})
+
     allies = [player_unit]
     for i, armor_name in enumerate(ally_armor_names):
         guardian_name = get_house_guardian_name(conn, armor_name)
@@ -270,7 +281,7 @@ def start_defense_mission(conn, knight: dict, armor: dict, chosen_ally_armor_nam
         "turn_index": 0,
         "round_number": 1,
         "log": [f"L'allarme risuona: {enemy_faction} attacca {setting}, e la tua squadra si schiera per difenderlo."],
-        "outcome": None,  # None | "victory" | "defeat"
+        "outcome": None,  # None | "victory" | "defeat" | "abandoned"
     }
     _skip_dead_and_autoresolve_enemies(conn, state, just_acted=False)
     return state
@@ -309,8 +320,9 @@ def _advance_turn_index(state: dict) -> None:
 
 
 def _pick_ai_target(state: dict, actor: dict) -> dict | None:
-    """Bersaglio scelto dall'IA (per i nemici, e per gli alleati quando
-    il giocatore non dà un ordine specifico) - preferisce chi ha meno
+    """Bersaglio scelto dall'IA (per i nemici, e ora anche per gli
+    alleati compagni - richiesto in chat: "voglio comandare solo il
+    mio pg... i compagni attaccano da soli") - preferisce chi ha meno
     Vita, per concentrare il fuoco in modo credibile."""
     opposing_side = "allies" if actor["side"] == "enemies" else "enemies"
     candidates = _alive_units(state, opposing_side)
@@ -349,7 +361,6 @@ def _apply_single_attack(conn, state: dict, actor: dict, target: dict, name: str
         dmg = resolve_defense(dmg, None)
     if dmg > 0 and target["charged_turns"] > 0:
         dmg = round(dmg * (2 - CHARGE_POWER_BONUS))  # la Carica riduce anche il danno SUBITO
-
     target["vita_cur"] = max(0, target["vita_cur"] - dmg)
     state["log"].append(msg if dmg > 0 else f"{actor['name']} attacca {target['name']}, ma manca il colpo.")
     if target["vita_cur"] <= 0:
@@ -410,9 +421,7 @@ def resolve_squad_action(conn, state: dict, actor_id: str, action: str,
             name, power, technique_type = "Attacco Base", BASE_ATTACK_POWER, None
             cost = 0
         actor["cosmo_cur"] -= cost
-
         opposing_side = "enemies" if actor["side"] == "allies" else "allies"
-
         if target_mode == "area":
             targets = _alive_units(state, opposing_side)
             if not targets:
@@ -431,17 +440,17 @@ def resolve_squad_action(conn, state: dict, actor_id: str, action: str,
             _apply_single_attack(conn, state, actor, target, name, power)
 
 
-
-AI_AREA_ATTACK_CHANCE = 0.2  # PLACEHOLDER: quanto spesso l'IA (nemici, e alleati senza ordine) sceglie un attacco ad area invece che su un solo bersaglio
+AI_AREA_ATTACK_CHANCE = 0.2  # PLACEHOLDER: quanto spesso l'IA (nemici, e ora anche gli alleati compagni) sceglie un attacco ad area invece che su un solo bersaglio
 
 
 def _autoresolve_ai_turn(conn, state: dict) -> None:
-    """Un turno interamente deciso dall'IA - nemici sempre, alleati solo
-    quando il giocatore non specifica un bersaglio (richiesto in chat:
-    ordini semplici, non obbligatori ad ogni turno). Anche l'IA, ogni
-    tanto, sceglie di attaccare a tutto campo invece che un singolo
-    bersaglio (richiesto in chat) - solo se ha senso, cioè se il lato
-    avversario ha più di un'unità viva."""
+    """Un turno interamente deciso dall'IA (richiesto in chat: prima
+    veniva usata SOLO per i nemici, ora anche per gli alleati compagni
+    del giocatore - "voglio comandare solo il mio pg... i compagni
+    attaccano da soli", non più un ordine manuale ad ogni singolo
+    turno). Sceglie una tecnica permessa dal Cosmo disponibile e un
+    bersaglio con meno Vita; ogni tanto, se ha senso, un attacco a
+    tutto campo invece che su un solo bersaglio."""
     actor = _current_actor(state)
     if actor is None:
         return
@@ -478,15 +487,12 @@ def _check_wave_and_mission_outcome(conn, state: dict) -> None:
         state["outcome"] = "defeat"
         state["log"].append("L'intera squadra è caduta. La difesa fallisce qui.")
         return
-
     if _alive_units(state, "enemies"):
         return  # l'ondata attuale non è ancora finita
-
     if state["wave_number"] >= state["total_waves"]:
         state["outcome"] = "victory"
         state["log"].append(f"L'ultima ondata è respinta - {state['setting']} è al sicuro.")
         return
-
     state["wave_number"] += 1
     state["log"].append(f"L'ondata è respinta! Un'altra ondata di {state['enemy_faction']} si avvicina.")
     used_armor_names = {u["armor_name"] for u in state["units"].values() if u["is_alive"]} | set(state["roster_armor_names"])
@@ -497,21 +503,43 @@ def _check_wave_and_mission_outcome(conn, state: dict) -> None:
     state["turn_index"] = 0
 
 
+def abandon_defense_mission(state: dict) -> None:
+    """Il pulsante di resa/abbandono (richiesto in chat: "manca il
+    pulsante per arrendersi" - un combattimento dove gli alleati
+    agiscono da soli può protrarsi anche quando il giocatore vorrebbe
+    smettere, a differenza di prima quando controllava tutto lui e
+    poteva semplicemente non fare più mosse). Un esito a SÉ
+    ("abandoned"), diverso da "defeat" - stesso principio già seguito
+    per le altre missioni (POST /mission/abandon): chi abbandona di
+    sua volontà non porta a casa nessuna ricompensa, nemmeno parziale
+    per le ondate già respinte - se vuoi comunque qualcosa, la
+    completi. Muta `state` in place; non fa nulla se la missione è già
+    conclusa (vinta, persa, o già abbandonata)."""
+    if state["outcome"] is not None:
+        return
+    state["outcome"] = "abandoned"
+    state["log"].append("Abbandoni il campo - la difesa si interrompe qui, senza ricompensa.")
+
+
 def _skip_dead_and_autoresolve_enemies(conn, state: dict, just_acted: bool = True) -> None:
     """Chiamata SUBITO DOPO aver risolto un'azione (`just_acted=True`,
     il caso normale) o all'avvio della missione (`just_acted=False`,
     nessuna azione ancora avvenuta) - controlla l'esito
-    dell'ondata/missione, avanza il turno UNA VOLTA se serve (bug
-    corretto: prima non avanzava mai dopo un'azione del giocatore o di
-    un alleato, restando bloccati sullo stesso turno per sempre), e fa
-    proseguire da sola l'IA nemica finché non tocca di nuovo a un lato
-    alleato. Un cambio d'ondata azzera già da solo l'indice del turno
-    (vedi _check_wave_and_mission_outcome) - in quel caso NON si deve
-    avanzare oltre, altrimenti si salterebbe la prima unità del nuovo
-    ordine."""
+    dell'ondata/missione, avanza il turno UNA VOLTA se serve, e fa
+    proseguire da sola l'IA finché non tocca di nuovo al GIOCATORE in
+    prima persona.
+
+    CORREZIONE (richiesto in chat: "voglio comandare solo il mio pg...
+    i compagni attaccano da soli") - il ciclo qui sotto prima si
+    fermava ad OGNI unità del lato "allies", compagni compresi:
+    risultato, il giocatore doveva decidere ogni mossa anche per i
+    suoi due alleati, un vero e proprio comando totale della squadra
+    invece che del solo proprio personaggio. Ora si ferma SOLO quando
+    l'attore corrente è "player" - qualunque compagno alleato, quando
+    tocca a lui, viene risolto subito dall'IA (_autoresolve_ai_turn),
+    proprio come già succedeva per i nemici."""
     if state["outcome"] is not None:
         return
-
     if just_acted:
         wave_before = state["wave_number"]
         _check_wave_and_mission_outcome(conn, state)
@@ -526,7 +554,7 @@ def _skip_dead_and_autoresolve_enemies(conn, state: dict, just_acted: bool = Tru
 
     for _ in range(50):  # tetto di sicurezza, non dovrebbe mai servire davvero
         actor = _current_actor(state)
-        if actor is None or actor["side"] == "allies":
+        if actor is None or actor["id"] == "player":
             return
         _autoresolve_ai_turn(conn, state)
         wave_before = state["wave_number"]
