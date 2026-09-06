@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS knights (
     arena_backgrounds TEXT NOT NULL DEFAULT '{}',
     denaro INTEGER NOT NULL DEFAULT 0,
     renown INTEGER NOT NULL DEFAULT 0,
+    last_meditation_minutes INTEGER NOT NULL DEFAULT 0,
+    meditation_successes INTEGER NOT NULL DEFAULT 0,
     mission_id TEXT NOT NULL DEFAULT '',
     mission_stage INTEGER NOT NULL DEFAULT 0,
     mission_node TEXT NOT NULL DEFAULT '',
@@ -357,6 +359,19 @@ def _ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE knights ADD COLUMN renown INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         log.info("Migrazione: aggiunta colonna renown a knights.")
+    if "last_meditation_minutes" not in existing_columns:
+        # La Meditazione del Cosmo (richiesto in chat, dalla roadmap:
+        # mini-gioco ricorrente di taglio diverso dagli enigmi degli
+        # Inferi) - last_meditation_minutes traccia quando è stata
+        # fatta l'ultima volta (per il cooldown, core.meditation.
+        # can_meditate); meditation_successes conta quante sequenze
+        # sono state completate con successo in totale, per far
+        # crescere la difficoltà nel tempo (core.meditation.
+        # next_sequence_length).
+        conn.execute("ALTER TABLE knights ADD COLUMN last_meditation_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE knights ADD COLUMN meditation_successes INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        log.info("Migrazione: aggiunte colonne della Meditazione del Cosmo a knights.")
     if "mission_node" not in existing_columns:
         # Seconda missione a grafo (richiesto in chat: bivi che portano
         # DAVVERO a strade diverse) - mission_node tiene il nodo
