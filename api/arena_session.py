@@ -16,6 +16,17 @@ Ogni funzione qui muta `knight` e `battle_state` IN PLACE (stessi dict
 passati dal chiamante) e restituisce solo (log, fight_over, winner) -
 il chiamante (l'endpoint FastAPI) decide cosa farne (salvare su DB,
 restituire come risposta HTTP).
+
+AGGIORNAMENTO (richiesto in chat): tick_statuses ora restituisce anche
+se il combattente è CONFUSO (Psichico) - non blocca il turno come
+Paralisi/Paralisi Parziale, costringe invece il prossimo attacco a
+tirare in svantaggio. Dato che la Confusione può restare attiva per
+più round, e un round è fatto di DUE metà (resolve_declare poi
+resolve_react, a volte con un contrattacco dentro resolve_react
+stesso), il flag va salvato in battle_state appena calcolato
+(player_confused_this_round / opponent_confused_this_round) così resta
+disponibile per qualunque attacco di QUEL lato avvenga in quel round,
+anche a metà round successiva.
 """
 from typing import Optional
 import random
@@ -66,6 +77,8 @@ def start_battle(conn, knight: dict, armor: dict, difficulty: str = DEFAULT_DIFF
         "pending_opponent_technique": None,
         "player_statuses": [],
         "opponent_statuses": [],
+        "player_confused_this_round": False,
+        "opponent_confused_this_round": False,
         "player_position": dict(PLAYER_START_POSITION),
         "opponent_position": dict(OPPONENT_START_POSITION),
         "last_effect": None,
@@ -216,8 +229,11 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
     l'avversario dichiara la SUA mossa - se attacca, il round si ferma
     qui (pending_opponent_technique impostato) e aspetta resolve_react.
     Se il giocatore o l'avversario sono paralizzati (Pietrificazione/
-    Intrappolamento), quel lato salta la propria azione per un round -
-    il tempo passa comunque, il round prosegue normalmente.
+    Intrappolamento/Paralisi Parziale da Elettrico), quel lato salta la
+    propria azione per un round - il tempo passa comunque, il round
+    prosegue normalmente. Se sono Confusi (Psichico), agiscono
+    normalmente ma il loro prossimo attacco tira in svantaggio (vedi
+    combine_roll_modes più sotto).
     Muta `knight` e `battle_state` in place.
     Restituisce (log, fight_over, winner)."""
     opponent = battle_state["opponent"]
@@ -256,11 +272,17 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
         battle_state.setdefault("opponent_position", dict(OPPONENT_START_POSITION))
     )
 
-    # Stati attivi (Veleno/Paralisi) sul giocatore: si applicano a inizio del suo turno.
-    status_msgs, player_blocked = tick_statuses(
+    # Stati attivi (Veleno/Bruciatura/Paralisi/Paralisi Parziale/
+    # Confusione) sul giocatore: si applicano a inizio del suo turno.
+    status_msgs, player_blocked, player_confused = tick_statuses(
         knight["raw_name"], knight, battle_state.setdefault("player_statuses", [])
     )
     log.extend(status_msgs)
+    # Salvato in battle_state (richiesto in chat) - la Confusione può
+    # restare attiva anche per il resto del round, incluso un eventuale
+    # contrattacco dentro resolve_react, non solo per l'attacco
+    # eventualmente risolto qui sotto nello stesso mezzo-round.
+    battle_state["player_confused_this_round"] = player_confused
     fight_over, winner = check_fight_over(knight, opponent)
     if fight_over:
         return log, True, winner
@@ -342,12 +364,22 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
                 ice_mode = "svantaggio" if position_in_ice_patch(
                     battle_state["player_position"], battle_state.get("terrain_effects", [])
                 ) else "normale"
-                combined_mode = combine_roll_modes(combine_roll_modes(roll_mode, range_mode), ice_mode)
+                # Confusione (richiesto in chat, espansione stati): se
+                # sei confuso, il tuo attacco tira in svantaggio - stesso
+                # meccanismo già usato per Imprevisti/distanza/Ghiaccio,
+                # combinato con combine_roll_modes invece di una logica
+                # separata.
+                confusion_mode = "svantaggio" if player_confused else "normale"
+                combined_mode = combine_roll_modes(
+                    combine_roll_modes(combine_roll_modes(roll_mode, range_mode), ice_mode), confusion_mode
+                )
                 if roll_mode == "normale":
                     if range_mode == "svantaggio":
                         cause_phrase = "il colpo arriva da lontano, meno preciso"
                     elif ice_mode == "svantaggio":
                         cause_phrase = "scivola sul ghiaccio, meno preciso"
+                    elif confusion_mode == "svantaggio":
+                        cause_phrase = "ancora confuso, fatica a mettere a fuoco il bersaglio"
 
                 dmg, msg, _natural_roll = resolve_turn(
                     knight["raw_name"], knight["str"], knight["tec"], armor["level"],
@@ -433,11 +465,16 @@ def resolve_declare(conn, knight: dict, armor: dict, action: str, technique_name
         if fight_over:
             return log, True, winner
 
-    # Stati attivi (Veleno/Paralisi) sull'avversario: si applicano a inizio del SUO turno.
-    opp_status_msgs, opponent_blocked = tick_statuses(
+    # Stati attivi (Veleno/Bruciatura/Paralisi/Paralisi Parziale/
+    # Confusione) sull'avversario: si applicano a inizio del SUO turno.
+    opp_status_msgs, opponent_blocked, opponent_confused = tick_statuses(
         opponent["name"], opponent, battle_state.setdefault("opponent_statuses", [])
     )
     log.extend(opp_status_msgs)
+    # Salvato in battle_state (richiesto in chat) - resta disponibile
+    # per quando l'attacco dell'avversario viene davvero risolto in
+    # resolve_react, alla metà successiva dello stesso round.
+    battle_state["opponent_confused_this_round"] = opponent_confused
     fight_over, winner = check_fight_over(knight, opponent)
     if fight_over:
         return log, True, winner
@@ -523,9 +560,18 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
     ice_mode = "svantaggio" if position_in_ice_patch(
         battle_state["opponent_position"], battle_state.get("terrain_effects", [])
     ) else "normale"
-    combined_mode = combine_roll_modes(roll_mode, ice_mode)
-    if roll_mode == "normale" and ice_mode == "svantaggio":
-        cause_phrase = "scivola sul ghiaccio, meno preciso"
+    # Confusione (richiesto in chat, espansione stati): se l'avversario
+    # era stato confuso quando i suoi stati sono stati aggiornati in
+    # resolve_declare, questo suo attacco (che si risolve solo ora)
+    # tira in svantaggio.
+    opponent_confused = battle_state.get("opponent_confused_this_round", False)
+    confusion_mode = "svantaggio" if opponent_confused else "normale"
+    combined_mode = combine_roll_modes(combine_roll_modes(roll_mode, ice_mode), confusion_mode)
+    if roll_mode == "normale":
+        if ice_mode == "svantaggio":
+            cause_phrase = "scivola sul ghiaccio, meno preciso"
+        elif confusion_mode == "svantaggio":
+            cause_phrase = "ancora confuso, fatica a mettere a fuoco il bersaglio"
 
     dmg2, msg2, _natural_roll2 = resolve_turn(
         opponent["name"], opponent["str"], opponent["tec"], opponent["armor_level"],
@@ -617,8 +663,9 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
     # --- Contrattacco (richiesto in chat) -----------------------------
     # Un vero attacco a sé stante: stesso trattamento di un attacco
     # dichiarato normalmente (Imprevisto proprio, portata, ghiaccio,
-    # affinità elementale, effetti sul terreno) - solo che avviene qui,
-    # subito dopo aver incassato il colpo avversario per intero.
+    # Confusione, affinità elementale, effetti sul terreno) - solo che
+    # avviene qui, subito dopo aver incassato il colpo avversario per
+    # intero.
     if action == "contrattacca" and counter_technique_name:
         # Il Cosmo come risorsa vale anche per il contrattacco
         # (richiesto in chat, le tre barre) - stesso trattamento
@@ -658,12 +705,22 @@ def resolve_react(conn, knight: dict, armor: dict, action: str,
             ice_mode3 = "svantaggio" if position_in_ice_patch(
                 battle_state["player_position"], battle_state.get("terrain_effects", [])
             ) else "normale"
-            combined_mode3 = combine_roll_modes(combine_roll_modes(roll_mode3, range_mode3), ice_mode3)
+            # Confusione (richiesto in chat): la stessa Confusione del
+            # giocatore, calcolata a inizio round in resolve_declare,
+            # resta valida anche per il contrattacco a metà round
+            # successiva - salvata in battle_state proprio per questo.
+            player_confused = battle_state.get("player_confused_this_round", False)
+            confusion_mode3 = "svantaggio" if player_confused else "normale"
+            combined_mode3 = combine_roll_modes(
+                combine_roll_modes(combine_roll_modes(roll_mode3, range_mode3), ice_mode3), confusion_mode3
+            )
             if roll_mode3 == "normale":
                 if range_mode3 == "svantaggio":
                     cause_phrase3 = "il colpo arriva da lontano, meno preciso"
                 elif ice_mode3 == "svantaggio":
                     cause_phrase3 = "scivola sul ghiaccio, meno preciso"
+                elif confusion_mode3 == "svantaggio":
+                    cause_phrase3 = "ancora confuso, fatica a mettere a fuoco il bersaglio"
 
             dmg3, msg3, _natural_roll3 = resolve_turn(
                 knight["raw_name"], knight["str"], knight["tec"], armor["level"],
