@@ -14,7 +14,17 @@ in tema (il Cosmo si affievolisce sotto i colpi).
 NOTA come per dnd_engine.py e fm_manager.py: le soglie (tolleranza di
 livello per l'avversario, potenza dell'Attacco Base, recupero Cosmo a
 fine scontro) sono PLACEHOLDER funzionanti, da tarare insieme.
-"""
+
+AGGIORNAMENTO (richiesto in chat): il sistema di stati (Veleno,
+Pietrificazione/Intrappolamento) esisteva già, ma copriva solo 3
+elementi su quelli usati davvero nel catalogo tecniche. Esteso con
+Fuoco (Bruciatura, stesso meccanismo del Veleno), Elettrico (Paralisi
+a PROBABILITÀ - diversa da quella totale di Pietrificazione/
+Intrappolamento, che resta garantita) e Psichico (Confusione - non
+blocca il turno, costringe a tirare in svantaggio, riusando lo stesso
+meccanismo di vantaggio/svantaggio già usato per gli Imprevisti e la
+distanza, invece di inventare un sistema di "probabilità di mancare"
+separato)."""
 import random
 import sqlite3
 
@@ -416,7 +426,8 @@ def resolve_turn(attacker_name: str, attacker_str: int, attacker_tec: int, attac
     chat: prima queste due statistiche non contavano nulla in
     combattimento, solo Forza e Destrezza.
     roll_mode: 'normale' | 'vantaggio' | 'svantaggio' - concesso da un
-    Imprevisto (vedi maybe_trigger_event) o da altre condizioni future.
+    Imprevisto (vedi maybe_trigger_event), dalla Confusione (vedi
+    tick_statuses) o da altre condizioni.
     cause_phrase: la spiegazione NARRATIVA del perché (es. "abbagliato
     dal sole") - se non fornita, si usa una frase generica. Deciso in
     chat: niente più etichette nude tipo '[SVANTAGGIO]', la causa entra
@@ -511,7 +522,8 @@ def choose_opponent_technique(opponent: dict) -> tuple[str, int, str]:
     le tecniche marcate "Entrambe" restano invece candidate valide).
     Restituisce (nome, potenza, tech_type) - il tech_type serve a
     maybe_apply_status per riconoscere le tecniche che lasciano un
-    effetto (Veleno, per ora)."""
+    effetto (Veleno, Fuoco, Elettrico, Psichico, Pietrificazione/
+    Intrappolamento)."""
     offensive_eligible = [
         t for t in opponent["techniques"]
         if "difensiv" not in (t.get("tech_type") or "").lower() or "entrambe" in (t.get("tech_type") or "").lower()
@@ -673,9 +685,9 @@ def try_move(current_pos: dict, target_x: float, target_y: float,
 
 
 def wander_opponent(current_pos: dict) -> dict:
-    """Sposta l'avversario di un piccolo passo a caso - Fase 1: solo per
-    'sembrare vivo' sullo schermo, nessun effetto tattico (richiesto in
-    chat). Un piccolo raggio fisso, non i suoi Punti Movimento veri -
+    """Sposta l'avversario di un piccolo passo a caso - Fase 1: solo
+    per 'sembrare vivo' sullo schermo, nessun effetto tattico (richiesto
+    in chat). Un piccolo raggio fisso, non i suoi Punti Movimento veri -
     non sta scegliendo strategicamente dove andare, sta solo
     dimenandosi un po'."""
     wander_radius = 1.2
@@ -1011,7 +1023,15 @@ def allowed_custom_technique_elements(armor_techniques: list[dict], origin: str)
     personaggio: quelli già presenti nel tech_type delle sue tecniche
     vere (es. 'Cosmico/Fisico' -> 'Cosmico', 'Fisico'), più l'affinità
     elementale della sua Provenienza, se ne ha una. Elenco chiuso e
-    ordinato, mostrato come scelta - non testo libero."""
+    ordinato, mostrato come scelta - non testo libero.
+    IMPORTANTE (richiesto in chat: "come fai a dargli una reale
+    manifestazione in game?" per le tecniche personalizzate) - questa
+    funzione limita solo QUALI elementi si possono scegliere; l'effetto
+    di stato che ne deriva (Veleno, Bruciatura, Paralisi, Confusione,
+    Pietrificazione/Intrappolamento) è deciso da maybe_apply_status più
+    sotto, che legge il tech_type SCELTO QUI e si comporta in modo
+    identico sia per una tecnica del catalogo sia per una personalizzata
+    - stesso meccanismo, nessun trattamento speciale per l'una o l'altra."""
     elements = set()
     for t in armor_techniques:
         for word in (t.get("tech_type") or "").split("/"):
@@ -1189,89 +1209,138 @@ def maybe_trigger_event(knight: dict, opponent: dict) -> dict | None:
     }
 
 
-# --- Imprevisti Fase 2 -----------------------------------------------------
-# Il catalogo ha diversi tipi di tecnica oltre a quelle offensive pure
-# (Veleno, Intrappolamento, Pietrificazione, Autocura - isolati la
-# prima volta quando abbiamo controllato le tecniche difensive).
+# --- Stati di combattimento -----------------------------------------------
+# V1 (collaudata prima): Veleno (danno nel tempo), Pietrificazione/
+# Intrappolamento come Paralisi TOTALE (bloccano un turno intero con
+# certezza - coerente col tema: essere pietrificati o intrappolati non
+# lascia scampo).
 #
-# V1 (collaudata prima): Veleno, danno che dura ROUNDS_LEFT round.
-# V2 (qui): Pietrificazione/Intrappolamento come Paralisi - bloccano un
-# turno intero. Rimandata apposta la prima volta perché tocca il
-# flusso dei turni (chi dichiara, chi reagisce), non solo un numero
-# che scende - va tenuta separata dalla risoluzione dell'azione scelta
-# dal giocatore, non sommata dentro.
-STATUS_SAVE_DC = 14  # soglia del tiro salvezza di Volontà contro Veleno/Paralisi
+# V2 (richiesto in chat, espansione): il catalogo usa anche altri
+# elementi ricorrenti che non avevano ancora un effetto meccanico -
+# Fuoco, Elettrico, Psichico. Aggiunti con una firma DIVERSA ciascuno,
+# non varianti dello stesso meccanismo:
+#   Fuoco     -> Bruciatura: stesso meccanismo del Veleno (danno nel
+#                tempo), ma un effetto a sé (non si sommano: un
+#                bersaglio già bruciato colpito di nuovo dal Fuoco
+#                rinfresca la Bruciatura, non ne accumula una seconda -
+#                stessa idea già vista in core/status_effects.py)
+#   Elettrico -> Paralisi PARZIALE: a differenza di Pietrificazione/
+#                Intrappolamento (sempre garantita), qui il blocco è a
+#                PROBABILITÀ, tirata ad ogni turno finché l'effetto
+#                dura - una scossa non ti lascia paralizzato con
+#                certezza ad ogni istante, ti coglie a tratti
+#   Psichico  -> Confusione: NON blocca il turno - costringe a tirare
+#                in svantaggio, riusando lo stesso meccanismo già
+#                esistente per gli Imprevisti e la distanza
+#                (combine_roll_modes) invece di una nuova logica di
+#                "probabilità di mancare" scollegata dal resto
+STATUS_SAVE_DC = 14  # soglia del tiro salvezza di Volontà contro qualunque nuovo stato
 
 STATUS_RULES = {
     "veleno": {"kind": "veleno", "duration": 3},
     "pietrificazione": {"kind": "paralisi", "duration": 1},
     "intrappolamento": {"kind": "paralisi", "duration": 1},
+    "fuoco": {"kind": "bruciatura", "duration": 3},
+    "elettrico": {"kind": "paralisi_parziale", "duration": 2, "chance": 0.45},
+    "psichico": {"kind": "confusione", "duration": 3},
 }
 
 
 def maybe_apply_status(tech_type: str, technique_power: int) -> dict | None:
-    """Se la tecnica appena andata a segno è di un tipo che conosciamo
-    (Veleno, Pietrificazione, Intrappolamento), restituisce lo stato da
-    aggiungere al bersaglio. None per una tecnica 'normale' o per
-    l'Attacco Base (che non ha nessun tech_type)."""
+    """Se la tecnica appena andata a segno è di un tipo che conosciamo,
+    restituisce lo stato da aggiungere al bersaglio. None per una
+    tecnica 'normale' o per l'Attacco Base (che non ha nessun
+    tech_type). Il primo elemento riconosciuto nel tech_type vince
+    (una tecnica composita tipo 'Fuoco/Fisico' applica Bruciatura)."""
     tech_type_lower = (tech_type or "").lower()
     for keyword, rule in STATUS_RULES.items():
-        if keyword in tech_type_lower:
-            if rule["kind"] == "veleno":
-                return {
-                    "kind": "veleno",
-                    "rounds_left": rule["duration"],
-                    "damage_per_round": max(1, technique_power // 20),
-                }
-            return {"kind": "paralisi", "rounds_left": rule["duration"]}
+        if keyword not in tech_type_lower:
+            continue
+        if rule["kind"] in ("veleno", "bruciatura"):
+            return {
+                "kind": rule["kind"],
+                "rounds_left": rule["duration"],
+                "damage_per_round": max(1, technique_power // 20),
+            }
+        if rule["kind"] == "paralisi_parziale":
+            return {"kind": "paralisi_parziale", "rounds_left": rule["duration"], "chance": rule["chance"]}
+        if rule["kind"] == "confusione":
+            return {"kind": "confusione", "rounds_left": rule["duration"]}
+        return {"kind": "paralisi", "rounds_left": rule["duration"]}  # pietrificazione/intrappolamento
     return None
 
 
 def status_applied_message(target_name: str, technique_name: str, status: dict) -> str:
     """Il messaggio da mostrare quando un colpo lascia un effetto sul
     bersaglio - diverso a seconda del tipo di stato inflitto."""
-    if status["kind"] == "veleno":
-        return f"⚠️ {target_name} è avvelenato da {technique_name}!"
-    return f"🥶 {target_name} è pietrificato da {technique_name}!"
+    labels = {
+        "veleno": f"⚠️ {target_name} è avvelenato da {technique_name}!",
+        "bruciatura": f"🔥 {target_name} prende fuoco per colpa di {technique_name}!",
+        "paralisi": f"🥶 {target_name} è pietrificato da {technique_name}!",
+        "paralisi_parziale": f"⚡ {target_name} è scosso da {technique_name} - rischia di paralizzarsi ad ogni turno!",
+        "confusione": f"💫 {target_name} è confuso da {technique_name} - i suoi colpi saranno meno precisi!",
+    }
+    return labels.get(status["kind"], f"{target_name} subisce un effetto da {technique_name}.")
 
 
 def status_resisted(defender_vol: int) -> bool:
-    """Tiro salvezza di Volontà contro un nuovo Veleno/Paralisi - se
-    supera la soglia STATUS_SAVE_DC, l'effetto non si applica affatto
-    (il colpo fa comunque il suo danno normale, solo l'effetto extra
-    viene resistito). Richiesto in chat: dare un ruolo vero alla
-    Volontà, prima non contava nulla in combattimento."""
+    """Tiro salvezza di Volontà contro un nuovo stato - se supera la
+    soglia STATUS_SAVE_DC, l'effetto non si applica affatto (il colpo
+    fa comunque il suo danno normale, solo l'effetto extra viene
+    resistito). Richiesto in chat: dare un ruolo vero alla Volontà,
+    prima non contava nulla in combattimento. Vale per qualunque stato,
+    non solo Veleno/Paralisi originari."""
     return DnDEngine.resolve_saving_throw(defender_vol, STATUS_SAVE_DC)
 
 
-def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> tuple[list[str], bool]:
+def tick_statuses(fighter_name: str, fighter: dict, statuses: list[dict]) -> tuple[list[str], bool, bool]:
     """Applica gli effetti degli stati ATTIVI su `fighter` a inizio del
-    suo turno (danno da Veleno, blocco da Paralisi), poi fa scadere di
-    un round chi è arrivato a zero. Muta `statuses` in place (rimuove
-    quelli scaduti quando la lista viene ricostruita dal chiamante).
-    Restituisce (messaggi, bloccato) - bloccato=True se questo turno il
-    personaggio è paralizzato e non può agire: il chiamante deve
-    saltare la sua azione (vedi resolve_declare), non risolverla
-    normalmente."""
+    suo turno (danno da Veleno/Bruciatura, blocco da Paralisi/Paralisi
+    Parziale), poi fa scadere di un round chi è arrivato a zero. Muta
+    `statuses` in place (rimuove quelli scaduti quando la lista viene
+    ricostruita dal chiamante).
+    Restituisce (messaggi, bloccato, in_svantaggio):
+    - bloccato=True se questo turno il personaggio non può agire
+      affatto (Paralisi totale, o Paralisi Parziale quando la
+      probabilità scatta questo giro) - il chiamante deve saltare la
+      sua azione, non risolverla normalmente.
+    - in_svantaggio=True se la Confusione è attiva: il personaggio PUÒ
+      agire, ma il suo prossimo attacco va tirato in svantaggio - il
+      chiamante lo combina con combine_roll_modes insieme agli altri
+      modificatori (Imprevisti, distanza, Ghiaccio) invece di gestirlo
+      a parte."""
     messages = []
     blocked = False
+    confused = False
     still_active = []
 
     for status in statuses:
-        if status["kind"] == "veleno":
+        if status["kind"] in ("veleno", "bruciatura"):
             dmg = status["damage_per_round"]
             fighter["cosmo_cur"] = max(0, fighter["cosmo_cur"] - dmg)
-            messages.append(f"☠️ {fighter_name} soffre per il Veleno! -{dmg} Cosmo.")
+            label = "Veleno" if status["kind"] == "veleno" else "Bruciatura"
+            icon = "☠️" if status["kind"] == "veleno" else "🔥"
+            messages.append(f"{icon} {fighter_name} soffre per la {label}! -{dmg} Cosmo.")
         elif status["kind"] == "paralisi":
             blocked = True
             messages.append(f"🥶 {fighter_name} è paralizzato e non riesce a muoversi!")
+        elif status["kind"] == "paralisi_parziale":
+            if random.random() < status["chance"]:
+                blocked = True
+                messages.append(f"⚡ {fighter_name} viene scosso e perde il turno!")
+        elif status["kind"] == "confusione":
+            confused = True
+            messages.append(f"💫 {fighter_name} è ancora confuso.")
 
         status["rounds_left"] -= 1
         if status["rounds_left"] > 0:
             still_active.append(status)
         else:
-            kind_label = "Veleno" if status["kind"] == "veleno" else "Paralisi"
-            messages.append(f"L'effetto {kind_label} su {fighter_name} è svanito.")
+            kind_labels = {
+                "veleno": "Veleno", "bruciatura": "Bruciatura", "paralisi": "Paralisi",
+                "paralisi_parziale": "Paralisi", "confusione": "Confusione",
+            }
+            messages.append(f"L'effetto {kind_labels.get(status['kind'], status['kind'])} su {fighter_name} è svanito.")
 
     statuses[:] = still_active
-    return messages, blocked
+    return messages, blocked, confused
