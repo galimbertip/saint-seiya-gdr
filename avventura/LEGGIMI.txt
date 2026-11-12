@@ -1,0 +1,20 @@
+SAINT SEIYA: SACRO IMPERIO - Avventura grafica (prototipo)
+
+Avvio:   ./avvia_avventura.sh      poi apri l'indirizzo mostrato (porta 8001)
+
+Comandi:
+  - Clic sul pavimento = Seiya cammina
+  - Clic su un oggetto = azione di default (Guarda; sulle uscite: Vai)
+  - Scegli un verbo (Guarda, Parla, Usa, Prendi, Apri...) e poi clicca l'oggetto
+  - Tasto destro = annulla il verbo scelto
+  - Tasto D = mostra/nasconde aree camminabili (azzurro), uscite (giallo), oggetti (rosso)
+    e le coordinate sotto il mouse: utile per segnalarmi un hotspot da correggere
+
+Da provare:
+  - Camera personale: Baule + Apri = indossa/riponi l'armatura di Pegaso; Letto + Usa = riposa (+1 settimana)
+  - Centro Allenamento: Manichino + Usa, Pesi + Usa
+  - Taverna: Camino + Usa
+  - Percorso: villaggio > piazza > tempio > sala del Grande Sacerdote > Case d'Oro
+
+I progressi (scena, armatura, Cosmo, Stamina) si salvano nel browser. Per ricominciare: ?nuovo
+Font: Tiny5 (licenza SIL OFL, vedi assets/font).

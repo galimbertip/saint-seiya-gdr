@@ -125,6 +125,12 @@ ARENA_BACKGROUNDS_DIR = Path(__file__).resolve().parent.parent / "arena_backgrou
 ARENA_BACKGROUNDS_DIR.mkdir(exist_ok=True)
 app.mount("/arena_backgrounds", StaticFiles(directory=str(ARENA_BACKGROUNDS_DIR)), name="arena_backgrounds")
 
+# Prototipo avventura point-and-click in pixel art (stile Monkey Island):
+# servito su /avventura/ (cartella statica, nessun legame con il DB per ora).
+AVVENTURA_DIR = Path(__file__).resolve().parent.parent / "avventura"
+if AVVENTURA_DIR.exists():
+    app.mount("/avventura", StaticFiles(directory=str(AVVENTURA_DIR), html=True), name="avventura")
+
 
 def _init_schema_once() -> None:
     """Crea le tabelle, carica il catalogo armature dai CSV, e popola la

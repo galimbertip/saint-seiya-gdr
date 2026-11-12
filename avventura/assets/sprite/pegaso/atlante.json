@@ -1,0 +1,145 @@
+{
+ "nome": "pegaso",
+ "altezza_riferimento": 64,
+ "verso": "destra",
+ "pose": {
+  "fermo": [
+   0,
+   7
+  ],
+  "cammina": [
+   1,
+   2
+  ],
+  "attacco": [
+   3
+  ],
+  "parata": [
+   4,
+   9
+  ],
+  "carica": [
+   5,
+   8
+  ],
+  "vittoria": [
+   6,
+   10
+  ],
+  "ko": [
+   11
+  ],
+  "colpito": []
+ },
+ "fotogrammi": [
+  {
+   "file": "pegaso_00.png",
+   "w": 28,
+   "h": 64,
+   "pivot": [
+    14,
+    63
+   ]
+  },
+  {
+   "file": "pegaso_01.png",
+   "w": 35,
+   "h": 64,
+   "pivot": [
+    20,
+    63
+   ]
+  },
+  {
+   "file": "pegaso_02.png",
+   "w": 34,
+   "h": 64,
+   "pivot": [
+    20,
+    63
+   ]
+  },
+  {
+   "file": "pegaso_03.png",
+   "w": 52,
+   "h": 61,
+   "pivot": [
+    19,
+    60
+   ]
+  },
+  {
+   "file": "pegaso_04.png",
+   "w": 39,
+   "h": 62,
+   "pivot": [
+    18,
+    61
+   ]
+  },
+  {
+   "file": "pegaso_05.png",
+   "w": 34,
+   "h": 70,
+   "pivot": [
+    16,
+    69
+   ]
+  },
+  {
+   "file": "pegaso_06.png",
+   "w": 36,
+   "h": 70,
+   "pivot": [
+    19,
+    69
+   ]
+  },
+  {
+   "file": "pegaso_07.png",
+   "w": 29,
+   "h": 66,
+   "pivot": [
+    14,
+    65
+   ]
+  },
+  {
+   "file": "pegaso_08.png",
+   "w": 37,
+   "h": 70,
+   "pivot": [
+    18,
+    69
+   ]
+  },
+  {
+   "file": "pegaso_09.png",
+   "w": 37,
+   "h": 65,
+   "pivot": [
+    19,
+    64
+   ]
+  },
+  {
+   "file": "pegaso_10.png",
+   "w": 38,
+   "h": 71,
+   "pivot": [
+    20,
+    70
+   ]
+  },
+  {
+   "file": "pegaso_11.png",
+   "w": 67,
+   "h": 22,
+   "pivot": [
+    33,
+    21
+   ]
+  }
+ ],
+ "nota": "colpito: pose mancante; riusare 'parata' come ripiego"
+}

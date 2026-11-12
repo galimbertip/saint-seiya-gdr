@@ -1,0 +1,155 @@
+{
+ "nome": "civile",
+ "altezza_riferimento": 64,
+ "verso": "destra",
+ "pose": {
+  "fermo": [
+   0,
+   7
+  ],
+  "cammina": [
+   1,
+   2,
+   8,
+   9
+  ],
+  "attacco": [
+   3
+  ],
+  "parata": [
+   4,
+   10
+  ],
+  "carica": [
+   5
+  ],
+  "vittoria": [
+   6,
+   11
+  ],
+  "ko": [
+   12
+  ],
+  "colpito": []
+ },
+ "fotogrammi": [
+  {
+   "file": "civile_00.png",
+   "w": 26,
+   "h": 64,
+   "pivot": [
+    13,
+    63
+   ]
+  },
+  {
+   "file": "civile_01.png",
+   "w": 32,
+   "h": 63,
+   "pivot": [
+    17,
+    62
+   ]
+  },
+  {
+   "file": "civile_02.png",
+   "w": 29,
+   "h": 63,
+   "pivot": [
+    16,
+    62
+   ]
+  },
+  {
+   "file": "civile_03.png",
+   "w": 42,
+   "h": 62,
+   "pivot": [
+    16,
+    61
+   ]
+  },
+  {
+   "file": "civile_04.png",
+   "w": 34,
+   "h": 62,
+   "pivot": [
+    15,
+    61
+   ]
+  },
+  {
+   "file": "civile_05.png",
+   "w": 33,
+   "h": 62,
+   "pivot": [
+    15,
+    61
+   ]
+  },
+  {
+   "file": "civile_06.png",
+   "w": 30,
+   "h": 66,
+   "pivot": [
+    15,
+    65
+   ]
+  },
+  {
+   "file": "civile_07.png",
+   "w": 26,
+   "h": 64,
+   "pivot": [
+    13,
+    63
+   ]
+  },
+  {
+   "file": "civile_08.png",
+   "w": 33,
+   "h": 63,
+   "pivot": [
+    17,
+    62
+   ]
+  },
+  {
+   "file": "civile_09.png",
+   "w": 28,
+   "h": 63,
+   "pivot": [
+    15,
+    62
+   ]
+  },
+  {
+   "file": "civile_10.png",
+   "w": 34,
+   "h": 63,
+   "pivot": [
+    16,
+    62
+   ]
+  },
+  {
+   "file": "civile_11.png",
+   "w": 31,
+   "h": 67,
+   "pivot": [
+    15,
+    66
+   ]
+  },
+  {
+   "file": "civile_12.png",
+   "w": 73,
+   "h": 22,
+   "pivot": [
+    36,
+    21
+   ]
+  }
+ ],
+ "nota": "colpito: pose mancante; riusare 'parata' come ripiego"
+}
